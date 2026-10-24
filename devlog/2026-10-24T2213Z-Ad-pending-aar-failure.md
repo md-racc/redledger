@@ -1,0 +1,1 @@
+- 2026-10-24T22:13Z · Ad · red: after-action review now counts attacks still pending at episode end as failures, so red stops repeating a stalled scheme (lineage ln_f6e3b2a3a6d0 relaunched duplicate_invoice 20x for $0); next: re-run the recorded lineage when Ad says; blocked: none

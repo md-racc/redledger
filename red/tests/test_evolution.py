@@ -97,9 +97,9 @@ def test_bounded_window_and_replayed_evicted_items():
     assert fold({}, None, 0, "ep") is None
 
 
-def test_ended_review_can_disclose_unresolved_but_never_pending_outcomes():
+def test_ended_review_can_disclose_unresolved_and_pending_outcomes():
     assert fold({}, [attack(resolved_day=None)], 0, "ep", ended=True)
-    assert fold({}, [attack(outcome="pending", resolved_day=None)], 0, "ep", ended=True) is None
+    assert fold({}, [attack(outcome="pending", resolved_day=None)], 0, "ep", ended=True)
     for options in ({}, {"lineage": {}}, {"lineage": {"id": "x", "generation": True, "playbook_version": 0}}):
         assert lineage_info(options) is None
 
@@ -115,3 +115,32 @@ def test_own_failure_is_not_a_catch_and_ranks_after_untried():
     assert view(blocked, 0)["schemes"][FIRST]["caught"] is True
     allowed = fold({}, [attack(outcome="failed", detected_day=None, controls=[{"kind": "verdict", "verdict": "allow"}])], 0, "ep")
     assert view(allowed, 0)["schemes"][FIRST]["caught"] is False
+
+
+def pending(**changes):
+    return attack(**{"outcome": "pending", "resolved_day": None, "detected_day": None, **changes})
+
+
+def test_pending_at_episode_end_is_an_uncaught_failure():
+    (o,) = fold({}, [pending()], 0, "ep", ended=True)[NAMESPACE]["observations"]
+    assert (o["outcome"], o["caught"]) == ("failed", False)
+
+
+@pytest.mark.parametrize("changes", [{"detected_day": 3}, {"controls": [{"kind": "verdict", "verdict": "block"}]}, {"controls": [{"kind": "flag"}]}])
+def test_pending_at_episode_end_can_still_be_caught(changes):
+    (o,) = fold({}, [pending(**changes)], 0, "ep", ended=True)[NAMESPACE]["observations"]
+    assert (o["outcome"], o["caught"]) == ("failed", True)
+
+
+def test_daily_debrief_still_skips_pending():
+    assert fold({}, [pending()], 0, "ep") is None
+
+
+def test_pending_aar_demotes_earlier_undetected_extraction():
+    won = fold({}, [attack(scheme_id="duplicate_invoice", outcome="extracted", detected_day=None)], 1, "ep-1", ended=True)
+    assert view(won, 0)["preference"][0] == "duplicate_invoice"
+    stalled = fold(won, [pending(n=n, scheme_id="duplicate_invoice") for n in range(5)], 2, "ep-2", ended=True)
+    summary, order = view(stalled, 0)["schemes"]["duplicate_invoice"], view(stalled, 0)["preference"]
+    assert (summary["last_outcome"], summary["caught"]) == ("failed", False)
+    assert order[0] != "duplicate_invoice"
+    assert order.index("ghost_vendor") < order.index("duplicate_invoice")
