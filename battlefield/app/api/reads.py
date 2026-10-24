@@ -133,11 +133,12 @@ async def list_audit(
     ep = _ep(c, episode_id)
     # Only red's legwork writes audit rows for entities that look like sim traffic, so to an agent a
     # red row is provenance (AGENTS.md §3.4). Agents see green/blue rows only (an allowlist, plus no
-    # attacks.* actions as a backstop). `agent=red` is just an empty result, not a 403, so the filter
-    # itself isn't advertised. The operator sees everything. LIMIT applies after the filter.
+    # attacks.* actions as a backstop). playbook.* rows are operator-only too: they would show another
+    # agent's playbook writes. `agent=red` is just an empty result, not a 403, so the filter itself
+    # isn't advertised. The operator sees everything. LIMIT applies after the filter.
     rows = await db.fetch(
         "SELECT * FROM audit_log WHERE episode_id=$1 AND ($2::text IS NULL OR agent=$2) AND ($3::int IS NULL OR day=$3)"
-        " AND (NOT $5::bool OR (agent IN ('green', 'blue') AND action NOT LIKE 'attacks.%')) ORDER BY id DESC LIMIT $4",
+        " AND (NOT $5::bool OR (agent IN ('green', 'blue') AND action NOT LIKE 'attacks.%' AND action NOT LIKE 'playbook.%')) ORDER BY id DESC LIMIT $4",
         ep,
         agent,
         day,
