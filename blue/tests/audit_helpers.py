@@ -91,8 +91,10 @@ class FakeLedger:
         self.max_read_active = max(self.max_read_active, self.read_active)
         try:
             await asyncio.sleep(0)
-            if self.read_block:
-                await self.read_block.wait()
+            # Tests release this flag from the service loop; never await a foreign-loop Event.
+            async with asyncio.timeout(5):
+                while self.read_block is not None and not self.read_block.is_set():
+                    await asyncio.sleep(0.001)
             if name in self.fail_reads:
                 raise RuntimeError("private-provider-error")
             return copy.deepcopy(self.datasets[name])
@@ -162,7 +164,7 @@ async def bound_session(ledger, *, dry_run=True, inputs=None):
     from audit import evidence, tools
 
     snapshot = await evidence.collect_snapshot(ledger, "ep", 5, inputs)
-    session = AuditSession("ep", 5, dry_run, time.monotonic() + 170, snapshot=snapshot, tool_lock=asyncio.Lock())
+    session = AuditSession("ep", 5, dry_run, time.monotonic() + 170, snapshot=snapshot)
     emitter = FakeEmitter()
     token = tools.SESSION.set(session)
     bindings = ctx.bind(ledger, emitter, turn())

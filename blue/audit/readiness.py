@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from agentkit import ctx
 from agentkit.config import AgentSettings
+from agentkit.sync import TurnLock
 
 from . import tools
 from .models import AuditSession, Snapshot
@@ -146,7 +147,7 @@ async def inspect_bridge(agent: Any) -> dict[str, bool | str]:
 
     marker = "offline-marker-not-sdk-metadata"
     req = TurnRequest(episode_id="offline", day=1, controller_mode="off")
-    session = AuditSession("offline", 1, False, time.monotonic() + 5, snapshot=Snapshot("offline", 1), tool_lock=asyncio.Lock())
+    session = AuditSession("offline", 1, False, time.monotonic() + 5, snapshot=Snapshot("offline", 1), tool_lock=TurnLock())
     ledger, emitter = object(), _ProbeEmitter()
     bindings = ctx.bind(ledger, emitter, req)
     session_token, invocation_token = tools.SESSION.set(session), tools.INVOCATION.set(marker)

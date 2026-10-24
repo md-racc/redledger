@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentkit.sync import TurnLock
+
 Family = Literal["integrity", "identity", "destination", "authorization", "structure", "tenure", "amount"]
 
 
@@ -77,7 +79,7 @@ class AuditSession:
     unresolved: list[ConfirmedEffect] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
     suppressed: set[str] = field(default_factory=set)
-    tool_lock: Any = None
+    tool_lock: TurnLock = field(default_factory=TurnLock)
     model_succeeded: bool = False
 
     def outcome(self) -> AuditOutcome:
