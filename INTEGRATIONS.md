@@ -31,7 +31,7 @@ owner, and exact file list.
 | Step | Integration | Owner | Branch | May create / modify | Cross-area dependency |
 |---|---|---|---|---|---|
 | B1 | Tiger Data / Timescale | Ad | `battlefield/timescale` | `docker-compose.yml`, battlefield's startup schema-apply path, `battlefield/app/scoring/score.py` | none |
-| B2 | CRS Credit API | M | `blue/crs-verification` | `blue/audit/crs.py` (new), `blue/audit/evidence.py`, `blue/audit/tools.py`, `blue/gate/rules.py`, `blue/tests/` | **yes** — EIN seeding in `battlefield/seed/company.py` is Ad's |
+| B2 | CRS Credit API | M | `blue/crs-verification` | `blue/audit/{crs,evidence,tools,snapshot,agent,readiness}.py`, approved fictional fixtures, Blue docs/tests, `battlefield/extensions/blue_crs.py`, `contracts/ext/blue/` | **yes** — runtime/CI wiring in `battlefield/crs-runtime`, root docs in `docs/crs-runbook`; live credentials/profile setup by humans |
 | C1 | Atlassian Forge | unassigned | needs Ad's ruling first | new top-level `forge/**`, `battlefield/extensions/fe_*.py` | **yes** — `forge/` is not in `GIT.md` §2's table |
 | C2 | Cartesia voice | R | `frontend/voice-escalation` | `frontend/**`, `battlefield/extensions/fe_voice.py`, `contracts/ext/fe/` | none |
 | C3 | Bright Data | M | `blue/web-diligence` | `blue/audit/webcheck.py` (new), `blue/audit/evidence.py` | none |
@@ -40,7 +40,7 @@ owner, and exact file list.
 | C6 | Elastic | M | `blue/search` | `blue/audit/` | none |
 
 An agent on one step does not edit another step's files or another owner's directory. If the
-task needs it, stop and hand it to the human — B2's EIN seeding (P4 below) is the known
+task needs it, stop and hand it to the human — B2's credential/profile setup (P3/P4 below) is the known
 instance.
 
 ## §2 Invariants (non-negotiable)
@@ -77,8 +77,8 @@ blocked step blocks here first.
 |---|---|---|---|---|---|---|
 | P1 | Devpost project created, repo linked, team joined | R | Devpost | project URL | shared with team | 10m |
 | P2 | MLH prize opt-in | R | MLH submission form | eligibility for every `MLH …` row | — | 5m |
-| P3 | CRS sandbox key | M | CRS sponsor signup; sandbox base `https://calhacks.crscreditapi.com` | `CRS_API_KEY` + the list of test identities | each dev's local `.env`; prod per `deploy/ENVIRONMENT.md` | 15m |
-| P4 | CRS test EINs chosen | M → Ad | pick which test identities map to seeded legit vendors | an EIN list | handed to Ad for `battlefield/seed/company.py` | 15m |
+| P3 | CRS sandbox login | M | Sponsor account with ROLE_TU_TV; REST base `https://api-sandbox.stitchcredit.com/api` | `CRS_USERNAME` + `CRS_PASSWORD`; no API key required | local environment; prod secrets per `deploy/ENVIRONMENT.md` | 15m |
+| P4 | CRS employee profiles bound | M → Ad | create named synthetic employees and explicitly bind approved P01/P12/P16 profiles through the Blue operator extension | episode-scoped employee/profile bindings, not EINs or expected outcomes | `blue_crs_employee_profiles`; no core schema or seed edit required | 15m |
 | P5 | Atlassian account + demo site | whoever takes C1 | `forge login`, `forge site provision`, `forge register` | site URL, app id | `forge/manifest.yml`; `api.<domain>` added to its external-fetch permissions | 30m |
 | P6 | Node 22 or 24 + `@forge/cli@latest` (v14+) | same | local install | working `forge` CLI | — | 15m |
 | P7 | Cartesia key | R | Cartesia dashboard | `CARTESIA_API_KEY` | local `.env` | 10m |
@@ -86,9 +86,9 @@ blocked step blocks here first.
 | P9 | Armadin criteria re-check | Ad | prize page (currently "Coming soon!") | criteria | may change §5 wording | 5m |
 
 - Secrets arrive via the shared vault, never Slack, never a commit (`AGENTS.md` §3 inv. 9).
-- A prerequisite is done when the key is in the holder's local `.env` **and** the variable
+- A credential prerequisite is done when the credential is in the holder's local environment **and** the variable
   exists empty in `.env.example`, so `DRY_RUN=true` still boots for everyone else.
-- An agent that finds its key absent does not go get one. It implements the neutral-result
+- An agent that finds its credential absent does not go get one. It implements the neutral-result
   path (§2 invariant 1), notes the blocked prerequisite number in its report, and stops.
 
 ## §4 Submission checklist
@@ -142,29 +142,37 @@ B1 before B2: B1 is an hour and unblocks A9; B2 is blocked on P3 and P4.
   images; frontend score chart still renders.
 - *Unblocks:* A9.
 
-**B2. CRS Credit API — owner M, branch `blue/crs-verification`, ~3h, prereq: P3 + P4**
+**B2. CRS Credit API — owner M, branch `blue/crs-verification`, prereq: P3 + P4**
 
-- *Why:* `blue/gate/rules.py:217` defines a rule named `unverified_vendor_exposure`. It is
-  heuristic — it infers "unverified" from vendor age and exposure, because blue has no way to
-  ask whether a counterparty exists in the outside world. CRS is the missing input to a
-  control the product already shipped.
-- *Files:* `blue/audit/crs.py` (new client); a finding code in
-  `blue/audit/evidence.py::derive_findings`; a `@blue_tool` in `blue/audit/tools.py` (`raise_flag`
-  already exists at `tools.py:173`); the evidence hook in
-  `blue/gate/rules.py::unverified_vendor_exposure`; `blue/tests/`.
-- *Design:* one REST call per new vendor or employee, keyed on `vendors.ein`. Runs in the
-  audit path per §2 invariant 2: a failed verification becomes a `flag.raised`, and the next
-  gate decision reads the flag from internal state — one day of detection latency, zero gate
-  latency.
-- *Key:* `CRS_API_KEY`, already at `.env.example:51` and in `docker-compose.yml`. Absent →
-  `unknown`, never blocks.
-- *Cross-area dependency:* CRS mandates test identities only. For the signal to discriminate,
-  seeded legitimate vendors need EINs that resolve in the CRS sandbox and red's fabricated
-  vendors need EINs that do not — `battlefield/seed/company.py`, Ad's area (P4). Without it CRS
-  returns "not found" for every vendor and the integration is decorative.
-- *Acceptance:* `make lint test-blue`; two seeded episodes showing the finding fires on red's
-  ghost vendor and not on `origin=sim` rows; one demo episode where the CRS flag is what
-  catches the ghost vendor.
+- *Corrected design, approved 2026-10-24:* the published CalHacks OpenAPI exposes personal
+  identity checks, not an EIN business-verification endpoint. B2 therefore checks synthetic
+  employee identities, not vendors. Business-related response schemas are not lookup routes.
+- *Files:* Blue's client, service-defined employee finding, no-argument `crs_identity_check`
+  tool, snapshot/orchestration hooks, offline registration schema, pinned fictional request
+  bodies, and mocked tests; Blue-owned extension routes/table hold operator-bound persona IDs.
+  No new gate rule or core contract change is required.
+- *Flow:* an operator explicitly binds an employee to P01, P12, or P16. Blue checks matching
+  employee names, calls `/transunion/identity-manager-verification/basic` during audit, and
+  normalizes the delivered response. SSN/name, DOB/issuance, or deceased-identity inconsistencies
+  produce `crs_employee_identity_mismatch`; existing flags and `already_flagged_high` stop
+  later expense payments. Address-only mismatches and fraud alerts require review, not holds.
+- *Credentials:* `CRS_USERNAME` / `CRS_PASSWORD` obtain a bearer token through `/users/login`.
+  `CRS_API_KEY` is an unused legacy placeholder. Missing credentials, malformed responses,
+  timeouts, and DRY_RUN produce `unknown`, never an allegation. Login failures are not retried.
+- *Safety:* only exact pinned sponsor fictional requests may leave the service. Unmatched
+  sandbox identities can reach real vendors. Never query random seeded people, infer profiles
+  from hidden provenance, or substitute expected fixture decisions for a provider response.
+- *Prerequisite PRs:* `battlefield/crs-runtime` supplies runtime credentials and corrects CI's
+  documented team-extension carve-out; `docs/crs-runbook` updates environment/runbook guidance.
+  Merge these before the Blue implementation. Publishing draft PRs does not complete B2.
+- *Acceptance:* `make lint test-blue`, independent review, additive schema/profile smoke,
+  and clean/mismatch/step-up episodes using valid HR records and distinct payment accounts.
+  In the mismatch case, show that the CRS flag, not an existing heuristic, changes the later
+  expense gate. Verify sandbox request logs say `billable:false`.
+- *Live blocker:* Blue's existing SDK invocation/tool-ID/owner-loop safeguards still disable
+  live audit. Do not remove them without proof. Credentials, live SDK readiness, Docker/Postgres
+  smoke, and an authenticated sponsor demo remain required, not replaced by mocked tests.
+  Durable setup and remaining checks live in `blue/CRS.md`.
 
 *Done when:* both PRs are squash-merged per `GIT.md` §4 and A9 is written.
 
@@ -185,7 +193,9 @@ with real agents) must be green first. Each item ends the weekend either merged 
   `battlefield/extensions/fe_voice.py`, owned by R alone.
 - **C3 Bright Data — web due diligence.** Does this vendor have a registration, a site, an
   address? Second evidence source beside CRS, same audit path, `blue/audit/webcheck.py`.
-  **Extra gate:** B2 merged — then it reuses the finding plumbing.
+  **Extra gate:** B2 and its runtime/documentation prerequisites merged — then it reuses the
+  finding plumbing. Draft PRs do not clear this gate. Blue's shared live-audit readiness also
+  applies to a live Bright Data demo.
 - **C4 Capital One Nessie.** Back `payments` and `bank_transactions` with real Nessie accounts
   so reconciliation runs against an external system instead of a self-consistent fiction.
   **Extra gate: do not start.** It rewrites battlefield's payment path, Ad's critical path,
@@ -225,22 +235,20 @@ score-over-time series in score.py.
 
 ```
 Role: implementer for B2, branch blue/crs-verification, worktree <path>.
-Owner dev: M. Prereqs: P3 (CRS_API_KEY + test identities) and P4 (EIN list handed to Ad) must
-be cleared — if CRS_API_KEY is absent in your .env, implement the neutral "unknown" path,
-report the blocked prerequisite, and stop; do not create a CRS account yourself.
-Files you may create/modify: blue/audit/crs.py (new), blue/audit/evidence.py,
-blue/audit/tools.py, blue/gate/rules.py (only the unverified_vendor_exposure hook),
-blue/tests/. Nothing else — battlefield/seed/company.py is Ad's, flag it rather than edit it.
-Contract you depend on: vendors.ein is the join key; raise_flag(finding_id) exists at
-blue/audit/tools.py:173; unverified_vendor_exposure is defined at blue/gate/rules.py:217.
-Requirement: the CRS call happens only in the audit path (once per day), never in blue/gate/'s
-synchronous request path; must work under DRY_RUN=true with CRS_API_KEY unset (returns
-"unknown", never blocks).
-Done means: make lint test-blue passes; two seeded episodes show the finding fires on red's
-ghost vendor and not on origin=sim rows; commit on your branch; do NOT push; reply with files
-changed, tests run, open questions.
-Never: force-push, reset --hard, delete tests, call CRS from the gate hot path, touch
-battlefield/seed/company.py.
-Task: add a CRS sandbox client, wire it into the audit Droid as a tool, and make
-unverified_vendor_exposure consume its finding as evidence.
+Owner dev: M. Prereqs: P3 (CRS_USERNAME/CRS_PASSWORD) and P4 (explicit fictional employee
+profile bindings). Missing credentials -> neutral unknown; report blocked prerequisites,
+never read denied .env files or create an account.
+Files you may create/modify: the approved B2 list in §1 only. Ad-owned runtime and CI
+changes belong on battlefield/crs-runtime; root documentation belongs on docs/crs-runbook.
+Contract: employee ID joins the Blue profile extension; approved persona name must match.
+raise_flag accepts only service-generated finding IDs; already_flagged_high consumes flags
+on later expenses. No EIN endpoint exists in the published CalHacks API.
+Requirement: audit-only, exact pinned fictional requests, bounded calls, no raw identities
+in model/events, no automatic login retries; DRY_RUN makes no sponsor request.
+Done means: required checks/review, schema/profile smoke, authenticated sandbox demo whose
+CRS finding causally changes a later gate, and all prerequisite PRs merged. Preserve existing
+live SDK safeguards until empirically verified. Do not label mocks or drafts as completion.
+Never: force-push, reset --hard, delete tests, call CRS from the gate, use hidden provenance,
+query arbitrary consumers, edit another owner's files, deploy, or merge your own PR.
+Task: safely enrich employee audit evidence and carry the finding through existing flags.
 ```
