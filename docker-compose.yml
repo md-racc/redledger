@@ -115,6 +115,9 @@ services:
       BLUE_GATE_LLM_API_KEY: ${BLUE_GATE_LLM_API_KEY:-}
       BLUE_GATE_LLM_MODEL: ${BLUE_GATE_LLM_MODEL:-}
       APPROVAL_THRESHOLD: ${APPROVAL_THRESHOLD:-5000}
+      CRS_USERNAME: ${CRS_USERNAME:-}
+      CRS_PASSWORD: ${CRS_PASSWORD:-}
+      # Legacy compatibility only; the CRS identity client uses the login credentials above.
       CRS_API_KEY: ${CRS_API_KEY:-}
     depends_on: [battlefield]
     networks: [agents]
