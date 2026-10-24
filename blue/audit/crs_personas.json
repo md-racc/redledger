@@ -1,0 +1,5 @@
+{
+  "P01": {"firstName": "MARGARET", "lastName": "OKAFOR", "ssn": "666701001", "dob": "1984-03-14", "street1": "1420 WILLOW CREEK DR", "city": "SAN JOSE", "state": "CA", "zip": "95125"},
+  "P12": {"firstName": "VICTOR", "lastName": "ANAND", "ssn": "666701012", "dob": "1968-08-08", "street1": "55 WATER ST FL 20", "city": "NEW YORK", "state": "NY", "zip": "10041"},
+  "P16": {"firstName": "SAMUEL", "lastName": "OYELARAN", "ssn": "666701016", "dob": "1977-06-12", "street1": "1200 BRICKELL BAY DR APT 2203", "city": "MIAMI", "state": "FL", "zip": "33131"}
+}

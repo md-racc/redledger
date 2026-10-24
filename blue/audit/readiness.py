@@ -28,6 +28,7 @@ LIVE_BLOCKERS = (
 )
 PARAMETERS = {
     "benford_check": {},
+    "crs_identity_check": {},
     "day_activity": {},
     "freeze_vendor": {"vendor_id": "string", "finding_ids": "array"},
     "post_report": {},
