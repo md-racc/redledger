@@ -21,6 +21,8 @@ x-agent-env: &agent-env
   DRY_RUN: ${DRY_RUN:-false}
   TURN_TIMEOUT_SEC: ${TURN_TIMEOUT_SEC:-180}
   GATE_TIMEOUT_SEC: ${GATE_TIMEOUT_SEC:-8}
+  # agentkit warns at startup if its tool cap (TURN_TIMEOUT_SEC - 20) can't cover an escalation hold
+  ESCALATION_TIMEOUT_SEC: ${ESCALATION_TIMEOUT_SEC:-90}
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
 services:

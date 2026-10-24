@@ -8,6 +8,17 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
 
 ## Findings
 
+- 2026-10-24 · Ad · **The Droid CLI never passes the tool_use_id to an MCP tool handler.** CLI
+  0.249.0 calls in-process tools with `_meta: {assemblySessionId, caller}` only; the id is visible
+  in the permission request (`McpToolAction.tool_use.id`) and the stream (`ToolCall.tool_use_id`).
+  agentkit binds executions to ids from those (`agentkit/invocation.py`). Proved by reading the
+  binary, not running it: `grep -a -o -E '.{0,900}_meta:\{assemblySessionId:m,caller:C\}' droid`
+  on `downloads.factory.ai/factory-cli/releases/0.249.0/linux/x64/droid`.
+- 2026-10-24 · Ad · **MCP permission rule: a call asks for permission iff its impact level
+  (low 1 / medium 2 / high 3) exceeds the autonomy level (off 0 … high 3).** So `Autonomy.OFF`
+  (green) asks for every MCP call and `HIGH` (red) for none. Static read of the same binary
+  (`shouldConfirmExecution`); not yet confirmed in a live run, so this settles the "does OFF raise
+  a permission request for every MCP tool call" question only provisionally.
 - 2026-10-24 · Al · **In-process MCP tool IDs are `"<server>___<tool>"`** (three underscores),
   e.g. `red-ledger___inspect_books`. `session.list_tools()` reports `source=None` for them, so
   matching on `source` finds nothing and `restrict_tools` silently stays unapplied (the agent
@@ -42,6 +53,8 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
   - Does `comment=` on a `CANCEL` reach the model as the rejection reason? (green dev)
 
 ## Changes
+
+- 2026-10-24 · Ad · agent-service.md, ledger-api.yaml · idempotency keys are bound to their first action (409 on reuse for a different action); n-th ledger write of one tool call is `<tool_use_id>:<n>`; green mirror uses the first write's key · green (M), blue (M), red (Al)
 
 - 2026-10-24 · Ad · ledger-api.yaml, events.md · agent-facing /audit_log excludes red's rows; legit_injected gains vendor_changes/new_vendors · blue (M), red (Al), frontend (R)
 

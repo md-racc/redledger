@@ -7,6 +7,9 @@ Responsibilities (so teams don't re-solve them):
   - stream the turn, forward thinking/tool events to battlefield, enforce the turn timeout
   - DRY_RUN path that calls your `dry_run_turn` with no Droid/LLM access
   - per-turn credit logging
+  - invocation identity (agentkit.invocation): the Droid tool_use_id a permission request shows is
+    the one on that call's agent.tool_call/agent.tool_result and on its ledger writes' X-Tool-Use-Id;
+    a call the permission handler cancels (or that never runs) still gets exactly one event pair
 
 Subclass contract:
 
@@ -19,6 +22,8 @@ Subclass contract:
         async def build_prompt(self, req): return "Day 3. Pick a scheme and execute it."
         async def dry_run_turn(self, req): ...  # call your tool fns directly
         # optional: async def on_permission(self, request) -> response
+        #   self.tool_uses(request) gives [ToolUse(tool_use_id, tool, args, source)] for your tools;
+        #   key a mirror on use.tool_use_id: it is the X-Tool-Use-Id of that call's first ledger write.
 
 The Droid SDK is imported lazily so DRY_RUN and tests work without it installed.
 """
@@ -26,11 +31,15 @@ The Droid SDK is imported lazily so DRY_RUN and tests work without it installed.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import contextvars
 import functools
+import inspect
 import json
+import threading
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -38,9 +47,20 @@ import structlog
 
 from .config import AgentSettings
 from .events import EventEmitter
+from .invocation import (
+    SOURCE_EXPLICIT,
+    SOURCE_LOCAL,
+    SOURCE_STREAM,
+    Invocation,
+    InvocationRegistry,
+    ToolUse,
+    bind_invocation,
+    bind_registry,
+    current_registry,
+)
 from .ledger_client import LedgerClient
 from .models import TurnRequest, TurnResponse, Usage
-from .tools import ToolFn, ctx
+from .tools import ToolFn, _args_payload, ctx, error_summary
 
 log = structlog.get_logger(__name__)
 
@@ -50,16 +70,112 @@ _TOOL_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="droid-tool")
 _TOOL_GRACE_SEC = 2.0
 
 
-class _ThreadSafeEmitter:
-    """Lets a tool running on a worker thread narrate through the turn's EventEmitter, whose queue
-    belongs to the turn's event loop."""
+class _ToolDeadline(Exception):
+    """Our per-tool deadline fired inside the worker (as opposed to a TimeoutError of the tool's own)."""
+
+
+class _WorkerEmitter:
+    """The turn's EventEmitter as seen by a tool running on a worker thread.
+
+    While the call is open, narration is buffered and replayed on the loop thread, in order, before
+    the call's agent.tool_result (so nothing a tool says lands after its result). Once the call is
+    closed (the tool outlived its deadline), late narration is posted to the loop as best-effort."""
 
     def __init__(self, inner: EventEmitter, loop: asyncio.AbstractEventLoop):
         self._inner, self._loop = inner, loop
+        self._lock = threading.Lock()
+        self._buf: list[Callable[[], None]] = []
+        self._open = True
 
-    def __getattr__(self, name: str) -> Callable[..., None]:
-        method = getattr(self._inner, name)
-        return lambda *a, **kw: self._loop.call_soon_threadsafe(functools.partial(method, *a, **kw))
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._inner, name)
+        if not callable(attr):
+            return attr
+
+        def call(*a: Any, **kw: Any) -> None:
+            bound = functools.partial(attr, *a, **kw)
+            with self._lock:
+                if self._open:
+                    self._buf.append(bound)
+                    return
+            self._loop.call_soon_threadsafe(bound)
+
+        return call
+
+    def drain(self) -> None:
+        """Loop thread only: replay buffered narration and stop buffering."""
+        with self._lock:
+            buf, self._buf, self._open = self._buf, [], False
+        for bound in buf:
+            try:
+                bound()
+            except Exception as e:  # e.g. a disallowed event type; never fail the tool over narration
+                log.warning("tool_narration_failed", error=str(e))
+
+
+_mcp_context_logged = False
+
+
+def _strings(value: Any) -> Iterator[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, Mapping):
+        for v in value.values():
+            yield from _strings(v)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _strings(v)
+
+
+def _mcp_request_hints(agent: str) -> list[str]:
+    """String values in the current MCP tools/call request's `_meta`. The SDK passes the tool handler
+    only its arguments (droid_sdk/mcp.py:132-136, 285-295); the MCP server's request_ctx is the only
+    other request data reachable. Droid CLI 0.249.0 sends `_meta:{assemblySessionId, caller}` there (no
+    tool_use_id), so today these hints never match; the registry accepts one only if it equals an id the
+    SDK reported. The first call per process logs the `_meta` keys and header names (names only) the
+    CLI actually sends, so a CLI upgrade that adds the id shows up in the logs."""
+    global _mcp_context_logged
+    try:
+        from mcp.server.lowlevel.server import request_ctx
+
+        rc = request_ctx.get()
+    except (ImportError, LookupError):
+        return []
+    meta = getattr(rc, "meta", None)
+    extra = meta.model_dump(exclude_none=True) if meta is not None else {}
+    if not _mcp_context_logged:
+        _mcp_context_logged = True
+        request = getattr(rc, "request", None)
+        headers = getattr(request, "headers", None)
+        log.info(
+            "mcp_call_context",
+            agent=agent,
+            request_id=str(getattr(rc, "request_id", "")),
+            meta_keys=sorted(extra),
+            header_names=sorted(headers.keys()) if headers is not None else None,
+        )
+    return list(_strings(extra))
+
+
+def _option_value(option: Any) -> Any:
+    return getattr(option, "value", option)
+
+
+def _selected(request: Any, response: Any) -> str:
+    """The outcome the SDK will actually apply: an invalid or unoffered response becomes cancel
+    (droid_sdk/_high_level/interaction_adapter.py:254-283)."""
+    selected = _option_value(getattr(response, "selected_option", None))
+    offered = {_option_value(getattr(o, "value", None)) for o in getattr(request, "options", None) or ()}
+    if selected is None or selected not in offered:
+        return "cancel"
+    return str(selected)
+
+
+def _cancel_response(request: Any, comment: str) -> Any | None:
+    for option in getattr(request, "options", None) or ():
+        if _option_value(getattr(option, "value", None)) == "cancel":
+            return request.respond(option.value, comment=comment)
+    return None
 
 
 class DroidAgent(ABC):
@@ -70,6 +186,19 @@ class DroidAgent(ABC):
     def __init__(self, settings: AgentSettings):
         self.s = settings
         self._tool_ids: list[str] | None = None
+        tool_cap = self._tool_timeout_sec()
+        if tool_cap < settings.escalation_timeout_sec + settings.http_timeout_sec:
+            # A gated call may legitimately wait ESCALATION_TIMEOUT_SEC for a human. Cut off sooner, the
+            # model hears "timed out" while battlefield may still execute it, and a retry can double-pay.
+            log.warning(
+                "tool_timeout_below_escalation_hold",
+                agent=self.name,
+                tool_timeout_sec=tool_cap,
+                escalation_timeout_sec=settings.escalation_timeout_sec,
+                http_timeout_sec=settings.http_timeout_sec,
+                turn_timeout_sec=settings.turn_timeout_sec,
+                hint="raise TURN_TIMEOUT_SEC to at least ESCALATION_TIMEOUT_SEC + HTTP_TIMEOUT_SEC + 20",
+            )
 
     # ---------- subclass hooks ----------
     @abstractmethod
@@ -83,10 +212,36 @@ class DroidAgent(ABC):
         """Deterministic stand-in for a model turn. Must make plausible ledger calls. Returns summary."""
 
     async def on_permission(self, request: Any) -> Any:
-        """Default: approve. Green overrides to mirror blue's gate."""
+        """Default: approve. Green overrides to mirror blue's gate.
+
+        Runs inside _permission_entry, which has already registered the request's tool uses (so
+        `self.tool_uses(request)` and the later execution agree on each tool_use_id) and which emits
+        the event pair for every one of ours if this returns CANCEL (or raises: fail closed)."""
         from droid_sdk import ToolConfirmationOutcome  # lazy
 
         return request.respond(ToolConfirmationOutcome.PROCEED_ONCE)
+
+    def tool_uses(self, request: Any) -> list[ToolUse]:
+        """Our MCP tool uses in a droid_sdk PermissionRequest: tool_use_id (the Droid SDK's), short tool
+        name, arguments. The id is what this call's agent.tool_call/tool_result carry and the
+        X-Tool-Use-Id of its first ledger write (`<id>:<n>` for the n-th), so a mirror of the ledger
+        gate (green -> POST blue/gate) uses it as idempotency_key."""
+        reg = current_registry() or self._new_registry(None)
+        return reg.observe_permission(request)
+
+    def record_cancelled(self, use: ToolUse, reason: str, *, registry: InvocationRegistry | None = None) -> None:
+        """Emit agent.tool_call + agent.tool_result(ok=false, reason) for a tool use that will not run.
+        Exactly once per tool_use_id; a no-op if that call already ran or was already closed. Called
+        for you on CANCEL; override to add narration (call super)."""
+        reg = registry or current_registry()
+        if reg is None:  # outside a live turn: nothing else can narrate it
+            em = ctx.emitter()
+            if em:
+                em.tool_call(use.tool, use.args, use.tool_use_id)
+                em.tool_result(use.tool_use_id, False, json.dumps({"cancelled": True, "tool": use.tool, "reason": reason}))
+            return
+        reg.observe(use.tool_use_id, use.tool, use.args, use.source)
+        reg.cancelled(use.tool_use_id, reason)
 
     async def health(self) -> dict[str, Any]:
         return {"ok": True, "agent": self.name, "model": self.s.droid_model, "droid_ok": self._droid_available(), "dry_run": self.s.dry_run}
@@ -129,11 +284,37 @@ class DroidAgent(ABC):
 
         return {"off": Autonomy.OFF, "low": Autonomy.LOW, "medium": Autonomy.MEDIUM, "high": Autonomy.HIGH}[self.autonomy]
 
-    def _mcp_server(self) -> Any:
+    def _new_registry(self, emitter: EventEmitter | None) -> InvocationRegistry:
+        return InvocationRegistry(f"{self.name}-ledger", [(n, fn) for (n, _, fn) in self.tools()], emitter, require_permission=self.autonomy == "off")
+
+    def _mcp_server(self, registry: InvocationRegistry | None = None) -> Any:
         from droid_sdk.mcp import create_sdk_mcp_server, tool
 
-        wrapped = [tool(n, d, self._offload(fn)) for (n, d, fn) in self.tools()]
+        wrapped = [tool(n, d, self._offload(fn, registry=registry)) for (n, d, fn) in self.tools()]
         return create_sdk_mcp_server(name=f"{self.name}-ledger", tools=wrapped, version="0.1.0")
+
+    async def _permission_entry(self, registry: InvocationRegistry, request: Any) -> Any:
+        """What the SDK actually calls. Registers the request's tool uses before on_permission runs (the
+        CLI executes only after we answer, so the registration always precedes the execution), and
+        closes the event pair of every one of ours that will not run."""
+        uses = registry.observe_permission(request)
+        try:
+            response = self.on_permission(request)
+            if inspect.isawaitable(response):
+                response = await response
+        except Exception as e:  # fail closed, with the reason logged (the SDK would cancel silently)
+            log.warning("permission_handler_error", agent=self.name, error=str(e), tool_use_ids=[u.tool_use_id for u in uses])
+            response = _cancel_response(request, f"permission handler error: {type(e).__name__}")
+            if response is None:
+                raise
+        if _selected(request, response) == "cancel":
+            reason = getattr(response, "comment", None) or "cancelled by the permission handler"
+            for use in uses:
+                self.record_cancelled(use, reason, registry=registry)
+        else:
+            for use in uses:
+                registry.permission_resolved(use.tool_use_id, approved=True)
+        return response
 
     def _flush_budget_sec(self) -> float:
         """Cap on the end-of-turn event flush. The stream may use up to TURN_TIMEOUT_SEC - 10 and
@@ -144,71 +325,123 @@ class DroidAgent(ABC):
     def _tool_timeout_sec(self) -> float:
         """Wall-clock cap on one tool call, measured from when the SDK invokes it.
 
-        Must be (a) strictly below the stream timeout (turn_timeout_sec - 10) so the turn's own deadline
-        still fires after a hung tool, and (b) above battlefield's escalation hold, because green's
-        gated calls legitimately block until a human decides or ESCALATION_TIMEOUT_SEC (90 s) expires,
-        and LedgerClient allows that read up to max(http_timeout_sec, 120) s. Cutting such a call
-        short would tell the model "failed" while the payment may still go through. So: the turn
-        budget minus 20 s (160 s at the default 180), never below 5 s."""
+        Must be (a) strictly below the stream timeout (turn_timeout_sec - 10). While a tool runs the
+        SDK's loop is frozen (see _offload), so the stream timeout cannot fire mid-tool; this cap is
+        what ends the freeze, and it has to leave the turn time to wrap up once the loop resumes. And
+        (b) above battlefield's escalation hold, because green's gated calls legitimately block until a
+        human decides or ESCALATION_TIMEOUT_SEC (90 s) expires, and LedgerClient allows that read up to
+        max(http_timeout_sec, 120) s. Cutting such a call short would tell the model "failed" while the
+        payment may still go through (__init__ warns when (b) can't hold). So: the turn budget minus
+        20 s (160 s at the default 180), never below 5 s."""
         return max(5.0, self.s.turn_timeout_sec - 20)
 
-    def _offload(self, fn: ToolFn) -> Callable[..., str]:
+    def _begin_invocation(self, name: str, kwargs: dict[str, Any], registry: InvocationRegistry | None) -> Invocation:
+        explicit = kwargs.pop("_tool_use_id", None)
+        if explicit:
+            return Invocation(explicit, name, source=SOURCE_EXPLICIT)
+        if registry is not None:
+            use = registry.claim(name, kwargs, _mcp_request_hints(self.name))
+            if use is not None:
+                return Invocation(use.tool_use_id, name, source=use.source)
+            local_id = LedgerClient.new_tool_use_id()
+            registry.note_unlinked(name, kwargs, local_id)
+            log.warning(
+                "tool_use_id_unverified",
+                agent=self.name,
+                tool=name,
+                tool_use_id=local_id,
+                detail="the SDK reported no matching approved tool use; using a UUID4",
+            )
+            return Invocation(local_id, name, source=SOURCE_LOCAL)
+        return Invocation(LedgerClient.new_tool_use_id(), name, source=SOURCE_LOCAL)
+
+    def _offload(self, fn: ToolFn, *, registry: InvocationRegistry | None = None) -> Callable[..., str]:
         """droid-sdk 0.5.0 stalls the whole run (RunTimeoutError) if an in-process tool yields to the
         event loop, even for `await asyncio.sleep(0.3)`; only tools that return without awaiting work.
         So each tool call runs to completion on a private loop in a worker thread, with its own
-        LedgerClient for the same turn, and its narration is posted back to the turn's emitter.
+        LedgerClient for the same turn, under a copy of the calling context (so turn-scoped ContextVars
+        a subclass sets, e.g. green's clerk_scope, are visible inside the tool).
 
-        The SDK itself accepts sync or async handlers (droid_sdk.mcp.tool's `invoke` awaits the result
-        only if it is awaitable) and serves them from a uvicorn task on the session's loop, so this sync
-        wrapper freezes that loop while the tool runs. That freeze is bounded by _tool_timeout_sec():
-        the tool is cancelled inside its thread at the deadline and the model gets an error string;
-        nothing is raised through the SDK."""
+        The SDK accepts sync or async handlers (droid_sdk.mcp.tool's `invoke` awaits the result only if
+        it is awaitable) and serves them from a uvicorn task on the session's loop, so this sync wrapper
+        freezes that loop while the tool runs: nothing on it (the stream and its turn timeout, the
+        event pump, permission requests) makes progress until the tool returns. The only bound on that
+        freeze is _tool_timeout_sec(): the tool is cancelled inside its thread at the deadline (and the
+        outer wait gives up _TOOL_GRACE_SEC later on a thread that won't yield), and the model gets an
+        error string; nothing is raised through the SDK. The stream timeout can fire only afterwards.
+
+        Narration: this wrapper, on the loop thread, emits the call's agent.tool_call before the tool
+        starts and its single agent.tool_result after it ends (ok, ledger refusal, exception, timeout),
+        with the tool's own narration replayed in between. The id is the Droid tool_use_id when the
+        registry links this execution to one (see agentkit.invocation), else a UUID4; ledger writes
+        inside use it as X-Tool-Use-Id."""
 
         name = getattr(fn, "_rl_tool", (getattr(fn, "__name__", "tool"), ""))[0]
-        is_ledger_tool = hasattr(fn, "_rl_tool")
 
         @functools.wraps(fn)
         def sync_tool(*args: Any, **kwargs: Any) -> str:
+            loop = asyncio.get_running_loop()
             turn, emitter = ctx.turn(), ctx.emitter()
-            proxy = _ThreadSafeEmitter(emitter, asyncio.get_running_loop()) if emitter else None
+            reg = registry if registry is not None else current_registry()
+            inv = self._begin_invocation(name, kwargs, reg)
             budget = self._tool_timeout_sec()
             deadline = time.monotonic() + budget
-            tool_use_id = None
-            if is_ledger_tool:  # pin the narration id so a timeout can still close the tool_call event
-                tool_use_id = kwargs.setdefault("_tool_use_id", LedgerClient.new_tool_use_id())
+            if emitter:
+                emitter.tool_call(name, _args_payload(args, kwargs), inv.tool_use_id)
+            proxy = _WorkerEmitter(emitter, loop) if emitter else None
+            worker_ctx = contextvars.copy_context()
 
             async def run() -> str:
-                async with asyncio.timeout(max(0.0, deadline - time.monotonic())):
-                    async with LedgerClient(self.s, episode_id=turn.episode_id, day=turn.day) as ledger:
-                        tokens = ctx.bind(ledger, proxy, turn)  # type: ignore[arg-type]
-                        try:
-                            return await fn(*args, **kwargs)
-                        finally:
-                            ctx.unbind(tokens)
+                timer = asyncio.timeout(max(0.0, deadline - time.monotonic()))
+                try:
+                    async with timer:
+                        async with LedgerClient(self.s, episode_id=turn.episode_id, day=turn.day) as ledger:
+                            tokens = ctx.bind(ledger, proxy, turn)  # type: ignore[arg-type]
+                            try:
+                                with bind_invocation(inv):
+                                    return await fn(*args, **kwargs)
+                            finally:
+                                ctx.unbind(tokens)
+                except TimeoutError:
+                    if timer.expired():
+                        raise _ToolDeadline from None
+                    raise
 
             # The coroutine is created in the worker, so a call cancelled while queued leaves no
             # never-awaited coroutine behind.
-            future = _TOOL_POOL.submit(lambda: asyncio.run(run()))
-            try:
-                return future.result(timeout=max(0.0, deadline - time.monotonic()) + _TOOL_GRACE_SEC)
-            except TimeoutError:  # concurrent.futures.TimeoutError is TimeoutError on 3.11+; the in-thread
-                # asyncio.timeout surfaces here too, re-raised by future.result()
+            future = _TOOL_POOL.submit(worker_ctx.run, lambda: asyncio.run(run()))
+            done, _ = concurrent.futures.wait([future], timeout=max(0.0, deadline - time.monotonic()) + _TOOL_GRACE_SEC)
+            ok, out, summary = False, "", ""
+            if not done or isinstance(future.exception(), _ToolDeadline):
                 started = not future.cancel()  # cancel() only succeeds if it never left the pool queue
-                msg = json.dumps(
+                out = summary = json.dumps(
                     {
                         "error": True,
                         "timeout": True,
                         "tool": name,
                         "detail": (
-                            f"tool timed out after {budget:.0f}s; "
-                            + ("its outcome is unknown, re-read the books before retrying" if started else "it never ran")
+                            f"tool timed out after {budget:g}s; " + ("its outcome is unknown, re-read the books before retrying" if started else "it never ran")
                         ),
                     }
                 )
-                log.error("tool_timeout", agent=self.name, tool=name, day=turn.day, timeout_sec=budget, started=started)
-                if emitter and tool_use_id:
-                    emitter.tool_result(tool_use_id, False, msg)
-                return msg
+                log.error("tool_timeout", agent=self.name, tool=name, day=turn.day, timeout_sec=budget, started=started, tool_use_id=inv.tool_use_id)
+                inv.close()  # a result the tool records later is discarded: one tool_result per call
+            elif future.exception() is not None:
+                e = future.exception()
+                log.error("tool_failed", agent=self.name, tool=name, day=turn.day, error=f"{type(e).__name__}: {e}", tool_use_id=inv.tool_use_id)
+                out = summary = error_summary(name, e)  # type: ignore[arg-type]
+                inv.close()
+            else:
+                out = future.result()
+                recorded = inv.close()
+                ok, summary = recorded if recorded is not None else (True, out[:300] if isinstance(out, str) else str(out)[:300])
+            if proxy:
+                proxy.drain()
+            if emitter:
+                emitter.tool_result(inv.tool_use_id, ok, summary)
+            if reg is not None:
+                reg.finished(inv.tool_use_id, ok)
+            return out
 
         return sync_tool
 
@@ -220,10 +453,12 @@ class DroidAgent(ABC):
             TextDelta,
             ThinkingDelta,
             ToolCall,
+            ToolCallDelta,
             ToolResult,
         )
 
-        server = self._mcp_server()
+        registry = self._new_registry(emitter)
+        server = self._mcp_server(registry)
         config = SessionConfig(
             autonomy=self._autonomy(),
             disable_builtin_skills=True,
@@ -237,25 +472,36 @@ class DroidAgent(ABC):
         prompt = await self.build_prompt(req)
         from droid_sdk import ReasoningEffort
 
-        async with Session(
-            model=self.s.droid_model,
-            reasoning_effort=ReasoningEffort(self.s.droid_reasoning) if self.s.droid_reasoning else None,
-            config=config,
-            interactions=InteractionHandlers(on_permission=self.on_permission),
-            api_key=self.s.factory_api_key,
-        ) as session:
-            if self._tool_ids is None:
-                await self._learn_tool_ids(session)
-            async with session.stream(prompt, include_partial_messages=True, timeout=self.s.turn_timeout_sec - 10) as stream:
-                async for ev in stream:
-                    if isinstance(ev, (ThinkingDelta, TextDelta)):
-                        emitter.thinking(ev.text)
-                    elif isinstance(ev, ToolCall):
-                        # tools wrapped by ledger_tool already emit; this catches any native tool
-                        pass
-                    elif isinstance(ev, ToolResult):
-                        pass
-            result = stream.result
+        # Bound before the Session opens: the SDK's reader and MCP server tasks are created inside it and
+        # copy this context, so the permission handler and the tool handler see this turn's registry.
+        with bind_registry(registry):
+            try:
+                async with Session(
+                    model=self.s.droid_model,
+                    reasoning_effort=ReasoningEffort(self.s.droid_reasoning) if self.s.droid_reasoning else None,
+                    config=config,
+                    interactions=InteractionHandlers(on_permission=functools.partial(self._permission_entry, registry)),
+                    api_key=self.s.factory_api_key,
+                ) as session:
+                    if self._tool_ids is None:
+                        await self._learn_tool_ids(session)
+                    async with session.stream(prompt, include_partial_messages=True, timeout=self.s.turn_timeout_sec - 10) as stream:
+                        async for ev in stream:
+                            if isinstance(ev, (ThinkingDelta, TextDelta)):
+                                emitter.thinking(ev.text)
+                            elif isinstance(ev, ToolCallDelta):  # "completed tool-call input": the earliest sighting
+                                tu = ev.tool_use
+                                registry.observe(tu.id, tu.name, tu.input, SOURCE_STREAM)
+                            elif isinstance(ev, ToolCall):
+                                # narration comes from _offload (or the registry, for calls that never
+                                # run); here we only learn the SDK's id for the call
+                                if registry.observe(ev.tool_use_id, ev.name, ev.input, SOURCE_STREAM) is None:
+                                    log.info("tool_call_not_ours", agent=self.name, tool=ev.name, tool_use_id=ev.tool_use_id)
+                            elif isinstance(ev, ToolResult):
+                                registry.resolved(ev.tool_use_id, ev.is_error, ev.content)
+                    result = stream.result
+            finally:
+                registry.close()  # every registered call that never ran gets its event pair
             usage = None
             if result.usage:
                 usage = Usage(

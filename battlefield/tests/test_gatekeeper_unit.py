@@ -106,3 +106,18 @@ async def test_enforce_escalate_waits_for_human(monkeypatch: pytest.MonkeyPatch,
         with pytest.raises(gate.GateBlockedError) as ei:
             await _apply("escalate", "enforce")
         assert decision in ei.value.reason
+
+
+def test_same_action_compares_action_entity_and_amount() -> None:
+    from decimal import Decimal
+
+    row = {"action": "invoices.pay", "entity_type": "invoice", "entity_id": "inv_1", "amount": Decimal("100.00"), "args": {}}
+    assert gate.same_action(row, "invoices.pay", "invoice", "inv_1", 100.0, {})
+    assert gate.same_action(row, "invoices.pay", "invoice", "inv_1", 100.004, {})  # sub-cent float noise
+    assert not gate.same_action(row, "invoices.approve", "invoice", "inv_1", 100.0, {})
+    assert not gate.same_action(row, "invoices.pay", "invoice", "inv_2", 100.0, {})
+    assert not gate.same_action(row, "invoices.pay", "invoice", "inv_1", 101.0, {})
+    assert not gate.same_action(row, "invoices.pay", "invoice", "inv_1", None, {})
+    gl = {"action": "gl.post", "entity_type": "gl_entry", "entity_id": "gl_a", "amount": Decimal("5"), "args": {"account": "6100", "debit": 5.0}}
+    assert gate.same_action(gl, "gl.post", "gl_entry", "gl_b", 5.0, {"account": "6100", "debit": 5.0})  # each attempt mints a new id
+    assert not gate.same_action(gl, "gl.post", "gl_entry", "gl_b", 5.0, {"account": "7000", "debit": 5.0})

@@ -92,6 +92,13 @@ Rules:
 - `/gate` must answer within `GATE_TIMEOUT_SEC` (default 8). On timeout battlefield uses
   `allow` in `shadow` and `escalate` in `enforce`.
 - `/gate` is idempotent on `idempotency_key` for 120 s (same key → same verdict, no re-evaluation).
+- A key is bound to the action it was first judged for: (action, entity_type, entity_id, amount);
+  for `gl.post`, the posted fields. Battlefield answers the same key on a *different* action with
+  `409 {"error": "idempotency key reused for a different action", "verdict_id": …}`, audited, and
+  never replays the earlier verdict. Agents derive keys from the Droid `tool_use_id`: the first
+  ledger write of a tool call uses it as-is, the n-th uses `<tool_use_id>:<n>`
+  (`agentkit.LedgerClient` does this). Green's mirror call to blue `/gate` uses the same
+  `tool_use_id` as that call's first ledger write.
 - `context` is assembled by battlefield so blue does not need to make ledger reads inside the gate;
   blue may still read via `LedgerClient` if it wants more.
 - `/audit` may read anything (including `/api/audit_log`) and may `POST /api/flags`,
