@@ -89,3 +89,51 @@ async def test_dead_battlefield_cannot_hang_the_turn(monkeypatch):
     dropped = sum(kw.get("dropped", 0) for ev, kw in logs if ev == "event_emit_error")
     dropped += sum(kw.get("count", 0) for ev, kw in logs if ev == "events_dropped")
     assert dropped == 130  # every lost event is accounted for in the logs
+
+
+def _dropped_total(logs) -> int:
+    n = sum(kw.get("dropped", 0) for ev, kw in logs if ev == "event_emit_error")
+    return n + sum(kw.get("count", 0) for ev, kw in logs if ev == "events_dropped")
+
+
+@respx.mock
+async def test_flush_budget_covers_waiting_for_a_pump_stuck_mid_post(monkeypatch):
+    # Regression: flush() waited out the pump's in-flight POST (full HTTP_TIMEOUT_SEC) before its budget applied.
+    async def never(request):
+        await asyncio.sleep(3600)
+
+    respx.post("http://bf/api/events").mock(side_effect=never)
+    logs = []
+    monkeypatch.setattr("agentkit.events.log.warning", lambda ev, **kw: logs.append((ev, kw)))
+    s = AgentSettings(AGENT_NAME="red", BATTLEFIELD_URL="http://bf", AGENT_TOKEN="a", HTTP_TIMEOUT_SEC=3)
+    async with EventEmitter(s, episode_id="ep_1", day=2, flush_every=0.05, flush_budget_sec=0.3) as em:
+        em.tool_result("a", True, "x")
+        await asyncio.sleep(0.1)  # the pump has dequeued it and is hanging on the POST
+        for i in range(10):
+            em.tool_result(f"b{i}", True, "x")
+        t_exit = time.monotonic()
+    assert time.monotonic() - t_exit < 0.8  # budget, not the 3 s HTTP timeout
+    assert _dropped_total(logs) == 11  # the in-flight batch (cancelled) plus the 10 still queued
+    assert any(kw.get("reason") == "cancelled_mid_post" and kw["count"] == 1 for ev, kw in logs if ev == "events_dropped")
+
+
+@respx.mock
+async def test_pump_cancelled_mid_post_logs_its_batch(monkeypatch):
+    async def slowish(request):
+        await asyncio.sleep(1)
+        return httpx.Response(202, json={})
+
+    respx.post("http://bf/api/events").mock(side_effect=slowish)
+    logs = []
+    monkeypatch.setattr("agentkit.events.log.warning", lambda ev, **kw: logs.append((ev, kw)))
+    em = EventEmitter(S, episode_id="ep_1", day=2, flush_every=0.01, flush_budget_sec=5)
+    await em.__aenter__()
+    em.tool_result("straggler", True, "x")
+    await asyncio.sleep(0.05)  # pump is mid-POST
+    em._task.cancel()
+    try:
+        await em._task
+    except asyncio.CancelledError:
+        pass
+    await em._client.aclose()
+    assert [(ev, kw["count"], kw["reason"]) for ev, kw in logs] == [("events_dropped", 1, "cancelled_mid_post")]

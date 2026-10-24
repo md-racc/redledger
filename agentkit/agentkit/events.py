@@ -64,13 +64,15 @@ class EventEmitter:
             await self.flush()
         finally:
             if self._task:
-                # flush() already sent (or dropped) everything queued, so the pump is idle here; only
-                # stragglers posted after the flush (late call_soon_threadsafe narration) can be lost.
+                # Normally idle by now. If flush() gave up waiting for the lock, the pump is still
+                # mid-POST to a hung battlefield; cancelling it logs that batch as dropped.
                 self._task.cancel()
                 try:
                     await self._task
                 except asyncio.CancelledError:
                     pass
+            # stragglers posted after the flush (late call_soon_threadsafe narration) are counted too
+            self._drop_queued("emitter_closed")
             if self._client:
                 await self._client.aclose()
 
@@ -104,13 +106,23 @@ class EventEmitter:
         if self._client is None:  # not entered yet: nothing to send with, keep the queue
             return
         deadline = time.monotonic() + self._flush_budget
-        async with self._send_lock:
+        try:
+            # The pump may hold the lock mid-POST to a hung battlefield; that wait counts against the
+            # budget too. (A cancelled Lock.acquire never leaves the lock held.)
+            async with asyncio.timeout(self._flush_budget):
+                await self._send_lock.acquire()
+        except TimeoutError:
+            self._drop_queued("flush_budget_exhausted")
+            return
+        try:
             while not self._q.empty():
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     self._drop_queued("flush_budget_exhausted")
                     return
                 await self._send_batch(timeout=remaining)
+        finally:
+            self._send_lock.release()
 
     # ---------- internals ----------
     def _flush_thinking(self) -> None:
@@ -154,5 +166,8 @@ class EventEmitter:
                 r = await self._client.post("/events", json=batch, headers={"X-Tool-Use-Id": uuid.uuid4().hex})
             if r.status_code >= 400:
                 log.warning("event_emit_failed", status=r.status_code, body=r.text[:200], dropped=len(batch))
+        except asyncio.CancelledError:  # pump cancelled at __aexit__ (or the caller was cancelled) mid-POST
+            log.warning("events_dropped", count=len(batch), reason="cancelled_mid_post", agent=self.s.agent_name, episode_id=self.episode_id, day=self.day)
+            raise
         except Exception as e:  # never fail a turn over narration
             log.warning("event_emit_error", error=str(e), dropped=len(batch))
