@@ -28,12 +28,18 @@ async def record(
     )
 
 
-async def mutation(c: Caller, action: str, entity_type: str, entity_id: str, amount: float | None = None, verdict_id: str | None = None) -> None:
+async def mutation(
+    c: Caller,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    amount: float | None = None,
+    verdict_id: str | None = None,
+    *,
+    preparation_id: str | None = None,
+) -> None:
     assert c.is_agent and c.episode_id is not None and c.day is not None
-    await bus.emit(
-        c.episode_id,
-        c.day,
-        "ledger.mutation",
-        {"agent": c.agent, "action": action, "entity_type": entity_type, "entity_id": entity_id, "amount": amount, "verdict_id": verdict_id},
-        agent=c.agent,
-    )
+    payload = {"agent": c.agent, "action": action, "entity_type": entity_type, "entity_id": entity_id, "amount": amount, "verdict_id": verdict_id}
+    if preparation_id is not None:  # the execution consumed a preparation (contracts/events.md)
+        payload["preparation_id"] = preparation_id
+    await bus.emit(c.episode_id, c.day, "ledger.mutation", payload, agent=c.agent)
