@@ -1,0 +1,1 @@
+- 2026-10-24T08:39Z · Ad · battlefield: evolution report + lineage timeline (/api/fe/lineages/{id}/report|timeline, make evolution-report, make lineage-export, golden fixtures for R in battlefield/fixtures/lineages/); evolve takes REVEAL_GENERATIONS and no longer writes /tmp; next: verifier, then wire after E4a export lands; blocked: none

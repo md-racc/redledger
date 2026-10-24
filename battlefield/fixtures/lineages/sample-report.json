@@ -1,0 +1,497 @@
+{
+  "blue": {
+    "learned_rules": [
+      {
+        "first_generation": 2,
+        "rule_id": "learned:ghost_vendor"
+      }
+    ],
+    "new_rules": [
+      {
+        "first_generation": 2,
+        "rule_id": "learned:ghost_vendor"
+      },
+      {
+        "first_generation": 2,
+        "rule_id": "vendor_age_lt_7d"
+      }
+    ],
+    "retired_rules": [
+      {
+        "last_generation": 1,
+        "rule_id": "duplicate_amount_match"
+      },
+      {
+        "last_generation": 1,
+        "rule_id": "near_threshold"
+      }
+    ]
+  },
+  "generations": [
+    {
+      "blue_rules": [
+        {
+          "attacks_hit": 1,
+          "fired": 2,
+          "on_legit": 1,
+          "on_red": 1,
+          "precision": 0.5,
+          "recall": 0.5,
+          "rule_id": "near_threshold"
+        },
+        {
+          "attacks_hit": 1,
+          "fired": 1,
+          "on_legit": 0,
+          "on_red": 1,
+          "precision": 1.0,
+          "recall": 0.5,
+          "rule_id": "duplicate_amount_match"
+        }
+      ],
+      "credits": 2.0,
+      "days": 3,
+      "demo": false,
+      "disclosures": {
+        "blue": {
+          "aar": 1,
+          "daily": 2,
+          "items": 6
+        },
+        "green": {
+          "aar": 1,
+          "daily": 2,
+          "items": 5
+        },
+        "red": {
+          "aar": 1,
+          "daily": 2,
+          "items": 5
+        }
+      },
+      "episode_id": "ep_rpt_g1",
+      "generation": 1,
+      "green": {
+        "actions": 1,
+        "fraud_paid": 3000.0,
+        "legit_blocked": 1,
+        "legit_processed": 0
+      },
+      "red_mix": {
+        "duplicate_invoice": {
+          "amount_extracted": 0.0,
+          "launched": 1,
+          "outcomes": {
+            "blocked": 1
+          },
+          "target_amount": 2000.0
+        },
+        "ghost_vendor": {
+          "amount_extracted": 3000.0,
+          "launched": 1,
+          "outcomes": {
+            "extracted": 1
+          },
+          "target_amount": 3000.0
+        }
+      },
+      "score": {
+        "attacks_caught": 1,
+        "attacks_launched": 2,
+        "detection_latency_days": 0.0,
+        "dollars_blocked": 2000.0,
+        "dollars_extracted": 3000.0,
+        "false_positive_cost": 70.0,
+        "legit_blocked": 1,
+        "legit_processed": 0
+      },
+      "seed": 43,
+      "status": "finished",
+      "who_beat_whom": {
+        "duplicate_invoice": {
+          "attacks": 1,
+          "caught": 1,
+          "missed": 0,
+          "rules": {
+            "duplicate_amount_match": 1,
+            "near_threshold": 1
+          }
+        },
+        "ghost_vendor": {
+          "attacks": 1,
+          "caught": 0,
+          "missed": 1,
+          "rules": {}
+        }
+      }
+    },
+    {
+      "blue_rules": [
+        {
+          "attacks_hit": 1,
+          "fired": 1,
+          "on_legit": 0,
+          "on_red": 1,
+          "precision": 1.0,
+          "recall": 0.5,
+          "rule_id": "learned:ghost_vendor"
+        },
+        {
+          "attacks_hit": 1,
+          "fired": 1,
+          "on_legit": 0,
+          "on_red": 1,
+          "precision": 1.0,
+          "recall": 0.5,
+          "rule_id": "vendor_age_lt_7d"
+        }
+      ],
+      "credits": 3.0,
+      "days": 3,
+      "demo": false,
+      "disclosures": {
+        "blue": {
+          "aar": 1,
+          "daily": 2,
+          "items": 6
+        },
+        "green": {
+          "aar": 1,
+          "daily": 2,
+          "items": 5
+        },
+        "red": {
+          "aar": 1,
+          "daily": 2,
+          "items": 5
+        }
+      },
+      "episode_id": "ep_rpt_g2",
+      "generation": 2,
+      "green": {
+        "actions": 1,
+        "fraud_paid": 4000.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "red_mix": {
+        "evolved:split_v2": {
+          "amount_extracted": 4000.0,
+          "launched": 1,
+          "outcomes": {
+            "extracted": 1
+          },
+          "target_amount": 4000.0
+        },
+        "ghost_vendor": {
+          "amount_extracted": 0.0,
+          "launched": 1,
+          "outcomes": {
+            "blocked": 1
+          },
+          "target_amount": 3000.0
+        }
+      },
+      "score": {
+        "attacks_caught": 1,
+        "attacks_launched": 2,
+        "detection_latency_days": 0.0,
+        "dollars_blocked": 3000.0,
+        "dollars_extracted": 4000.0,
+        "false_positive_cost": 0.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "seed": 44,
+      "status": "finished",
+      "who_beat_whom": {
+        "evolved:split_v2": {
+          "attacks": 1,
+          "caught": 0,
+          "missed": 1,
+          "rules": {}
+        },
+        "ghost_vendor": {
+          "attacks": 1,
+          "caught": 1,
+          "missed": 0,
+          "rules": {
+            "learned:ghost_vendor": 1,
+            "vendor_age_lt_7d": 1
+          }
+        }
+      }
+    },
+    {
+      "blue_rules": [],
+      "credits": 0.0,
+      "days": 3,
+      "demo": true,
+      "disclosures": {
+        "blue": {
+          "aar": 0,
+          "daily": 0,
+          "items": 0
+        },
+        "green": {
+          "aar": 0,
+          "daily": 0,
+          "items": 0
+        },
+        "red": {
+          "aar": 0,
+          "daily": 1,
+          "items": 1
+        }
+      },
+      "episode_id": "ep_rpt_g3",
+      "generation": 3,
+      "green": {
+        "actions": 0,
+        "fraud_paid": 0.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "red_mix": {},
+      "score": {
+        "attacks_caught": 0,
+        "attacks_launched": 0,
+        "detection_latency_days": null,
+        "dollars_blocked": 0.0,
+        "dollars_extracted": 0.0,
+        "false_positive_cost": 0.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "seed": 50,
+      "status": "finished",
+      "who_beat_whom": {}
+    }
+  ],
+  "lineage": {
+    "base_seed": 42,
+    "config": {
+      "controller_mode": "enforce",
+      "days": 3,
+      "generations": 2,
+      "headless": {
+        "day_pause_sec": 0.0,
+        "escalation_policy": "block",
+        "escalation_timeout_sec": 5
+      },
+      "max_credits": 0.0,
+      "reveal_days": 3,
+      "reveal_generations": 2
+    },
+    "current_generation": 3,
+    "id": "ln_rpt_sample",
+    "name": "sample",
+    "status": "finished"
+  },
+  "partial": false,
+  "playbooks": {
+    "blue": [
+      {
+        "content": {},
+        "day": null,
+        "diff": {
+          "added": {},
+          "changed": {},
+          "removed": {}
+        },
+        "episode_id": null,
+        "generation": 0,
+        "parent_version": null,
+        "rationale": "",
+        "source": "seed",
+        "version": 0
+      },
+      {
+        "content": {
+          "learned": [
+            "ghost_vendor"
+          ],
+          "near_band": 0.95
+        },
+        "day": null,
+        "diff": {
+          "added": {
+            "learned": [
+              "ghost_vendor"
+            ],
+            "near_band": 0.95
+          },
+          "changed": {},
+          "removed": {}
+        },
+        "episode_id": null,
+        "generation": 1,
+        "parent_version": 0,
+        "rationale": "ghost_vendor got past me",
+        "source": "reflect",
+        "version": 1
+      }
+    ],
+    "green": [
+      {
+        "content": {},
+        "day": null,
+        "diff": {
+          "added": {},
+          "changed": {},
+          "removed": {}
+        },
+        "episode_id": null,
+        "generation": 0,
+        "parent_version": null,
+        "rationale": "",
+        "source": "seed",
+        "version": 0
+      }
+    ],
+    "red": [
+      {
+        "content": {},
+        "day": null,
+        "diff": {
+          "added": {},
+          "changed": {},
+          "removed": {}
+        },
+        "episode_id": null,
+        "generation": 0,
+        "parent_version": null,
+        "rationale": "",
+        "source": "seed",
+        "version": 0
+      },
+      {
+        "content": {
+          "avoid": []
+        },
+        "day": 1,
+        "diff": {
+          "added": {
+            "avoid": []
+          },
+          "changed": {},
+          "removed": {}
+        },
+        "episode_id": "ep_rpt_g1",
+        "generation": 1,
+        "parent_version": 0,
+        "rationale": "watching",
+        "source": "turn",
+        "version": 1
+      },
+      {
+        "content": {
+          "avoid": [
+            "duplicate_invoice"
+          ],
+          "favour": {
+            "ghost_vendor": 2
+          }
+        },
+        "day": null,
+        "diff": {
+          "added": {
+            "favour": {
+              "ghost_vendor": 2
+            }
+          },
+          "changed": {
+            "avoid": {
+              "from": [],
+              "to": [
+                "duplicate_invoice"
+              ]
+            }
+          },
+          "removed": {}
+        },
+        "episode_id": null,
+        "generation": 1,
+        "parent_version": 1,
+        "rationale": "duplicate_invoice blocked",
+        "source": "reflect",
+        "version": 2
+      },
+      {
+        "content": {
+          "avoid": [
+            "duplicate_invoice",
+            "ghost_vendor"
+          ],
+          "favour": {
+            "evolved:split_v2": 1
+          }
+        },
+        "day": null,
+        "diff": {
+          "added": {
+            "favour.evolved:split_v2": 1
+          },
+          "changed": {
+            "avoid": {
+              "from": [
+                "duplicate_invoice"
+              ],
+              "to": [
+                "duplicate_invoice",
+                "ghost_vendor"
+              ]
+            }
+          },
+          "removed": {
+            "favour.ghost_vendor": 2
+          }
+        },
+        "episode_id": null,
+        "generation": 2,
+        "parent_version": 2,
+        "rationale": "ghost_vendor caught",
+        "source": "reflect",
+        "version": 3
+      }
+    ]
+  },
+  "red": {
+    "evolved_schemes": [
+      {
+        "first_generation": 2,
+        "parent": "threshold_split",
+        "scheme_id": "evolved:split_v2"
+      }
+    ]
+  },
+  "run_card": {
+    "controller_mode": "enforce",
+    "credits": [
+      {
+        "factory_credits": 2.0,
+        "generation": 1
+      },
+      {
+        "factory_credits": 3.0,
+        "generation": 2
+      },
+      {
+        "factory_credits": 0.0,
+        "generation": 3
+      }
+    ],
+    "days": 3,
+    "demo_generations": [
+      3
+    ],
+    "generations": 2,
+    "git_sha": null,
+    "models": null,
+    "seeds": [
+      43,
+      44,
+      50
+    ]
+  }
+}

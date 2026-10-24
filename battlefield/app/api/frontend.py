@@ -13,6 +13,7 @@ Endpoint families:
   verdicts      — filterable list, rule frequency, confusion matrix (verdict × origin)
   agents        — activity stats per agent per day, credits burned
   compare       — two episodes (same seed, different controller mode) side by side
+  lineages      — evolution report and playbook timeline of a lineage (app/evolution/report.py)
   feed          — events pre-digested into UI cards
   search        — free-text across vendors / invoices / employees / reasons
 
@@ -30,6 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from .. import db
 from ..auth import bearer
+from ..evolution import report as evo_report
 from ..scoring import score
 from .control import is_replay, replay_score
 
@@ -615,3 +617,25 @@ async def escalations(episode_id: str):
         episode_id,
     )
     return db.rows_to_list(rows)
+
+
+# ---------------- lineages (docs/EVOLUTION-DESIGN.md §7) ----------------
+
+
+@router.get("/lineages/{lineage_id}/timeline")
+async def lineage_timeline(lineage_id: str):
+    """Playbook versions (with structural diffs vs. their parent), generation scores and debrief counts,
+    in logical time order. Partial while the lineage runs."""
+    out = await evo_report.timeline(lineage_id)
+    if out is None:
+        raise HTTPException(404, "lineage not found")
+    return out
+
+
+@router.get("/lineages/{lineage_id}/report")
+async def lineage_report(lineage_id: str):
+    """The evolution report (`make evolution-report` writes this same document to report.json)."""
+    out = await evo_report.report(lineage_id)
+    if out is None:
+        raise HTTPException(404, "lineage not found")
+    return out
