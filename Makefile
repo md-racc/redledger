@@ -88,9 +88,9 @@ lineage-pause: ## pause $(LN) (its running generation pauses too)
 lineage-resume: ## resume $(LN) at the same generation
 	curl -s $(AUTH) -X POST $(API)/api/lineages/$(LN)/resume; echo
 evolution-report: ## runs/$(LN)/report.json + report.md (secret-scanned; partial while $(LN) runs)
-	API='$(API)' TOKEN='$(TOKEN)' python3 battlefield/scripts/evolution_report.py report '$(LN)'
+	@API='$(API)' TOKEN='$(TOKEN)' python3 battlefield/scripts/evolution_report.py report '$(LN)'
 lineage-export: ## log bundle runs/$(LN)/{lineage.json,playbooks/,gen-<g>/...} (contains origin: never commit)
-	API='$(API)' TOKEN='$(TOKEN)' python3 battlefield/scripts/evolution_report.py export '$(LN)'
+	@API='$(API)' TOKEN='$(TOKEN)' python3 battlefield/scripts/evolution_report.py export '$(LN)'
 
 # ---------- prod operator (runs ON the VM over ssh; OPERATOR_TOKEN never leaves the VM) ----------
 # Thin wrappers over deploy/prod.sh; guide: deploy/PROD-OPS.md. Host/key/timeouts: PROD_* env vars

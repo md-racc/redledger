@@ -35,11 +35,6 @@ CONFIG = {
 }
 
 
-@pytest.fixture(autouse=True)
-def _no_git_sha(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("GIT_SHA", raising=False)  # the golden run card has git_sha null
-
-
 def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://bf")
 
@@ -177,6 +172,8 @@ async def build(status: str = "finished") -> None:
         "payments", id="pay_rpt_p2", episode_id=e2, invoice_id=j2, amount=4000, to_account="ACCT-R2", paid_day=1, paid_by="green", origin_of_source="red"
     )
     await _verdict(e2, "ver_rpt_w1", j1, "block", ["learned:ghost_vendor", "vendor_age_lt_7d"], day=0)
+    # a verdict on generation 2's vendor before the attack launched (day 1) counts for b1 (day 0) only
+    await _verdict(e2, "ver_rpt_w0", rv2, "allow", ["pre_launch_rule"], day=0)
 
     # credits, green actions, disclosures
     for ep, red, blue in ((e1, 1.5, 0.5), (e2, 2.0, 1.0)):
@@ -241,7 +238,9 @@ async def test_report_matches_golden_and_is_deterministic() -> None:
         assert (near["fired"], near["on_red"], near["on_legit"], near["precision"], near["attacks_hit"], near["recall"]) == (2, 1, 1, 0.5, 1, 0.5)
         assert g1["who_beat_whom"]["ghost_vendor"] == {"attacks": 1, "caught": 0, "missed": 1, "rules": {}}
         assert g1["who_beat_whom"]["duplicate_invoice"]["rules"] == {"duplicate_amount_match": 1, "near_threshold": 1}
-        assert g2["who_beat_whom"]["ghost_vendor"] == {"attacks": 1, "caught": 1, "missed": 0, "rules": {"learned:ghost_vendor": 1, "vendor_age_lt_7d": 1}}
+        assert g2["who_beat_whom"]["ghost_vendor"]["rules"] == {"learned:ghost_vendor": 1, "pre_launch_rule": 1, "vendor_age_lt_7d": 1}
+        assert g2["who_beat_whom"]["evolved:split_v2"]["rules"] == {}  # the vendor's day-0 verdict predates this day-1 attack
+        assert list(g2["who_beat_whom"]["ghost_vendor"]["rules"]) == sorted(g2["who_beat_whom"]["ghost_vendor"]["rules"])
         assert g1["green"] == {"actions": 1, "legit_processed": 0, "legit_blocked": 1, "fraud_paid": 3000.0}
         assert g1["disclosures"]["blue"] == {"daily": 2, "aar": 1, "items": 6}
         assert rep["red"]["evolved_schemes"] == [{"scheme_id": "evolved:split_v2", "first_generation": 2, "parent": "threshold_split"}]

@@ -7,7 +7,8 @@ precision, which is fine here and nowhere an agent can read. Partial while the l
 
 Definitions the report relies on:
   - an attack's entities: its invoices and expenses, their vendors, its vendor changes and theirs;
-  - a rule "fired on" an attack when any verdict on one of those entities lists it (any verdict);
+  - a rule "fired on" an attack when a verdict on one of those entities, on or after the attack's
+    `day_launched`, lists it (any verdict; a bank swap's vendor is legit and may be judged earlier);
   - `recall` of a rule = attacks it fired on / attacks launched in that generation;
   - `missed` = attacks whose outcome is `extracted` (money left and nothing stopped it);
   - learned rules = rule ids prefixed `learned:`; new / retired = ids first / last seen in a
@@ -16,19 +17,19 @@ Definitions the report relies on:
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from agentkit.models import LineageConfig
 
 from .. import db
+from ..orchestrator import runner
 from ..scoring import score
 from . import review
 
 AGENTS = ("red", "green", "blue")
 
 _ENTITIES_SQL = """
-SELECT a.id, a.scheme_id, a.outcome, e.eid
+SELECT a.id, a.scheme_id, a.outcome, a.day_launched, e.eid
 FROM attacks a
 LEFT JOIN LATERAL (
   SELECT id AS eid FROM invoices WHERE attack_id = a.id
@@ -74,13 +75,8 @@ async def _episodes(lineage_id: str) -> list[Any]:
 
 
 async def _credits(episode_id: str) -> float:
-    return _num(
-        await db.fetchval(
-            "SELECT COALESCE(SUM((payload->>'factory_credits')::float8), 0) FROM events "
-            "WHERE episode_id=$1 AND type='turn.ended' AND jsonb_typeof(payload->'factory_credits')='number'",
-            episode_id,
-        )
-    )
+    rows = await db.fetch("SELECT payload->'factory_credits' AS c FROM events WHERE episode_id=$1 AND type='turn.ended'", episode_id)
+    return _num(sum(runner.credits_of(r["c"]) for r in rows))  # same per-turn rule as the runner's credit guard
 
 
 async def _red_mix(episode_id: str) -> dict[str, Any]:
@@ -100,15 +96,17 @@ async def _red_mix(episode_id: str) -> dict[str, Any]:
 
 
 async def _attack_rules(episode_id: str) -> list[dict[str, Any]]:
-    """Per attack: scheme, outcome and the set of rule ids that fired on any of its entities."""
-    fired: dict[str, set[str]] = {}
-    for v in await db.fetch("SELECT entity_id, rules_fired FROM verdicts WHERE episode_id=$1 AND entity_id IS NOT NULL", episode_id):
-        fired.setdefault(v["entity_id"], set()).update(str(x) for x in (v["rules_fired"] or []))
+    """Per attack: scheme, outcome and the set of rule ids that fired on any of its entities on or after
+    the day it launched (a bank swap's vendor is legit and may have been judged before the attack)."""
+    fired: dict[str, list[tuple[int, list[str]]]] = {}
+    for v in await db.fetch("SELECT entity_id, day, rules_fired FROM verdicts WHERE episode_id=$1 AND entity_id IS NOT NULL", episode_id):
+        fired.setdefault(v["entity_id"], []).append((v["day"], [str(x) for x in (v["rules_fired"] or [])]))
     attacks: dict[str, dict[str, Any]] = {}
     for r in await db.fetch(_ENTITIES_SQL, episode_id):
         a = attacks.setdefault(r["id"], {"scheme_id": r["scheme_id"], "outcome": r["outcome"], "rules": set()})
-        if r["eid"] is not None:
-            a["rules"] |= fired.get(r["eid"], set())
+        for day, rules in fired.get(r["eid"], []) if r["eid"] is not None else []:
+            if day >= r["day_launched"]:
+                a["rules"].update(rules)
     return [attacks[k] for k in sorted(attacks)]
 
 
@@ -121,6 +119,8 @@ def _matrix(attacks: list[dict[str, Any]]) -> dict[str, Any]:
         m["missed"] += a["outcome"] == "extracted"
         for rule in sorted(a["rules"]):
             m["rules"][rule] = m["rules"].get(rule, 0) + 1
+    for m in out.values():
+        m["rules"] = {k: m["rules"][k] for k in sorted(m["rules"])}
     return {k: out[k] for k in sorted(out)}
 
 
@@ -256,7 +256,7 @@ async def report(lineage_id: str) -> dict[str, Any] | None:
             "days": cfg.days,
             "controller_mode": cfg.controller_mode,
             "models": None,  # agent models live in the agent containers; battlefield doesn't know them
-            "git_sha": os.environ.get("GIT_SHA") or None,  # read only if the deploy sets it; no new variable
+            "git_sha": None,  # not plumbed into battlefield yet (would be a new env var)
             "credits": [{"generation": g["generation"], "factory_credits": g["credits"]} for g in gens],
         },
         "generations": gens,

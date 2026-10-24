@@ -13,6 +13,10 @@
       },
       {
         "first_generation": 2,
+        "rule_id": "pre_launch_rule"
+      },
+      {
+        "first_generation": 2,
         "rule_id": "vendor_age_lt_7d"
       }
     ],
@@ -143,6 +147,15 @@
           "on_red": 1,
           "precision": 1.0,
           "recall": 0.5,
+          "rule_id": "pre_launch_rule"
+        },
+        {
+          "attacks_hit": 1,
+          "fired": 1,
+          "on_legit": 0,
+          "on_red": 1,
+          "precision": 1.0,
+          "recall": 0.5,
           "rule_id": "vendor_age_lt_7d"
         }
       ],
@@ -217,6 +230,7 @@
           "missed": 0,
           "rules": {
             "learned:ghost_vendor": 1,
+            "pre_launch_rule": 1,
             "vendor_age_lt_7d": 1
           }
         }
