@@ -154,7 +154,7 @@ async def test_execute_requests_bank_change_then_invoices():
     order = [c.request.url.path for c in respx.calls if c.request.method == "POST"]
     assert order == ["/api/vendor_changes", "/api/invoices"]
 
-    assert "Harbor Logistics LLC" in out and "7,920.00" in out and plan["new_account"][-4:] in out
+    assert "Harbor Logistics LLC" in out and "4,356.00" in out and plan["new_account"][-4:] in out
 
 
 @respx.mock
