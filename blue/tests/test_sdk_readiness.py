@@ -13,7 +13,7 @@ from pydantic import ConfigDict, create_model
 from agentkit import ctx, make_agent_app
 from agentkit.sync import TurnLock
 from audit import readiness, tools
-from audit.agent import AuditAgent
+from audit.agent import AUDIT_TOOL_IDS, AuditAgent
 
 from .audit_helpers import turn
 
@@ -33,7 +33,7 @@ def fake_sdk(monkeypatch):
         return SimpleNamespace(name=name, input_schema=arguments.model_json_schema(), handler=handler)
 
     mcp = SimpleNamespace(tool=tool, create_sdk_mcp_server=lambda **kwargs: SimpleNamespace(**kwargs))
-    monkeypatch.setitem(sys.modules, "droid_sdk", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "droid_sdk", SimpleNamespace(Session=forbid))
     monkeypatch.setitem(sys.modules, "droid_sdk.mcp", mcp)
     return mcp
 
@@ -50,13 +50,16 @@ def test_availability_never_unlocks_live_audit(available):
     assert ("sdk_unavailable" in status.reason_codes) is (not available)
 
 
-async def test_actual_shared_registry_construction_with_unit_sdk(fake_sdk):
+async def test_actual_shared_registry_construction_with_unit_sdk(fake_sdk, runtime):
+    _, ledger, emitter = runtime()
     agent = readiness._offline_agent()
     report = await readiness.inspect_registry(agent)
     assert report["status"] == "registered" and report["extra_metadata_rejected"]
     assert {r["name"] for r in report["tools"]} == set(readiness.PARAMETERS)
     assert all(r["schema_matches"] for r in report["tools"])
-    assert not agent._tool_ids  # Local registered names never become session IDs.
+    assert agent._tool_ids == list(AUDIT_TOOL_IDS)  # Pinned literals are not Session verification.
+    assert not ledger.writes and not ledger.read_counts and not emitter.calls
+    assert (await agent.health())["droid_ok"] is False
     assert readiness.live_readiness(sdk_available=True).ready is False
 
 
@@ -172,7 +175,7 @@ async def test_live_guard_ignores_local_registration_and_spoofed_metadata(runtim
     from agentkit import DroidAgent
 
     monkeypatch.setattr(DroidAgent, "_droid_turn", forbid)
-    agent, ledger, _ = runtime(dry_run=False)
+    agent, ledger, emitter = runtime(dry_run=False)
     assert (await readiness.inspect_registry(agent))["status"] == "registered"
     monkeypatch.setattr(agent, "_mcp_server", forbid)
     token = tools.INVOCATION.set("offline-not-authenticated")
@@ -181,7 +184,10 @@ async def test_live_guard_ignores_local_registration_and_spoofed_metadata(runtim
     finally:
         tools.INVOCATION.reset(token)
     assert not result.ok and "Live audit unavailable" in result.summary
-    assert not ledger.writes and agent._tool_ids is None
+    assert not ledger.writes and not emitter.calls
+    assert agent._tool_ids == list(AUDIT_TOOL_IDS)
+    assert (await agent.health())["droid_ok"] is False
+    assert readiness.live_readiness(sdk_available=True).ready is False
 
 
 def test_cli_with_sdk_absent_is_sanitized_and_key_free(monkeypatch, capsys):
