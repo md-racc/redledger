@@ -2,25 +2,21 @@
 
 WARNING: the real Stage B path is NOT executed or authorized in this milestone. It requires
 Ad-coordinated isolated-Ledger fixtures (attested via --isolated-ledger URL) and an active turn;
-only LedgerClient is agent-facing. The 135-second per-Session budget includes the real escalation
-hold and must never be shortened to make a case pass. The mocked runner below qualifies harness
-behavior only; it is not real-Ledger gate, consumption, or write-count evidence, and it performs
-no SDK, auth, settings, or network access before the CLI gates pass.
+only LedgerClient is agent-facing. Every CLI invocation refuses, even with all attestation gates,
+until a separately reviewed real-Ledger mode lands: a real SDK Session against the mocked runner
+would spend credits without qualifying real-Ledger behavior. The 135-second per-Session budget
+includes the real escalation hold and must never be shortened to make a case pass. The mocked
+runner below qualifies harness behavior only; it is not real-Ledger gate, consumption, or
+write-count evidence, and it performs no SDK, auth, settings, or network access at all.
 """
 
 import argparse
 import asyncio
-import contextlib
 import hashlib
-import io
 import json
 import math
-import os
 import re
-import sys
-import tempfile
 import uuid
-from pathlib import Path
 
 import sdk_acceptance_harness as stage_a
 
@@ -359,6 +355,7 @@ async def run_case(case: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Keyless CLI: in this milestone every invocation refuses before SDK/auth/settings/network."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=CASES, required=True)
     parser.add_argument("--allow-model-call", action="store_true")
@@ -376,27 +373,10 @@ def main(argv: list[str] | None = None) -> int:
             "Refused before SDK/auth/settings/network: explicit model permission, operator approval, "
             "spend-cap attestation and an Ad-coordinated isolated-ledger URL are required."
         )
-    print(
-        "WARNING: the real Stage B path is not executed or authorized in this milestone; it requires Ad's isolated fixtures. "
-        "The 135-second per-Session budget includes the real escalation hold and is never shortened. Usage is post-hoc, not a hard cap: "
-        "externally confirm account cap/overrun approval and track cumulative Session/credit budget; this process cannot enforce either.",
-        file=sys.stderr,
-    )
-    green = Path(__file__).resolve().parents[1]
-    sys.path[:0] = [str(green), str(green / "tests"), str(green.parent / "agentkit")]
-    os.environ.pop("FACTORY_API_KEY", None)  # CLI authentication only; never inspect the value.
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        previous = Path.cwd()
-        try:
-            with tempfile.TemporaryDirectory(prefix="green-stage-b-") as cwd:
-                os.chdir(cwd)
-                output = asyncio.run(run_case(args.case))
-        except Exception:
-            output = {"passed": False, "failure_codes": ["runner_exception"]}
-        finally:
-            os.chdir(previous)
-    print(json.dumps(output, sort_keys=True, allow_nan=False))
-    return 0 if output["passed"] else 2
+    # Even fully attested invocations refuse: the real-Ledger mode awaits Ad's isolated stack and a
+    # separately reviewed PR. Spending a Session against the mocked runner could never qualify Stage B.
+    # Usage is post-hoc, never a hard cap; the operator tracks cumulative Session/credit budget.
+    parser.error("Real-Ledger Stage B mode is not implemented in this milestone; pytest exercises the fake runner only.")
 
 
 if __name__ == "__main__":

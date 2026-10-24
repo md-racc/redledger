@@ -289,7 +289,6 @@ def test_help_is_keyless_and_exits_zero_before_any_sdk_access(monkeypatch):
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded)
-    monkeypatch.setattr(h.os.environ, "pop", lambda *a: pytest.fail("auth touched"))
     monkeypatch.setattr(h, "run_case", lambda *a: pytest.fail("runner touched"))
     with pytest.raises(SystemExit) as exc:
         h.main(["--help"])
@@ -318,7 +317,6 @@ def test_missing_gates_refuse_before_imports_auth_settings_network(monkeypatch, 
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded)
-    monkeypatch.setattr(h.os.environ, "pop", lambda *a: pytest.fail("auth touched"))
     monkeypatch.setattr(h, "run_case", lambda *a: pytest.fail("runner touched"))
     with pytest.raises(SystemExit) as exc:
         h.main(["--case", "off_allow", *flags])
@@ -329,4 +327,30 @@ def test_default_invocation_without_case_refuses_keyless(monkeypatch):
     monkeypatch.setattr(h, "run_case", lambda *a: pytest.fail("runner touched"))
     with pytest.raises(SystemExit) as exc:
         h.main([])
+    assert exc.value.code == 2
+
+
+def test_full_gates_still_refuse_until_real_ledger_mode(monkeypatch):
+    original = builtins.__import__
+
+    def guarded(name, *args, **kwargs):
+        assert name not in ("droid_sdk", "agent", "agentkit", "httpx", "respx")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded)
+    monkeypatch.setattr(h, "run_case", lambda *a: pytest.fail("runner touched"))
+    with pytest.raises(SystemExit) as exc:
+        h.main(
+            [
+                "--case",
+                "off_allow",
+                "--allow-model-call",
+                "--operator-approval",
+                "operator",
+                "--spend-cap-attestation",
+                h.ATTESTATION,
+                "--isolated-ledger",
+                "http://isolated.invalid",
+            ]
+        )
     assert exc.value.code == 2
