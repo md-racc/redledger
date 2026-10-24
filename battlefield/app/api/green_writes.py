@@ -286,7 +286,7 @@ async def _consume(conn: Any, p: _Prepared | None, action: str, entity_id: str |
        pre-checks is stale (a shadow-only verdict must never execute under enforce).
     2. Claim the preparation: concurrent same-key calls queue on its row lock here, and the losers then
        see it consumed (409 preparation_consumed), never the winner's own writes as drift. In enforce
-       the claim also requires `now() < expires_at`, so a lock wait can't outlast the lifetime.
+       the claim also requires `clock_timestamp() < expires_at` (wall clock, so time spent waiting on locks counts).
     3. Recompute the fingerprint under row locks."""
     if p is None:
         return
@@ -296,7 +296,7 @@ async def _consume(conn: Any, p: _Prepared | None, action: str, entity_id: str |
     if mode != p.row["controller_mode"]:
         raise _PrepRefused("preparation_stale", "mode changed")
     claimed = await conn.fetchval(
-        "UPDATE preparations SET consumed_at=now(), consumed_status=$2 WHERE id=$1 AND consumed_at IS NULL AND (NOT $3 OR now() < expires_at) RETURNING id",
+        "UPDATE preparations SET consumed_at=now(), consumed_status=$2 WHERE id=$1 AND consumed_at IS NULL AND (NOT $3 OR clock_timestamp() < expires_at) RETURNING id",
         p.id,
         status,
         mode == "enforce",
