@@ -21,6 +21,8 @@ Subclass contract:
         def tools(self): return collect_tools(red_tools_module)
         async def build_prompt(self, req): return "Day 3. Pick a scheme and execute it."
         async def dry_run_turn(self, req): ...  # call your tool fns directly
+        # optional: async def reflect(self, req) -> ReflectResponse      (live; between generations)
+        # optional: async def dry_run_reflect(self, req) -> ReflectResponse  (DRY_RUN; no model calls)
         # optional: async def on_permission(self, request) -> response
         #   self.tool_uses(request) gives [ToolUse(tool_use_id, tool, args, source)] for your tools;
         #   key a mirror on use.tool_use_id: it is the X-Tool-Use-Id of that call's first ledger write.
@@ -59,7 +61,7 @@ from .invocation import (
     current_registry,
 )
 from .ledger_client import LedgerClient
-from .models import TurnRequest, TurnResponse, Usage
+from .models import ReflectRequest, ReflectResponse, TurnRequest, TurnResponse, Usage
 from .tools import ToolFn, _args_payload, ctx, error_summary
 
 log = structlog.get_logger(__name__)
@@ -248,6 +250,16 @@ class DroidAgent(ABC):
         reg.observe(use.tool_use_id, use.tool, use.args, use.source)
         reg.cancelled(use.tool_use_id, reason)
 
+    async def reflect(self, req: ReflectRequest) -> ReflectResponse:
+        """Between generations of a lineage: read `req.review` (the after-action review) and the current
+        `req.playbook`, return new playbook content, or `playbook=None` to keep it. Battlefield writes the
+        version; do not write the ledger here (no active turn, so it would 409). Default keeps it."""
+        return ReflectResponse(ok=True, rationale="default reflect: playbook kept")
+
+    async def dry_run_reflect(self, req: ReflectRequest) -> ReflectResponse:
+        """DRY_RUN stand-in for `reflect`: deterministic, no model calls. Default keeps the playbook."""
+        return ReflectResponse(ok=True, rationale="[dry-run] playbook kept")
+
     async def health(self) -> dict[str, Any]:
         return {"ok": True, "agent": self.name, "model": self.s.droid_model, "droid_ok": self._droid_available(), "dry_run": self.s.dry_run}
 
@@ -275,6 +287,19 @@ class DroidAgent(ABC):
             finally:
                 _tool_deadline.reset(deadline_token)
                 ctx.unbind(tokens)
+
+    # ---------- reflect entrypoint ----------
+    async def run_reflect(self, req: ReflectRequest) -> ReflectResponse:
+        """POST /reflect. A failure or timeout keeps the playbook (ok=false), never a 500."""
+        hook = self.dry_run_reflect if self.s.dry_run else self.reflect
+        try:
+            return await asyncio.wait_for(hook(req), timeout=self.s.turn_timeout_sec - 10)
+        except TimeoutError:
+            log.error("reflect_timeout", agent=self.name, lineage_id=req.lineage_id, generation=req.generation)
+            return ReflectResponse(ok=False, rationale="reflect timed out")
+        except Exception as e:
+            log.exception("reflect_failed", agent=self.name, lineage_id=req.lineage_id, generation=req.generation)
+            return ReflectResponse(ok=False, rationale=f"reflect failed: {e}")
 
     # ---------- droid plumbing ----------
     @staticmethod

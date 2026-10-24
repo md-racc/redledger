@@ -172,6 +172,29 @@ class LedgerClient:
         """Leave a message for another agent's next turn (lands in its options.inputs)."""
         return await self._write("POST", "/inputs", {"episode_id": self.episode_id, "target": target, "payload": payload}, None)
 
+    # ---------- playbook (lineage episodes only; contracts/agent-service.md "Lineages") ----------
+    async def get_playbook(self) -> dict | None:
+        """Your latest playbook version in this episode's lineage, or None outside a lineage (404)."""
+        try:
+            return await self._get("/playbook")
+        except LedgerError as e:
+            if e.status == 404:
+                return None
+            raise
+
+    async def put_playbook(self, content: dict[str, Any], rationale: str, base_version: int, *, tool_use_id: str | None = None) -> dict:
+        """Write the next version (active turn only). 409 on a stale base_version: re-read and retry."""
+        return await self._write("PUT", "/playbook", {"content": content, "rationale": rationale, "base_version": base_version}, tool_use_id)
+
+    async def playbook_history(self, limit: int = 20) -> list[dict]:
+        """Your own versions, newest first; [] outside a lineage."""
+        try:
+            return await self._get("/playbook/history", limit=limit)
+        except LedgerError as e:
+            if e.status == 404:
+                return []
+            raise
+
     # ---------- red writes ----------
     async def create_vendor(self, body: dict[str, Any], *, tool_use_id: str | None = None) -> dict:
         return await self._write("POST", "/vendors", body, tool_use_id)
