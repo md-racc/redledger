@@ -1,0 +1,1 @@
+- 2026-10-24T14:40Z · Ad · battlefield: per-agent DRY_RUN_RED/GREEN/BLUE overrides (blank = DRY_RUN) through compose, render-env and deploy, so prod can run red live while green and blue stay keyless; next: set FACTORY_API_KEY + DROID_MODEL_RED and deploy; blocked: none

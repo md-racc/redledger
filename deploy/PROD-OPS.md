@@ -65,7 +65,23 @@ logs as sensitive anyway.
 | `make prod-credits EP=` | `credits EP` | sums `turn.ended.factory_credits` per agent and per day; shows the cap and any guard trips |
 | `make prod-record EP= [NAME=]` | `record EP [NAME]` | events → `battlefield/fixtures/episodes/<NAME or EP>.jsonl`, secret-scanned |
 
-## Run a prod episode
+## Going live: red only
+
+Green raises before starting Droid until integration packages A/B land, and blue's live audit is
+disabled by its readiness guard (blue's gate LLM also only runs when its `DRY_RUN` is false). So
+the first live configuration runs red's Droid session and keeps green and blue keyless:
+
+1. GitHub `production` environment, **secret**: `FACTORY_API_KEY` (UI or `gh secret set
+   FACTORY_API_KEY --env production` in your own terminal; never paste it anywhere else).
+2. **Variables**: `DROID_MODEL_RED` (a pinned low-multiplier model, never `auto`; see
+   `contracts/CHANGELOG.md` Findings for costs), optional `DROID_REASONING_RED` (e.g. `low`),
+   `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=true`. Keep `MAX_CREDITS_PER_EPISODE` set.
+3. Run the deploy workflow and approve the `production` gate.
+4. Smoke: `make prod-health` (red `dry_run: false`, green/blue `true`), then
+   `make prod-episode MODE=enforce SEED=42 DAYS=2`, `make prod-wait EP=…`, `make prod-credits EP=…`.
+
+Going back: set `DRY_RUN=true` (or `DRY_RUN_RED=true`) and redeploy.
+
 
 ```bash
 make prod-health                                   # all three agents ok, dry_run false

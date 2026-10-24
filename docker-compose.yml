@@ -18,6 +18,8 @@ x-agent-env: &agent-env
   # Agent-scope token: agent routes (X-Agent) and battlefield -> agent calls. Never the operator token.
   AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent}
   FACTORY_API_KEY: ${FACTORY_API_KEY:-}
+  # Global default; each agent service below overrides it with DRY_RUN_<AGENT> when that is set
+  # (e.g. red live while green and blue stay keyless). render-env.sh writes all three resolved.
   DRY_RUN: ${DRY_RUN:-false}
   TURN_TIMEOUT_SEC: ${TURN_TIMEOUT_SEC:-180}
   GATE_TIMEOUT_SEC: ${GATE_TIMEOUT_SEC:-8}
@@ -81,6 +83,7 @@ services:
       <<: *agent-env
       AGENT_NAME: red
       PORT: "8001"
+      DRY_RUN: ${DRY_RUN_RED:-${DRY_RUN:-false}}
       DROID_MODEL: ${DROID_MODEL_RED:-}
       DROID_REASONING: ${DROID_REASONING_RED:-}
     depends_on: [battlefield]
@@ -95,6 +98,7 @@ services:
       <<: *agent-env
       AGENT_NAME: green
       PORT: "8002"
+      DRY_RUN: ${DRY_RUN_GREEN:-${DRY_RUN:-false}}
       DROID_MODEL: ${DROID_MODEL_GREEN:-}
       DROID_REASONING: ${DROID_REASONING_GREEN:-}
     depends_on: [battlefield, blue]
@@ -109,6 +113,7 @@ services:
       <<: *agent-env
       AGENT_NAME: blue
       PORT: "8003"
+      DRY_RUN: ${DRY_RUN_BLUE:-${DRY_RUN:-false}}
       DROID_MODEL: ${DROID_MODEL_BLUE:-}
       DROID_REASONING: ${DROID_REASONING_BLUE:-}
       BLUE_GATE_LLM_PROVIDER: ${BLUE_GATE_LLM_PROVIDER:-}

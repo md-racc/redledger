@@ -83,6 +83,10 @@ emit DROID_REASONING_BLUE "${DROID_REASONING_BLUE:-}"
 emit BLUE_GATE_LLM_PROVIDER "${BLUE_GATE_LLM_PROVIDER:-gemini}"
 emit BLUE_GATE_LLM_MODEL "${BLUE_GATE_LLM_MODEL:-}"
 emit DRY_RUN "${DRY_RUN:-false}"
+# per-agent overrides, resolved here so compose never depends on nested defaults; blank = DRY_RUN
+emit DRY_RUN_RED "${DRY_RUN_RED:-${DRY_RUN:-false}}"
+emit DRY_RUN_GREEN "${DRY_RUN_GREEN:-${DRY_RUN:-false}}"
+emit DRY_RUN_BLUE "${DRY_RUN_BLUE:-${DRY_RUN:-false}}"
 emit CF_ACCESS_TEAM_DOMAIN "${CF_ACCESS_TEAM_DOMAIN:-}"
 emit CF_ACCESS_AUD "${CF_ACCESS_AUD:-}"
 
