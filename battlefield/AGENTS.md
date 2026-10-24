@@ -157,3 +157,27 @@ make episode MODE=enforce SEED=42 DAYS=4
 ```
 The scaffold was smoke-tested this way: 4-day enforce episode, mock agents, 4 attacks launched,
 3 caught, $23.3k blocked, $0 extracted, 0 legit blocks.
+
+### Without Docker (`make local-stack`)
+
+For a machine with no Docker or system Postgres. It runs Postgres 16 via `pgserver` (unix socket, data
+in `.local-stack/pgdata`), battlefield on :8000 and red/green/blue on :8001–8003 as plain processes.
+`.local-stack/` ignores itself and holds the per-data-dir tokens (`env`, mode 600, never printed),
+logs (`logs/<name>.log`, each run starts with a `=== local-stack start` line) and pid files.
+
+```
+make local-stack                 # all three agents mocked (AGENTS=mock)
+make local-stack BLUE=real       # real keyless blue (DRY_RUN=true) on top of mock red/green
+make local-stack AGENTS=real     # every agent from its own directory (red/, green/, blue/)
+make local-stack-status          # health of each process + postgres
+make episode MODE=enforce SEED=42 DAYS=2     # the usual curl targets pick up the stack's token
+make evolve GENS=2 DAYS=2 && make evolution-report LN=<id>
+make local-stack-stop            # stop everything; RESET=1 CONFIRM=yes also wipes the DB and tokens
+```
+
+- Real agents run `DRY_RUN=true` unless you export `DRY_RUN=false` or `DRY_RUN_<AGENT>=false`.
+  `FACTORY_API_KEY`, `DROID_MODEL_<AGENT>`, `DROID_REASONING_<AGENT>` and `CRS_*` come from your own
+  shell environment; the script never reads or writes any `.env`. A live session spends credits.
+- It refuses to start if :8000–8003 are in use (e.g. a docker stack), and never touches other processes.
+- While the stack is up, `make episode`/`evolve`/`score`/... use its operator token automatically
+  (`.local-stack/env` wins over `.env`); after `local-stack-stop` they fall back to `.env` / `change-me`.
