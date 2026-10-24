@@ -76,29 +76,59 @@ def _authenticate(authorization: str | None, x_agent: str | None) -> None:
         raise HTTPException(401, "bad token")
 
 
+REFUSAL_ACTION = "auth.refused"  # operator-only in every agent view (reads.list_audit)
+
+
 async def _authenticate_audited(request: Request, authorization: str | None, x_agent: str | None, x_episode: str | None, x_day: int | None) -> None:
     """`_authenticate`, plus an audit row when a known caller presents a token that doesn't
     authenticate the X-Agent it claims (one agent posing as another, or the operator token with
-    X-Agent). Garbage tokens are only logged: an unauthenticated request never writes the database."""
+    X-Agent). The row is `auth.refused`, hidden from agents: it names whose token was presented.
+    Garbage tokens and unknown episodes are only logged, so an unauthenticated request never writes."""
     try:
         _authenticate(authorization, x_agent)
     except HTTPException as e:
         if e.status_code == 401 and x_agent in AGENTS:
             owner = _token_owner(_presented(authorization))
             log.warning("agent_token_mismatch", claimed=x_agent, presented_by=owner or "unknown", path=request.url.path)
-            if owner is not None and x_episode is not None and x_day is not None:
-                await _audit_refusal(
-                    Caller(agent=x_agent, episode_id=x_episode, day=x_day, tool_use_id=None),
-                    request,
-                    {"error": "token does not authenticate X-Agent", "presented_by": owner},
-                    401,
-                )
+            if owner is not None and x_episode is not None and x_day is not None and await _episode_exists(x_episode):
+                await _audit_token_refusal(Caller(agent=x_agent, episode_id=x_episode, day=x_day, tool_use_id=None), request, owner)
         raise
 
 
-def bearer(authorization: str | None = Header(default=None), x_agent: str | None = Header(default=None, alias="X-Agent")) -> None:
-    """Dependency for operator-only routes: OPERATOR_TOKEN and no X-Agent."""
-    _authenticate(authorization, x_agent)
+async def _episode_exists(episode_id: str) -> bool:
+    from . import db  # late: keeps this module importable without a pool
+
+    try:
+        return bool(await db.fetchval("SELECT 1 FROM episodes WHERE id=$1", episode_id))
+    except Exception:
+        log.exception("refusal_episode_lookup_failed", episode_id=episode_id)
+        return False
+
+
+async def _audit_token_refusal(c: Caller, request: Request, presented_by: str) -> None:
+    """One operator-only `auth.refused` row (route, claimed agent, whose token; never the token)."""
+    from .api import audit  # late: audit imports this module
+
+    route = request.scope.get("route")
+    path = getattr(route, "path", request.url.path)
+    try:
+        await audit.record(
+            c, REFUSAL_ACTION, {"route": f"{request.method} {path}"}, {"error": "token does not authenticate X-Agent", "presented_by": presented_by}, 401
+        )
+    except Exception:
+        log.exception("refusal_audit_failed", agent=c.agent, episode_id=c.episode_id, path=path)
+
+
+async def bearer(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_agent: str | None = Header(default=None, alias="X-Agent"),
+    x_episode: str | None = Header(default=None, alias="X-Episode"),
+    x_day: int | None = Header(default=None, alias="X-Day"),
+) -> None:
+    """Dependency for operator-only routes: OPERATOR_TOKEN and no X-Agent. A known token presented
+    for a claimed X-Agent it doesn't authenticate is audited like on agent routes."""
+    await _authenticate_audited(request, authorization, x_agent, x_episode, x_day)
     if x_agent is not None:
         raise HTTPException(403, "operator only")
 

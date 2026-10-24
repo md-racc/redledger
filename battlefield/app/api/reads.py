@@ -136,10 +136,11 @@ async def list_audit(
     # attacks.* actions as a backstop). Playbook rows are operator-only too, in both spellings: the
     # route's own `playbook.*` rows and the guard's refused-write rows (`PUT /playbook`, auth.py; `/api` prefix tolerated),
     # since either would show another agent's playbook writes. `agent=red` is just an empty result, not a 403, so the filter itself
-    # isn't advertised. The operator sees everything. LIMIT applies after the filter.
+    # isn't advertised. Token refusals (`auth.*`, http_status 401; auth.py) are operator-only: they name
+    # which agent's token was presented. The operator sees everything. LIMIT applies after the filter.
     rows = await db.fetch(
         "SELECT * FROM audit_log WHERE episode_id=$1 AND ($2::text IS NULL OR agent=$2) AND ($3::int IS NULL OR day=$3)"
-        " AND (NOT $5::bool OR (agent IN ('green', 'blue') AND action NOT LIKE 'attacks.%' AND action NOT LIKE 'playbook.%' AND action !~ '^[A-Z]+ (/api)?/playbook(/|$)')) ORDER BY id DESC LIMIT $4",
+        " AND (NOT $5::bool OR (agent IN ('green', 'blue') AND action NOT LIKE 'attacks.%' AND action NOT LIKE 'playbook.%' AND action !~ '^[A-Z]+ (/api)?/playbook(/|$)' AND action NOT LIKE 'auth.%' AND http_status <> 401)) ORDER BY id DESC LIMIT $4",
         ep,
         agent,
         day,

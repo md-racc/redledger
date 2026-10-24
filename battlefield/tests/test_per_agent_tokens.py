@@ -164,23 +164,30 @@ async def test_turn_reflect_audit_schemes_and_gate_carry_the_right_token(monkeyp
 
 
 @pytest.mark.usefixtures("per_agent")
-async def test_one_agent_posing_as_another_is_audited_garbage_is_not(pg: None, episode: str) -> None:
+async def test_impersonation_is_audited_operator_only_and_hidden_from_agents(pg: None, episode: str) -> None:
     from httpx import ASGITransport, AsyncClient
 
     from app import main
 
     async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://bf") as c:
-        r = await c.get("/api/vendors", headers=auth("green", episode=episode, token=OWN["red"]))
-        assert r.status_code == 401
-        r = await c.get("/api/vendors", headers=auth("blue", episode=episode, token="garbage"))
-        assert r.status_code == 401
-        r = await c.get("/api/vendors", headers=auth("red", episode=episode, token=OWN["red"]))
-        assert r.status_code == 200
-    rows = await db.fetch("SELECT agent, http_status, result FROM audit_log WHERE episode_id=$1 AND http_status=401", episode)
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["agent"] == "green" and row["result"]["presented_by"] == "red"
-    assert OWN["red"] not in str(row["result"])
+        assert (await c.get("/api/vendors", headers=auth("green", episode=episode, token=OWN["red"]))).status_code == 401
+        # operator-only route (bearer) with a known agent token claiming another agent: audited too
+        assert (await c.get("/api/episodes", headers=auth("blue", episode=episode, token=OWN["red"]))).status_code == 401
+        # garbage token, or an episode that doesn't exist: logged only, never written
+        assert (await c.get("/api/vendors", headers=auth("blue", episode=episode, token="garbage"))).status_code == 401
+        assert (await c.get("/api/vendors", headers=auth("green", episode="ep_does_not_exist", token=OWN["red"]))).status_code == 401
+        assert (await c.get("/api/vendors", headers=auth("red", episode=episode, token=OWN["red"]))).status_code == 200
+        # blue's audit view never shows refusal rows, the operator's does
+        blue_view = (await c.get("/api/audit_log", headers=auth("blue", episode=episode, token=OWN["blue"]))).json()
+        op_view = (await c.get("/api/audit_log", params={"episode_id": episode}, headers=auth())).json()
+    assert not any(r["action"].startswith("auth.") or r["http_status"] == 401 for r in blue_view)
+    refusals = [r for r in op_view if r["action"] == "auth.refused"]
+    assert sorted((r["agent"], r["result"]["presented_by"], r["args"]["route"]) for r in refusals) == [
+        ("blue", "red", "GET /episodes"),
+        ("green", "red", "GET /vendors"),
+    ]
+    assert all(OWN["red"] not in str(r) for r in refusals)
+    assert await db.fetchval("SELECT count(*) FROM audit_log WHERE episode_id='ep_does_not_exist'") == 0
 
 
 # ---------- deploy/render-env.sh ----------
@@ -223,6 +230,9 @@ def test_render_with_three_distinct_tokens(tmp_path: Path) -> None:
         ({"AGENT_TOKEN_RED": "r", "AGENT_TOKEN_GREEN": "g", "AGENT_TOKEN_BLUE": "g"}, "AGENT_TOKEN_GREEN equals AGENT_TOKEN_BLUE"),
         ({"AGENT_TOKEN_RED": "fixture-operator", "AGENT_TOKEN_GREEN": "g", "AGENT_TOKEN_BLUE": "b"}, "AGENT_TOKEN_RED equals OPERATOR_TOKEN"),
         ({"AGENT_TOKEN_RED": "r"}, "all of AGENT_TOKEN_RED, AGENT_TOKEN_GREEN, AGENT_TOKEN_BLUE or none"),
+        ({"AGENT_TOKEN_RED": "fixture-agent", "AGENT_TOKEN_GREEN": "g", "AGENT_TOKEN_BLUE": "b"}, "AGENT_TOKEN_RED equals the shared AGENT_TOKEN"),
+        ({"AGENT_TOKEN_RED": "  ", "AGENT_TOKEN_GREEN": "g", "AGENT_TOKEN_BLUE": "b"}, "AGENT_TOKEN_RED is whitespace only"),
+        ({"OPERATOR_TOKEN": " \t "}, "OPERATOR_TOKEN is whitespace only"),
     ],
 )
 def test_render_refuses_bad_per_agent_tokens(tmp_path: Path, extra: dict[str, str], needle: str) -> None:

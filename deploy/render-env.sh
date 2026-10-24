@@ -20,6 +20,16 @@ die() { printf 'render-env: %s\n' "$*" >&2; exit 1; }
 [ -n "${AGENT_TOKEN:-}" ] || die "AGENT_TOKEN is empty; refusing to write $out"
 [ -n "${OPERATOR_TOKEN:-}" ] || die "OPERATOR_TOKEN is empty; refusing to write $out"
 [ "$AGENT_TOKEN" != "$OPERATOR_TOKEN" ] || die "AGENT_TOKEN equals OPERATOR_TOKEN; refusing to write $out"
+# No token may be whitespace-only (it would look set but authenticate nothing sensible).
+for pair in "AGENT_TOKEN:${AGENT_TOKEN:-}" "OPERATOR_TOKEN:${OPERATOR_TOKEN:-}" "AGENT_TOKEN_RED:${AGENT_TOKEN_RED:-}" \
+  "AGENT_TOKEN_GREEN:${AGENT_TOKEN_GREEN:-}" "AGENT_TOKEN_BLUE:${AGENT_TOKEN_BLUE:-}"; do
+  v=${pair#*:}
+  [ -z "$v" ] && continue
+  case "$v" in
+    *[![:space:]]*) ;;
+    *) die "${pair%%:*} is whitespace only; refusing to write $out" ;;
+  esac
+done
 # Per-agent tokens: all three or none.
 n_agent_tokens=0
 for t in "${AGENT_TOKEN_RED:-}" "${AGENT_TOKEN_GREEN:-}" "${AGENT_TOKEN_BLUE:-}"; do
@@ -37,6 +47,9 @@ case "$n_agent_tokens" in
     [ "$token_green" != "$token_blue" ] || die "AGENT_TOKEN_GREEN equals AGENT_TOKEN_BLUE; refusing to write $out"
     for pair in "RED:$token_red" "GREEN:$token_green" "BLUE:$token_blue"; do
       [ "${pair#*:}" != "$OPERATOR_TOKEN" ] || die "AGENT_TOKEN_${pair%%:*} equals OPERATOR_TOKEN; refusing to write $out"
+      # the shared AGENT_TOKEN is still rendered (fallback for anything that reads it), so it must not
+      # double as one agent's token
+      [ "${pair#*:}" != "$AGENT_TOKEN" ] || die "AGENT_TOKEN_${pair%%:*} equals the shared AGENT_TOKEN; refusing to write $out"
     done
     ;;
   *) die "set all of AGENT_TOKEN_RED, AGENT_TOKEN_GREEN, AGENT_TOKEN_BLUE or none of them; refusing to write $out" ;;

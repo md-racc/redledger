@@ -94,10 +94,12 @@ with open(path, "a") as f:
             f.write(f"{name}={secrets.token_hex(24)}\n")
 PY
   chmod 600 "$ENVF"
-  set -a
+  # Read, don't export: every process below gets exactly the tokens it holds (battlefield all of
+  # them, each agent only its own), never inherited from this shell. Any token already exported in
+  # the caller's environment is removed from children too.
   # shellcheck disable=SC1090
   . "$ENVF"
-  set +a
+  unset_tokens=(-u AGENT_TOKEN -u AGENT_TOKEN_RED -u AGENT_TOKEN_GREEN -u AGENT_TOKEN_BLUE -u OPERATOR_TOKEN -u INTERNAL_TOKEN)
 
   say "starting Postgres 16 (pgserver) in .local-stack/pgdata"
   local uri
@@ -113,7 +115,10 @@ PY
 
   say "starting battlefield on :8000"
   DATABASE_URL="$uri" SCHEMA_PATH="$ROOT/contracts/schema.sql" \
-    start_proc battlefield "$ROOT/battlefield" uv run --quiet uvicorn app.main:app --host 127.0.0.1 --port 8000
+    start_proc battlefield "$ROOT/battlefield" env "${unset_tokens[@]}" \
+    AGENT_TOKEN="$AGENT_TOKEN" AGENT_TOKEN_RED="$AGENT_TOKEN_RED" AGENT_TOKEN_GREEN="$AGENT_TOKEN_GREEN" \
+    AGENT_TOKEN_BLUE="$AGENT_TOKEN_BLUE" OPERATOR_TOKEN="$OPERATOR_TOKEN" \
+    uv run --quiet uvicorn app.main:app --host 127.0.0.1 --port 8000
   local t=0  # /api/health is operator-only, so this one waits with the token
   until curl -fsS --max-time 3 -H "Authorization: Bearer $OPERATOR_TOKEN" "$A:8000/api/health" >/dev/null 2>&1; do
     pid_alive "$(cat "$PIDS/battlefield")" || die "battlefield exited during startup; see $LOGS/battlefield.log"
@@ -129,12 +134,14 @@ PY
     # each agent process holds only its own token, as AGENT_TOKEN
     own="$(eval "printf '%s' \"\${AGENT_TOKEN_${a^^}}\"")"
     if [[ "$m" == mock ]]; then
-      AGENT_NAME="$a" AGENT_TOKEN="$own" start_proc "$a" "$ROOT/battlefield" uv run --quiet uvicorn mock_agents.server:app --host 127.0.0.1 --port "$port"
+      AGENT_NAME="$a" start_proc "$a" "$ROOT/battlefield" env "${unset_tokens[@]}" AGENT_TOKEN="$own" \
+        uv run --quiet uvicorn mock_agents.server:app --host 127.0.0.1 --port "$port"
     else
-      AGENT_NAME="$a" AGENT_TOKEN="$own" PORT="$port" DRY_RUN="$dry" PYTHONPATH="." \
+      AGENT_NAME="$a" PORT="$port" DRY_RUN="$dry" PYTHONPATH="." \
         DROID_MODEL="$(eval "printf '%s' \"\${DROID_MODEL_${a^^}:-}\"")" \
         DROID_REASONING="$(eval "printf '%s' \"\${DROID_REASONING_${a^^}:-}\"")" \
-        start_proc "$a" "$ROOT/$a" uv run --quiet uvicorn server:app --host 127.0.0.1 --port "$port"
+        start_proc "$a" "$ROOT/$a" env "${unset_tokens[@]}" AGENT_TOKEN="$own" \
+        uv run --quiet uvicorn server:app --host 127.0.0.1 --port "$port"
     fi
     wait_health "$a" "$A:$port/health"
   done
