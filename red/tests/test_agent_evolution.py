@@ -72,9 +72,13 @@ async def test_inspection_uses_active_version_and_one_invocation_pair(status):
     assert request.headers["X-Agent"] == "red"
     body = json.loads(request.content)
     assert body["base_version"] == 7 and NAMESPACE in body["content"]
-    assert events.calls == [("call", "current-call"), ("result", "current-call", status == 200)]
-    assert ("lineage" in result) == (status == 200)
-    assert result.get("status", status) == status
+    # A playbook error never fails the books: the tool succeeds and the attack can still go ahead.
+    assert events.calls == [("call", "current-call"), ("result", "current-call", True)]
+    assert "active_vendors" in result and "pending_invoices" in result
+    if status == 200:
+        assert "preference" in result["lineage"]
+    else:
+        assert result["lineage"] == {"error": status}
 
 
 @respx.mock
@@ -206,3 +210,35 @@ async def test_reflection_and_next_generation_keyless_service(monkeypatch):
     assert chosen[0][0] != FIRST and chosen[1] == (FIRST, {"amount": 9})
     assert all(t != service_thread for t in threads) and not writes.called
     assert agent.autonomy == "high" and agent.turn_loop_dry_run
+
+
+async def test_failed_playbook_read_keeps_the_live_prompt():
+    from agentkit import LedgerError
+
+    agent, ledger = RedAgent(S), AsyncMock()
+    ledger.get_playbook.side_effect = LedgerError(503, "battlefield down")
+    req = turn()
+    tokens = ctx.bind(ledger, None, req)
+    try:
+        prompt = await agent.build_prompt(req)
+    finally:
+        ctx.unbind(tokens)
+    assert "Lineage DATA" not in prompt and "run_scheme" in prompt and "stop; do not retry" not in prompt
+
+
+@respx.mock
+async def test_keyless_lineage_falls_back_to_plain_rotation_on_playbook_error(monkeypatch):
+    books_routes()
+    respx.get("http://bf/api/playbook").respond(503, json={"error": "down"})
+    put = respx.put("http://bf/api/playbook").respond(200, json={})
+    agent = RedAgent(S)
+    scheme = SCHEMES[list(SCHEMES)[1]]
+    monkeypatch.setattr(scheme, "viable", AsyncMock(return_value=False))
+    req = turn()
+    async with LedgerClient(S, episode_id="ep", day=1) as ledger:
+        tokens = ctx.bind(ledger, None, req)
+        try:
+            result = await agent.dry_run_turn(req)
+        finally:
+            ctx.unbind(tokens)
+    assert result == f"{scheme.id} not viable today" and not put.called
