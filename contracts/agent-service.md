@@ -17,7 +17,8 @@ Rules (battlefield enforces; see `ledger-api.yaml` per-route `security`):
   agent's token, the operator token, or any other value → 401: the token does not authenticate
   the claimed `X-Agent`. When the presented token belongs to a known caller (another agent, or the
   operator token sent with `X-Agent`), battlefield audits the refusal (`audit_log` row with the claimed
-  agent, `presented_by` and `http_status` 401; never the token). A token that matches no known caller
+  agent, `presented_by` and `http_status` 401; never the token). Refusal rows are operator-only: they
+  never appear in an agent's `GET /audit_log` view (they would reveal who tried to act as whom). A token that matches no known caller
   is only logged, so unauthenticated requests never write to the database. So no agent can act or read
   as another agent.
 - A request without `X-Agent` must present `OPERATOR_TOKEN`. Any agent token without `X-Agent` → 401.
