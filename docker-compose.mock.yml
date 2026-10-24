@@ -16,4 +16,5 @@ services:
   blue:
     build: { context: ., dockerfile: battlefield/Dockerfile }
     command: ["uvicorn", "mock_agents.server:app", "--host", "0.0.0.0", "--port", "8003"]
-    environment: { AGENT_NAME: blue }
+    # MOCK_BLUE_ESCALATE: mock-only, forces stub-gate escalations (see .env.example); empty = default
+    environment: { AGENT_NAME: blue, MOCK_BLUE_ESCALATE: "${MOCK_BLUE_ESCALATE:-}" }

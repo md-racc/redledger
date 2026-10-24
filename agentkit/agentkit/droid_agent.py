@@ -68,6 +68,11 @@ _TOOL_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="droid-tool")
 # Extra wait on the calling side past the tool's own deadline, so the in-thread cancellation (which
 # closes the tool's HTTP calls cleanly) normally wins and the outer wait only catches a wedged thread.
 _TOOL_GRACE_SEC = 2.0
+# Floor on a clamped tool budget: a call made with the turn's tool time all but spent still gets to try.
+_MIN_TOOL_SEC = 1.0
+# Monotonic instant by which every tool of the current turn must have finished (set by run_turn). The
+# SDK's tool-handler tasks are created inside the turn and copy this context.
+_tool_deadline: contextvars.ContextVar[float | None] = contextvars.ContextVar("rl_tool_deadline", default=None)
 
 
 class _ToolDeadline(Exception):
@@ -254,6 +259,7 @@ class DroidAgent(ABC):
             EventEmitter(self.s, episode_id=req.episode_id, day=req.day, flush_budget_sec=self._flush_budget_sec()) as emitter,
         ):
             tokens = ctx.bind(ledger, emitter, req)
+            deadline_token = _tool_deadline.set(t0 + self._tool_timeout_sec())
             try:
                 if self.s.dry_run:
                     summary = await asyncio.wait_for(self.dry_run_turn(req), timeout=self.s.turn_timeout_sec - 5)
@@ -267,6 +273,7 @@ class DroidAgent(ABC):
                 log.exception("turn_failed", agent=self.name, day=req.day)
                 return TurnResponse(ok=False, summary=f"turn failed: {e}", duration_sec=time.monotonic() - t0)
             finally:
+                _tool_deadline.reset(deadline_token)
                 ctx.unbind(tokens)
 
     # ---------- droid plumbing ----------
@@ -329,11 +336,35 @@ class DroidAgent(ABC):
         SDK's loop is frozen (see _offload), so the stream timeout cannot fire mid-tool; this cap is
         what ends the freeze, and it has to leave the turn time to wrap up once the loop resumes. And
         (b) above battlefield's escalation hold, because green's gated calls legitimately block until a
-        human decides or ESCALATION_TIMEOUT_SEC (90 s) expires, and LedgerClient allows that read up to
-        max(http_timeout_sec, 120) s. Cutting such a call short would tell the model "failed" while the
-        payment may still go through (__init__ warns when (b) can't hold). So: the turn budget minus
-        20 s (160 s at the default 180), never below 5 s."""
+        human decides or ESCALATION_TIMEOUT_SEC (90 s) expires, and LedgerClient.read_timeout_sec()
+        allows that read (hold + gate + 15 s). Cutting such a call short would tell the model "failed"
+        while the payment may still go through (__init__ warns when (b) can't hold). So: the turn budget
+        minus 20 s (160 s at the default 180), never below 5 s. It is also the turn-wide window: run_turn
+        sets the tool deadline to turn start + this, and _tool_budget_sec() clamps each call to it."""
         return max(5.0, self.s.turn_timeout_sec - 20)
+
+    def _tool_budget_sec(self, tool: str) -> float:
+        """This call's budget: _tool_timeout_sec(), clamped to what the turn has left. The cap alone is
+        per call, so a second long call (two held escalations) could run past the stream timeout and
+        battlefield's TURN_TIMEOUT_SEC + 5 wait for /turn; the turn-wide deadline (turn start +
+        _tool_timeout_sec()) keeps every call inside the same window one call gets. A budget below the
+        escalation hold is logged: a gated call may then be cut off while battlefield still holds it
+        for a human (its outcome is then unknown to the model)."""
+        cap = self._tool_timeout_sec()
+        deadline = _tool_deadline.get()
+        if deadline is None:  # called outside run_turn
+            return cap
+        budget = max(_MIN_TOOL_SEC, min(cap, deadline - time.monotonic()))
+        if budget < self.s.escalation_timeout_sec:
+            log.warning(
+                "tool_budget_below_escalation_hold",
+                agent=self.name,
+                tool=tool,
+                budget_sec=round(budget, 1),
+                escalation_timeout_sec=self.s.escalation_timeout_sec,
+                detail="turn time is mostly spent; a held gated call may be cut off before the human decides",
+            )
+        return budget
 
     def _begin_invocation(self, name: str, kwargs: dict[str, Any], registry: InvocationRegistry | None) -> Invocation:
         explicit = kwargs.pop("_tool_use_id", None)
@@ -366,7 +397,7 @@ class DroidAgent(ABC):
         it is awaitable) and serves them from a uvicorn task on the session's loop, so this sync wrapper
         freezes that loop while the tool runs: nothing on it (the stream and its turn timeout, the
         event pump, permission requests) makes progress until the tool returns. The only bound on that
-        freeze is _tool_timeout_sec(): the tool is cancelled inside its thread at the deadline (and the
+        freeze is _tool_budget_sec(): the tool is cancelled inside its thread at the deadline (and the
         outer wait gives up _TOOL_GRACE_SEC later on a thread that won't yield), and the model gets an
         error string; nothing is raised through the SDK. The stream timeout can fire only afterwards.
 
@@ -384,7 +415,7 @@ class DroidAgent(ABC):
             turn, emitter = ctx.turn(), ctx.emitter()
             reg = registry if registry is not None else current_registry()
             inv = self._begin_invocation(name, kwargs, reg)
-            budget = self._tool_timeout_sec()
+            budget = self._tool_budget_sec(name)
             deadline = time.monotonic() + budget
             if emitter:
                 emitter.tool_call(name, _args_payload(args, kwargs), inv.tool_use_id)
@@ -420,7 +451,8 @@ class DroidAgent(ABC):
                         "timeout": True,
                         "tool": name,
                         "detail": (
-                            f"tool timed out after {budget:g}s; " + ("its outcome is unknown, re-read the books before retrying" if started else "it never ran")
+                            f"tool timed out after {round(budget, 1):g}s; "
+                            + ("its outcome is unknown, re-read the books before retrying" if started else "it never ran")
                         ),
                     }
                 )

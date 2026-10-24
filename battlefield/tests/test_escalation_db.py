@@ -330,6 +330,10 @@ async def test_fe_escalations_view_and_snapshot_show_the_open_one(episode: str, 
         after = (await cl.get(f"/api/fe/episodes/{episode}/escalations", headers=OP)).json()
     assert row["id"] == esc["id"] and row["status"] == "open" and row["entity_type"] == "invoice" and row["entity_id"] == inv
     assert float(row["amount"]) == 4_910.0 and row["reason"] and row["expires_at"] and list(row["rules_fired"]) == ["near_threshold"]
+    vendor = await db.fetchrow("SELECT id, name FROM vendors WHERE id=$1", vid)
+    number = await db.fetchval("SELECT invoice_number FROM invoices WHERE id=$1", inv)
+    assert (row["vendor_id"], row["vendor_name"], row["invoice_number"]) == (vendor["id"], vendor["name"], number)
+    assert row["change_field"] is None and "origin" not in row and "attack_id" not in row
     assert snap["controls"]["open_escalations"] == 1
     assert [e["id"] for e in trail["escalations"]] == [esc["id"]]
     assert [r["status"] for r in after] == ["approved"]  # the fe view lists every status, the operator queue only open ones
@@ -497,3 +501,45 @@ async def test_same_key_retry_after_restart_opens_a_fresh_escalation(episode: st
         assert (await held).status_code == 200
     assert await db.fetchval("SELECT status FROM escalations WHERE id=$1", esc_id) == "timeout"
     assert blue_escalates == []  # replayed the stored verdict, blue was not asked again
+
+
+async def test_fe_escalations_view_describes_a_vendor_change(episode: str, blue_escalates: list, short_hold: float) -> None:
+    vid = await f.vendor(episode)
+    ch = await f.change(episode, vid, origin="sim", new_value="ACCT-NEW")
+    async with _client() as cl:
+        assert (await cl.post(f"/api/vendor_changes/{ch}/approve", headers=_green(episode, _key()))).status_code == 403  # timed out
+        (row,) = (await cl.get(f"/api/fe/episodes/{episode}/escalations", headers=OP)).json()
+    name = await db.fetchval("SELECT name FROM vendors WHERE id=$1", vid)
+    assert row["amount"] is None and row["entity_type"] == "vendor_change" and row["status"] == "timeout"
+    assert (row["vendor_id"], row["vendor_name"], row["change_field"], row["change_old_value"], row["change_new_value"]) == (
+        vid,
+        name,
+        "bank_account",
+        "ACCT-OLD",
+        "ACCT-NEW",
+    )
+
+
+# ---------- battlefield restart ----------
+
+
+async def test_startup_recovery_pauses_running_episodes_and_expires_orphans(episode: str) -> None:
+    from app import main
+
+    esc_id, _, _ = await _orphan(episode)
+    await db.execute("UPDATE episodes SET status='running', current_day=2 WHERE id=$1", episode)
+    replay = f.uid("replay_x")
+    await db.execute("INSERT INTO episodes (id, seed, controller_mode, status) VALUES ($1, 1, 'off', 'running')", replay)
+    finished = f.uid("ep")
+    await db.execute("INSERT INTO episodes (id, seed, controller_mode, status) VALUES ($1, 1, 'off', 'finished')", finished)
+
+    await main.recover_after_restart()
+
+    assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", episode) == "paused"  # never auto-resumed
+    assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", replay) == "running"  # replays are not ours to pause
+    assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", finished) == "finished"
+    assert await db.fetchval("SELECT status FROM escalations WHERE id=$1", esc_id) == "timeout"
+    rows = await db.fetch("SELECT type, day, payload FROM events WHERE episode_id=$1 AND type IN ('error','episode.paused') ORDER BY id", episode)
+    assert [(r["type"], r["day"]) for r in rows] == [("error", 2), ("episode.paused", 2)]
+    assert rows[0]["payload"] == {"where": "orchestrator", "message": "battlefield restarted mid-episode; resume to continue"}
+    assert await db.fetchval("SELECT COUNT(*) FROM events WHERE episode_id=ANY($1::text[])", [replay, finished]) == 0

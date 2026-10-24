@@ -481,8 +481,19 @@ async def reports(episode_id: str):
 
 @router.get("/episodes/{episode_id}/escalations")
 async def escalations(episode_id: str):
+    """Every escalation of the episode (any status) with what a judge needs to decide: the verdict
+    (action, amount, reason, rules) and the entity behind it (vendor, invoice number, or the vendor
+    change's field and new value)."""
     rows = await db.fetch(
-        "SELECT e.*, v.action, v.amount, v.reason, v.entity_type, v.entity_id, v.rules_fired FROM escalations e JOIN verdicts v ON v.id=e.verdict_id WHERE e.episode_id=$1 ORDER BY e.opened_at",
+        "SELECT e.*, v.action, v.amount, v.reason, v.entity_type, v.entity_id, v.rules_fired, "
+        "  COALESCE(i.vendor_id, ch.vendor_id) AS vendor_id, COALESCE(vi.name, vc.name) AS vendor_name, "
+        "  i.invoice_number, ch.field AS change_field, ch.old_value AS change_old_value, ch.new_value AS change_new_value, "
+        "  ex.employee_id, ex.category AS expense_category "
+        "FROM escalations e JOIN verdicts v ON v.id=e.verdict_id "
+        "LEFT JOIN invoices i ON v.entity_type='invoice' AND i.id=v.entity_id LEFT JOIN vendors vi ON vi.id=i.vendor_id "
+        "LEFT JOIN vendor_changes ch ON v.entity_type='vendor_change' AND ch.id=v.entity_id LEFT JOIN vendors vc ON vc.id=ch.vendor_id "
+        "LEFT JOIN expenses ex ON v.entity_type='expense' AND ex.id=v.entity_id "
+        "WHERE e.episode_id=$1 ORDER BY e.opened_at",
         episode_id,
     )
     return db.rows_to_list(rows)
