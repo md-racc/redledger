@@ -3,12 +3,16 @@
 contracts/agent-service.md "Lineages" is the spec. At the end of day d of a lineage episode (not the
 last day), each agent gets a debrief built from what it may know, stored in `debriefs` exactly as
 delivered, and read back from there on its day d+1 turn (so a restart between the two loses
-nothing). Only resolved attacks are revealed; revealing one sets `attacks.revealed_day`, which
-freezes its outcome (score.resolve_attacks). Legit items appear only in a terminal status.
+nothing). Daily items come only from resolved red attacks; revealing one sets
+`attacks.revealed_day`, which freezes its outcome (score.resolve_attacks) and its score contribution
+(score.compute evaluates it as of that day). Everything an item shows is bounded to day <= revealed_day.
 
-Windowing: an item is in day d's debrief while it was first revealed on one of the last
-`reveal_days` days (d - reveal_days + 1 .. d), `new` on its first day. An attack's first day is its
-`revealed_day`; a legit item's is the earliest earlier debrief that listed it.
+Legit items (blue's false positives, green's gate-blocked legit actions) are NOT in daily debriefs:
+listing the legit items blue stopped would let it infer that the unlisted ones are red from attacks
+still unresolved. `legit_items` builds them for the after-action review, after the episode ended.
+
+Windowing: an attack is in day d's debrief while its revealed_day is one of the last `reveal_days`
+days (d - reveal_days + 1 .. d), `new` on its revealed_day.
 """
 
 from __future__ import annotations
@@ -69,12 +73,11 @@ async def deliver(episode_id: str, day: int, ctx: dict[str, Any]) -> None:
     if n <= 0 or day + 1 >= ctx["days"]:
         return  # nothing revealed daily, or the last day: no next turn to deliver to
     await db.execute("UPDATE attacks SET revealed_day=$2 WHERE episode_id=$1 AND resolved_day IS NOT NULL AND revealed_day IS NULL", episode_id, day)
-    lo = day - n + 1
-    built = await _build(episode_id, day, lo)
+    built = await attack_items(episode_id, day - n + 1)
     for agent in AGENTS:
         if await db.fetchval("SELECT 1 FROM debriefs WHERE episode_id=$1 AND agent=$2 AND day=$3", episode_id, agent, day):
             continue
-        items = await _window(episode_id, agent, day, lo, built[agent])
+        items = [{**{k: v for k, v in it.items() if k != "_revealed_day"}, "new": it["_revealed_day"] == day} for it in built[agent]]
         payload = {"day": day, "window_days": n, "items": items}
         await db.execute(
             "INSERT INTO debriefs (lineage_id, generation, episode_id, day, agent, payload) VALUES ($1,$2,$3,$4,$5,$6)",
@@ -91,49 +94,25 @@ async def deliver(episode_id: str, day: int, ctx: dict[str, Any]) -> None:
         log.info("debrief_delivered", episode_id=episode_id, day=day, agent=agent, items=len(items), new=new)
 
 
-def _key(item: dict[str, Any]) -> str:
-    if item["kind"] == "attack":
-        return f"attack:{item['attack_id']}"
-    if item["kind"] == "legit_blocked":
-        return f"legit_blocked:{item['verdict_id']}"
-    return f"{item['kind']}:{item['entity_type']}:{item['entity_id']}"
-
-
-async def _window(episode_id: str, agent: str, day: int, lo: int, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep attacks revealed in [lo, day] and legit items first listed in [lo, day]; set `new`."""
-    first: dict[str, int] = {}
-    for r in await db.fetch("SELECT day, payload FROM debriefs WHERE episode_id=$1 AND agent=$2 AND day < $3 ORDER BY day", episode_id, agent, day):
-        for it in r["payload"]["items"]:
-            first.setdefault(_key(it), r["day"])
-    out = []
-    for it in candidates:
-        if it["kind"] == "attack" or it["kind"] == "fraud":
-            since = it.pop("_revealed_day")
-        else:
-            since = first.get(_key(it), day)
-        if since >= lo:
-            out.append({**it, "new": since == day})
-    return out
-
-
-async def _build(episode_id: str, day: int, lo: int) -> dict[str, list[dict[str, Any]]]:
-    """Every candidate item per agent, before windowing. Attack items carry `_revealed_day`."""
+async def attack_items(episode_id: str, since: int) -> dict[str, list[dict[str, Any]]]:
+    """Per agent, the items of every attack revealed on or after `since` (each carries `_revealed_day`)."""
     out: dict[str, list[dict[str, Any]]] = {a: [] for a in AGENTS}
-    attacks = await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 AND revealed_day >= $2 ORDER BY revealed_day, created_at, id", episode_id, lo)
-    parts = await score.attack_parts(episode_id, attacks) if attacks else {}
-    for a in attacks:
-        rows, chs, ids = parts[a["id"]]
+    ids_in = {r["id"] for r in await db.fetch("SELECT id FROM attacks WHERE episode_id=$1 AND revealed_day >= $2", episode_id, since)}
+    parts = sorted((await score.attack_parts(episode_id, ids_in)).values(), key=lambda p: (p[0]["revealed_day"], p[0]["created_at"], p[0]["id"]))
+    for a, rows, chs, ids in parts:
+        lo, hi = a["day_launched"], a["revealed_day"]
         vendor_ids = sorted({r["owner_id"] for r in rows if r["kind"] == "invoice"} | {ch["vendor_id"] for ch in chs})
         verdicts = await db.fetch(
-            "SELECT * FROM verdicts WHERE episode_id=$1 AND entity_id = ANY($2::text[]) AND day >= $3 ORDER BY day, created_at",
+            "SELECT * FROM verdicts WHERE episode_id=$1 AND entity_id = ANY($2::text[]) AND day BETWEEN $3 AND $4 ORDER BY day, created_at",
             episode_id,
             ids,
-            a["day_launched"],
+            lo,
+            hi,
         )
         flags = await db.fetch(
-            "SELECT * FROM flags WHERE episode_id=$1 AND entity_id = ANY($2::text[]) AND day >= $3 ORDER BY day, id", episode_id, ids, a["day_launched"]
+            "SELECT * FROM flags WHERE episode_id=$1 AND entity_id = ANY($2::text[]) AND day BETWEEN $3 AND $4 ORDER BY day, id", episode_id, ids, lo, hi
         )
-        freezes = await _freezes(episode_id, vendor_ids, a["day_launched"])
+        freezes = await _freezes(episode_id, vendor_ids, lo, hi)
         base = {
             "kind": "attack",
             "attack_id": a["id"],
@@ -143,7 +122,7 @@ async def _build(episode_id: str, day: int, lo: int) -> dict[str, list[dict[str,
             "outcome": a["outcome"],
             "amount_extracted": float(a["amount_extracted"]),
             "detected_day": a["detected_day"],
-            "_revealed_day": a["revealed_day"],
+            "_revealed_day": hi,
         }
         controls = (
             [
@@ -171,27 +150,57 @@ async def _build(episode_id: str, day: int, lo: int) -> dict[str, list[dict[str,
             + [{"kind": "freeze", "id": z["vendor_id"], "day": z["day"]} for z in freezes]
         )
         out["blue"].append({**base, "display_name": a["display_name"], "entities": entities, "caught_by": sorted(caught, key=lambda c: c["day"])})
-        for r in rows:
-            if r["status"] not in ("paid", "blocked", "rejected"):
-                continue
-            gv = [v for v in verdicts if v["agent"] == "green" and v["entity_id"] == r["id"]]
-            if not gv and r["status"] == "blocked":
-                continue  # blocked without a green action (e.g. by a freeze): green did not act on it
-            action = gv[-1]["action"] if gv else f"{r['kind']}s.{'pay' if r['status'] == 'paid' else 'reject'}"
-            out["green"].append(
-                {
-                    "kind": "fraud",
-                    "entity_type": r["kind"],
-                    "entity_id": r["id"],
-                    "amount": float(r["amount"]),
-                    "green_action": action,
-                    "outcome": r["status"],
-                    "day": r["status_day"] if r["status_day"] is not None else a["resolved_day"],
-                    "_revealed_day": a["revealed_day"],
-                }
-            )
-    await _legit(episode_id, out)
+        out["green"] += await _fraud(episode_id, rows, verdicts, lo, hi)
     return out
+
+
+async def _fraud(episode_id: str, rows: list[Any], verdicts: list[Any], lo: int, hi: int) -> list[dict[str, Any]]:
+    """Green's `fraud` items: red invoices/expenses green actually acted on (a ledger.mutation it made, or
+    a gate verdict on its attempt), in a terminal status. `green_action` is green's last such action."""
+    out = []
+    for r in rows:
+        if r["status"] not in ("paid", "blocked", "rejected"):
+            continue
+        acts = [(v["day"], 0, v["action"]) for v in verdicts if v["agent"] == "green" and v["entity_id"] == r["id"]]
+        for m in await db.fetch(
+            "SELECT id, day, payload->>'action' AS action FROM events WHERE episode_id=$1 AND type='ledger.mutation' AND payload->>'agent'='green' "
+            "AND payload->>'entity_id'=$2 AND day BETWEEN $3 AND $4",
+            episode_id,
+            r["id"],
+            lo,
+            hi,
+        ):
+            acts.append((m["day"], m["id"], m["action"]))
+        if not acts:
+            continue  # green never acted on it (e.g. blocked by a freeze): nothing to learn from
+        day, _, action = max(acts)
+        out.append(
+            {
+                "kind": "fraud",
+                "entity_type": r["kind"],
+                "entity_id": r["id"],
+                "amount": float(r["amount"]),
+                "green_action": action,
+                "outcome": r["status"],
+                "day": day,
+                "_revealed_day": hi,
+            }
+        )
+    return out
+
+
+async def _freezes(episode_id: str, vendor_ids: list[str], lo: int, hi: int) -> list[dict[str, Any]]:
+    if not vendor_ids:
+        return []
+    rows = await db.fetch(
+        "SELECT day, payload->>'vendor_id' AS vendor_id, payload->>'reason' AS reason FROM events "
+        "WHERE episode_id=$1 AND type='vendor.frozen' AND payload->>'vendor_id' = ANY($2::text[]) AND day BETWEEN $3 AND $4 ORDER BY id",
+        episode_id,
+        vendor_ids,
+        lo,
+        hi,
+    )
+    return [dict(r) for r in rows]
 
 
 def _amount(item: dict[str, Any]) -> dict[str, Any]:
@@ -201,21 +210,10 @@ def _amount(item: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
-async def _freezes(episode_id: str, vendor_ids: list[str], since: int) -> list[dict[str, Any]]:
-    if not vendor_ids:
-        return []
-    rows = await db.fetch(
-        "SELECT day, payload->>'vendor_id' AS vendor_id, payload->>'reason' AS reason FROM events "
-        "WHERE episode_id=$1 AND type='vendor.frozen' AND payload->>'vendor_id' = ANY($2::text[]) AND day >= $3 ORDER BY id",
-        episode_id,
-        vendor_ids,
-        since,
-    )
-    return [dict(r) for r in rows]
-
-
-async def _legit(episode_id: str, out: dict[str, list[dict[str, Any]]]) -> None:
-    """Blue's false positives and green's gate-blocked actions, on legit items in a terminal status."""
+async def legit_items(episode_id: str) -> dict[str, list[dict[str, Any]]]:
+    """After-action review only (never daily): blue's `false_positive` and green's `legit_blocked`
+    items, on legit items in a terminal status. Shapes per contracts/agent-service.md, minus `new`."""
+    out: dict[str, list[dict[str, Any]]] = {"blue": [], "green": []}
     # sim invoices stopped while a red bank swap was live were the controller being right (score.compute)
     not_fp = sorted({i for ch in await score._red_changes(episode_id) for i in ch["stopped"]})
     legit: dict[str, tuple[str, float | None]] = {}
@@ -259,7 +257,7 @@ async def _legit(episode_id: str, out: dict[str, list[dict[str, Any]]]) -> None:
         out["blue"].append(_amount({"kind": "false_positive", "entity_type": etype, "entity_id": eid, "amount": amt, "day": c.pop("day"), "by": c}))
     sim_vendors = [r["id"] for r in await db.fetch("SELECT id FROM vendors WHERE episode_id=$1 AND origin='sim'", episode_id)]
     seen: set[str] = set()
-    for z in await _freezes(episode_id, sim_vendors, -(10**6)):
+    for z in await _freezes(episode_id, sim_vendors, -(10**6), 10**6):
         if z["vendor_id"] not in seen:
             seen.add(z["vendor_id"])
             out["blue"].append(
@@ -271,3 +269,4 @@ async def _legit(episode_id: str, out: dict[str, list[dict[str, Any]]]) -> None:
                     "by": {"kind": "freeze", "id": z["vendor_id"]},
                 }
             )
+    return out
