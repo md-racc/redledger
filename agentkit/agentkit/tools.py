@@ -25,6 +25,7 @@ the outer invocation: no events of its own, writes continue the outer key sequen
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import functools
 import json
@@ -90,15 +91,32 @@ async def _call(fn: ToolFn, args: tuple[Any, ...], kwargs: dict[str, Any]) -> tu
         return False, msg, msg
 
 
+def redacted_args(fn: Any, args: dict[str, Any]) -> dict[str, Any]:
+    """The args as agent.tool_call shows them: `ledger_tool(..., redact=r)` applies r (a copy is passed,
+    so the tool still gets the originals). A redactor that fails never leaks: {"redacted": true}."""
+    r = getattr(fn, "_rl_redact", None)
+    if r is None:
+        return args
+    try:
+        out = r(json.loads(json.dumps(args, default=str)))
+        return out if isinstance(out, dict) else {"redacted": True}
+    except Exception:
+        return {"redacted": True}
+
+
 def error_summary(name: str, e: BaseException) -> str:
     detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
     return json.dumps({"error": True, "tool": name, "detail": detail[:300]})
 
 
-def ledger_tool(name: str, description: str) -> Callable[[ToolFn], ToolFn]:
+def ledger_tool(name: str, description: str, *, redact: Callable[[dict[str, Any]], dict[str, Any]] | None = None) -> Callable[[ToolFn], ToolFn]:
     """Mark an async function as an agent tool. Wraps it so GateBlocked/LedgerError become
     readable tool output (not exceptions) and so tool_call/tool_result events are emitted (also when
-    the body raises: the result closes ok=false and the exception propagates)."""
+    the body raises or is cancelled: the result closes ok=false and the exception propagates).
+
+    `redact(args) -> args` rewrites what agent.tool_call shows (e.g. drop a private field); the tool
+    itself always receives the real arguments. Applied wherever the call is narrated: here, in
+    DroidAgent._offload, and on the pairs the invocation registry closes for calls that never ran."""
 
     def deco(fn: ToolFn) -> ToolFn:
         @functools.wraps(fn)
@@ -121,9 +139,13 @@ def ledger_tool(name: str, description: str) -> Callable[[ToolFn], ToolFn]:
             em = ctx.emitter()
             with bind_invocation(inv):
                 if em:
-                    em.tool_call(name, _args_payload(args, kwargs), inv.tool_use_id)
+                    em.tool_call(name, redacted_args(wrapper, _args_payload(args, kwargs)), inv.tool_use_id)
                 try:
                     ok, out, summary = await _call(fn, args, kwargs)
+                except asyncio.CancelledError:  # the turn was cancelled mid-call: still one closed pair
+                    if em:
+                        em.tool_result(inv.tool_use_id, False, json.dumps({"error": True, "cancelled": True, "tool": name}))
+                    raise
                 except Exception as e:
                     if em:
                         em.tool_result(inv.tool_use_id, False, error_summary(name, e))
@@ -133,6 +155,7 @@ def ledger_tool(name: str, description: str) -> Callable[[ToolFn], ToolFn]:
                 return out
 
         wrapper._rl_tool = (name, description)  # type: ignore[attr-defined]
+        wrapper._rl_redact = redact  # type: ignore[attr-defined]
         return wrapper
 
     return deco

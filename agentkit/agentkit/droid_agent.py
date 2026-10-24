@@ -7,6 +7,8 @@ Responsibilities (so teams don't re-solve them):
   - stream the turn, forward thinking/tool events to battlefield, enforce the turn timeout
   - DRY_RUN path that calls your `dry_run_turn` with no Droid/LLM access
   - per-turn credit logging
+  - each turn (and live reflection) on its own thread + event loop (agentkit.sync.run_on_turn_loop),
+    so a tool that freezes the Session's loop never freezes the service (/health, Blue's /gate)
   - invocation identity (agentkit.invocation): the Droid tool_use_id a permission request shows is
     the one on that call's agent.tool_call/agent.tool_result and on its ledger writes' X-Tool-Use-Id;
     a call the permission handler cancels (or that never runs) still gets exactly one event pair
@@ -62,7 +64,8 @@ from .invocation import (
 )
 from .ledger_client import LedgerClient
 from .models import ReflectRequest, ReflectResponse, TurnRequest, TurnResponse, Usage
-from .tools import ToolFn, _args_payload, ctx, error_summary
+from .sync import TurnLoopTimeout, run_on_turn_loop
+from .tools import ToolFn, _args_payload, ctx, error_summary, redacted_args
 
 log = structlog.get_logger(__name__)
 
@@ -189,6 +192,11 @@ class DroidAgent(ABC):
     name: str = "agent"
     autonomy: str = "high"  # off | low | medium | high
     system_prompt: str = "You are an agent."
+    # Live turns and reflections always run on their own thread + loop. D14 wants DRY_RUN there too so
+    # keyless suites exercise the threading; opt in per agent once your test fakes are loop-safe (an
+    # asyncio.Event/Lock a test shares with the turn breaks the agentkit.sync ownership rule). Default
+    # off because Blue's test FakeLedger waits on a test-loop asyncio.Event (red and green pass with it on).
+    turn_loop_dry_run: bool = False
 
     def __init__(self, settings: AgentSettings):
         self.s = settings
@@ -264,7 +272,30 @@ class DroidAgent(ABC):
         return {"ok": True, "agent": self.name, "model": self.s.droid_model, "droid_ok": self._droid_available(), "dry_run": self.s.dry_run}
 
     # ---------- turn entrypoint ----------
+    def _on_turn_loop(self) -> bool:
+        return not self.s.dry_run or self.turn_loop_dry_run
+
     async def run_turn(self, req: TurnRequest) -> TurnResponse:
+        """Run one turn on its own thread + loop (see agentkit.sync). The service loop only awaits it.
+        A subclass that wraps this (Blue's audit lock, green's clerk_scope) keeps its own code on the
+        service loop; ContextVars it sets before calling are visible inside the turn.
+
+        Service-side ceiling: TURN_TIMEOUT_SEC. Inside, the stream times out at TURN_TIMEOUT_SEC - 10
+        and DRY_RUN at - 5, so the ceiling only fires when the turn loop is wedged (a tool that ignores
+        its deadline); the turn is cancelled and battlefield still gets ok=false before its own
+        TURN_TIMEOUT_SEC + 5 wait (cancel join <= agentkit.sync.CANCEL_JOIN_SEC)."""
+        if not self._on_turn_loop():
+            return await self._run_turn_here(req)
+        t0 = time.monotonic()
+        try:
+            return await run_on_turn_loop(lambda: self._run_turn_here(req), name=f"{self.name}-turn-d{req.day}", ceiling_sec=self.s.turn_timeout_sec)
+        except TurnLoopTimeout:
+            log.error("turn_ceiling", agent=self.name, day=req.day, ceiling_sec=self.s.turn_timeout_sec)
+            return TurnResponse(ok=False, summary="turn timed out", duration_sec=time.monotonic() - t0)
+
+    async def _run_turn_here(self, req: TurnRequest) -> TurnResponse:
+        """The turn on the current loop: everything it creates (LedgerClient, EventEmitter, registry,
+        Session) belongs to this loop."""
         t0 = time.monotonic()
         async with (
             LedgerClient(self.s, episode_id=req.episode_id, day=req.day) as ledger,
@@ -290,7 +321,19 @@ class DroidAgent(ABC):
 
     # ---------- reflect entrypoint ----------
     async def run_reflect(self, req: ReflectRequest) -> ReflectResponse:
-        """POST /reflect. A failure or timeout keeps the playbook (ok=false), never a 500."""
+        """POST /reflect. A failure or timeout keeps the playbook (ok=false), never a 500. Runs on its own
+        thread + loop like a turn: a live `reflect` may open a Droid Session, whose tools freeze its loop."""
+        if not self._on_turn_loop():
+            return await self._run_reflect_here(req)
+        try:
+            return await run_on_turn_loop(
+                lambda: self._run_reflect_here(req), name=f"{self.name}-reflect-g{req.generation}", ceiling_sec=self.s.turn_timeout_sec
+            )
+        except TurnLoopTimeout:
+            log.error("reflect_ceiling", agent=self.name, lineage_id=req.lineage_id, generation=req.generation)
+            return ReflectResponse(ok=False, rationale="reflect timed out")
+
+    async def _run_reflect_here(self, req: ReflectRequest) -> ReflectResponse:
         hook = self.dry_run_reflect if self.s.dry_run else self.reflect
         try:
             r = await asyncio.wait_for(hook(req), timeout=self.s.turn_timeout_sec - 10)
@@ -413,7 +456,9 @@ class DroidAgent(ABC):
         return Invocation(LedgerClient.new_tool_use_id(), name, source=SOURCE_LOCAL)
 
     def _offload(self, fn: ToolFn, *, registry: InvocationRegistry | None = None) -> Callable[..., str]:
-        """droid-sdk 0.5.0 stalls the whole run (RunTimeoutError) if an in-process tool yields to the
+        """`ledger_tool(..., redact=fn)` is applied to the args on agent.tool_call (B-6: one narration owner).
+
+        droid-sdk 0.5.0 stalls the whole run (RunTimeoutError) if an in-process tool yields to the
         event loop, even for `await asyncio.sleep(0.3)`; only tools that return without awaiting work.
         So each tool call runs to completion on a private loop in a worker thread, with its own
         LedgerClient for the same turn, under a copy of the calling context (so turn-scoped ContextVars
@@ -426,6 +471,8 @@ class DroidAgent(ABC):
         freeze is _tool_budget_sec(): the tool is cancelled inside its thread at the deadline (and the
         outer wait gives up _TOOL_GRACE_SEC later on a thread that won't yield), and the model gets an
         error string; nothing is raised through the SDK. The stream timeout can fire only afterwards.
+        The session's loop is the turn's own loop (run_turn), never the service loop, so the freeze
+        stays inside the turn.
 
         Narration: this wrapper, on the loop thread, emits the call's agent.tool_call before the tool
         starts and its single agent.tool_result after it ends (ok, ledger refusal, exception, timeout),
@@ -444,7 +491,7 @@ class DroidAgent(ABC):
             budget = self._tool_budget_sec(name)
             deadline = time.monotonic() + budget
             if emitter:
-                emitter.tool_call(name, _args_payload(args, kwargs), inv.tool_use_id)
+                emitter.tool_call(name, redacted_args(fn, _args_payload(args, kwargs)), inv.tool_use_id)
             proxy = _WorkerEmitter(emitter, loop) if emitter else None
             worker_ctx = contextvars.copy_context()
 
