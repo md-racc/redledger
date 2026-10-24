@@ -9,6 +9,14 @@ Every gated green route calls `check()` before mutating. check():
   6. enforce  → allow → Allow; block → raises GateBlockedError (403);
                 escalate → opens escalation, waits for human up to ESCALATION_TIMEOUT_SEC,
                 timeout = block
+
+Same-key requests are single-flight: they run one at a time, so a key gets one verdict and at most
+one escalation; the later ones replay the first's outcome. Without the lock (the backstop for
+concurrent first uses that bypass it), the verdict INSERT ... ON CONFLICT picks one winner and a
+loser of an escalate verdict waits for the winner's escalation row and joins it.
+Escalations close exactly once (compare-and-set on status='open': resolver, timeout or orphan sweep).
+A replay of an escalated key joins that escalation or reuses its decision. The waiter lives in this
+process, so an escalation left open by a restart is an orphan: resolving it is a 409 and times it out.
 """
 
 from __future__ import annotations
@@ -30,6 +38,7 @@ from ..events import bus
 log = structlog.get_logger(__name__)
 
 _escalation_waiters: dict[str, asyncio.Future] = {}
+_key_slots: dict[tuple[str, str], list[Any]] = {}  # (episode_id, idempotency key) -> [Lock, users]
 
 
 IDEMPOTENCY_CONFLICT = "idempotency key reused for a different action"
@@ -80,7 +89,33 @@ async def check(
     mode = await controller_mode(c.episode_id)
     if mode == "off":
         return Decision(allowed=True)
+    # Single flight per key: concurrent requests with one X-Tool-Use-Id (parallel Droid tool calls, a
+    # retry racing the original) run one at a time, the first through to its outcome, including any
+    # escalation hold. The others then replay that verdict (and join/reuse its escalation), so one key
+    # gets one verdict, one escalation card and one human decision. Battlefield is one process.
+    slot_key = (c.episode_id, c.tool_use_id)
+    slot = _key_slots.setdefault(slot_key, [asyncio.Lock(), 0])
+    slot[1] += 1  # holders + waiters; dropped when nobody can still need it (also on cancel)
+    try:
+        async with slot[0]:
+            return await _check(c, mode, action, entity_type, entity_id, amount, args, context)
+    finally:
+        slot[1] -= 1
+        if slot[1] == 0:
+            del _key_slots[slot_key]
 
+
+async def _check(
+    c: Caller,
+    mode: str,
+    action: str,
+    entity_type: str | None,
+    entity_id: str | None,
+    amount: float | None,
+    args: dict[str, Any] | None,
+    context: dict[str, Any] | None,
+) -> Decision:
+    assert c.episode_id is not None and c.day is not None
     # idempotent on key: if we already judged this tool_use_id for this same action, reuse the verdict;
     # the same key on a different action is refused, never replayed
     existing = await db.fetchrow("SELECT * FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", c.episode_id, c.tool_use_id)
@@ -119,6 +154,10 @@ async def check(
         winner = await db.fetchrow("SELECT * FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", c.episode_id, c.tool_use_id)
         assert winner is not None  # verdicts are never deleted while the episode exists
         log.info("verdict_insert_lost_race", key=c.tool_use_id, verdict_id=winner["id"], action=action)
+        if winner["verdict"] == "escalate" and mode == "enforce":
+            # The winner opens its escalation right after its insert; wait for that row so the replay
+            # joins it instead of opening a second card for the same key.
+            await _await_escalation_row(winner["id"])
         return await _replay(winner, mode, c, action, entity_type, entity_id, amount, args or {})
     await bus.emit(
         c.episode_id,
@@ -140,6 +179,18 @@ async def check(
         agent="blue",
     )
     return await _apply(vid, verdict, reason, mode, c, action, entity_type, entity_id, amount)
+
+
+# How long a request that lost the verdict-insert race waits for the winner's escalation row.
+_LOST_RACE_ESCALATION_WAIT_SEC = 2.0
+
+
+async def _await_escalation_row(vid: str) -> None:
+    deadline = time.monotonic() + _LOST_RACE_ESCALATION_WAIT_SEC
+    while time.monotonic() < deadline:
+        if await db.fetchval("SELECT 1 FROM escalations WHERE verdict_id=$1 LIMIT 1", vid):
+            return
+        await asyncio.sleep(0.02)
 
 
 async def _replay(
@@ -206,56 +257,128 @@ async def _apply(
         return Decision(allowed=True, verdict_id=vid, verdict=verdict, reason=reason, enforced=True)
     if verdict == "block":
         raise GateBlockedError(reason, vid)
-    # escalate
-    decision = await _escalate(vid, c, action, et, eid, amount, reason)
+    # escalate. A replay of an escalated key (a retry, or a parallel call with the same key) gets the
+    # same human decision: it joins the open escalation or reuses the finished one, never a second card.
+    joined = await _join_escalation(vid) if replay else None
+    esc_id, decision = joined if joined is not None else await _escalate(vid, c, action, et, eid, amount, reason)
     if decision == "approve":
         return Decision(allowed=True, verdict_id=vid, verdict="escalate", reason="escalated; human approved", enforced=True)
-    raise GateBlockedError(f"escalated; {decision}", vid)
+    raise GateBlockedError(f"escalated; {decision}", vid, esc_id)
 
 
-async def _escalate(vid: str, c: Caller, action: str, et: str | None, eid: str | None, amount: float | None, reason: str) -> str:
+# escalations.status <-> escalation.resolved decision
+_STATUS = {"approve": "approved", "block": "blocked", "timeout": "timeout"}
+_DECISION = {v: k for k, v in _STATUS.items()}
+
+
+async def _close(esc_id: str, decision: str, by: str) -> bool:
+    """Compare-and-set an open escalation to its final status and emit escalation.resolved. Exactly one
+    caller (a resolver, the timeout, the orphan sweep) can win it; the losers get False."""
+    row = await db.fetchrow(
+        "UPDATE escalations SET status=$2, resolved_by=$3, resolved_at=now() WHERE id=$1 AND status='open' RETURNING episode_id, verdict_id",
+        esc_id,
+        _STATUS[decision],
+        None if decision == "timeout" else by,
+    )
+    if row is None:
+        return False
+    day = await db.fetchval("SELECT day FROM verdicts WHERE id=$1", row["verdict_id"])
+    payload = {"escalation_id": esc_id, "decision": decision, "by": by}
+    if decision == "timeout":
+        await bus.emit(row["episode_id"], day, "escalation.resolved", payload)
+    else:
+        await bus.emit(row["episode_id"], day, "escalation.resolved", payload, agent="human")
+    return True
+
+
+async def _final_decision(esc_id: str) -> str:
+    return _DECISION.get(await db.fetchval("SELECT status FROM escalations WHERE id=$1", esc_id), "timeout")
+
+
+async def _escalate(vid: str, c: Caller, action: str, et: str | None, eid: str | None, amount: float | None, reason: str) -> tuple[str, str]:
     assert c.episode_id is not None and c.day is not None
     esc_id = db.new_id("esc")
     expires = datetime.now(UTC) + timedelta(seconds=settings.escalation_timeout_sec)
-    await db.execute("INSERT INTO escalations (id, episode_id, verdict_id, expires_at) VALUES ($1,$2,$3,$4)", esc_id, c.episode_id, vid, expires)
+    # Registered before the row exists, so an open row with no waiter in this process is always an
+    # orphan (battlefield restarted mid-hold): see resolve_escalation / expire_orphaned_escalations.
     fut: asyncio.Future = asyncio.get_running_loop().create_future()
     _escalation_waiters[esc_id] = fut
-    await bus.emit(
-        c.episode_id,
-        c.day,
-        "escalation.opened",
-        {
-            "escalation_id": esc_id,
-            "verdict_id": vid,
-            "action": action,
-            "entity_type": et,
-            "entity_id": eid,
-            "amount": amount,
-            "reason": reason,
-            "expires_at": expires.isoformat(),
-        },
-    )
     try:
-        decision = await asyncio.wait_for(fut, timeout=settings.escalation_timeout_sec)
-    except TimeoutError:
-        decision = "timeout"
-        await db.execute("UPDATE escalations SET status='timeout', resolved_at=now() WHERE id=$1", esc_id)
-        await bus.emit(c.episode_id, c.day, "escalation.resolved", {"escalation_id": esc_id, "decision": "timeout", "by": "system"})
+        await db.execute("INSERT INTO escalations (id, episode_id, verdict_id, expires_at) VALUES ($1,$2,$3,$4)", esc_id, c.episode_id, vid, expires)
+        await bus.emit(
+            c.episode_id,
+            c.day,
+            "escalation.opened",
+            {
+                "escalation_id": esc_id,
+                "verdict_id": vid,
+                "action": action,
+                "entity_type": et,
+                "entity_id": eid,
+                "amount": amount,
+                "reason": reason,
+                "expires_at": expires.isoformat(),
+            },
+        )
+        try:
+            # shielded: the future outlives our timeout, so a joiner awaiting it is never cancelled
+            decision = await asyncio.wait_for(asyncio.shield(fut), timeout=settings.escalation_timeout_sec)
+        except TimeoutError:
+            # A resolver may have won the row between the deadline and here; then its decision stands.
+            decision = "timeout" if await _close(esc_id, "timeout", "system") else await _final_decision(esc_id)
+            if not fut.done():
+                fut.set_result(decision)
     finally:
         _escalation_waiters.pop(esc_id, None)
-    return decision
+        if not fut.done():
+            fut.cancel()  # we were cancelled ourselves; release any joiner
+    return esc_id, decision
+
+
+async def _join_escalation(vid: str) -> tuple[str, str] | None:
+    """For a replayed escalate verdict: the latest escalation of that verdict and its decision, waiting
+    for it while another request holds it open. None when there is none to join (never opened, or an
+    orphan left open by a restart, which is expired here): the caller opens a fresh one."""
+    esc = await db.fetchrow("SELECT id, status FROM escalations WHERE verdict_id=$1 ORDER BY opened_at DESC, id DESC LIMIT 1", vid)
+    if esc is None:
+        return None
+    if esc["status"] != "open":
+        return esc["id"], _DECISION[esc["status"]]
+    fut = _escalation_waiters.get(esc["id"])
+    if fut is None:
+        await _close(esc["id"], "timeout", "system")
+        return None
+    try:
+        return esc["id"], await asyncio.shield(fut)
+    except asyncio.CancelledError:
+        if not fut.cancelled():
+            raise  # we were cancelled, not the holder
+        return esc["id"], await _final_decision(esc["id"])  # the holder was cancelled: still open = timeout
 
 
 async def resolve_escalation(esc_id: str, decision: str, by: str) -> bool:
-    """Called by the control-plane route. Returns False if already resolved."""
-    row = await db.fetchrow("SELECT * FROM escalations WHERE id=$1", esc_id)
-    if not row or row["status"] != "open":
-        return False
-    status = "approved" if decision == "approve" else "blocked"
-    await db.execute("UPDATE escalations SET status=$2, resolved_by=$3, resolved_at=now() WHERE id=$1", esc_id, status, by)
-    v = await db.fetchrow("SELECT episode_id, day FROM verdicts WHERE id=$1", row["verdict_id"])
-    await bus.emit(v["episode_id"], v["day"], "escalation.resolved", {"escalation_id": esc_id, "decision": decision, "by": by}, agent="human")
+    """Called by the control-plane route. False (-> 409) if the escalation is unknown, already resolved,
+    or has no request waiting on it in this process (an orphan from a restart: expired here as a
+    timeout, since the held request is gone and the decision could never take effect)."""
     fut = _escalation_waiters.get(esc_id)
-    if fut and not fut.done():
+    if fut is None:
+        await _close(esc_id, "timeout", "system")
+        return False
+    if not await _close(esc_id, decision, by):
+        return False
+    if not fut.done():
         fut.set_result(decision)
     return True
+
+
+async def expire_orphaned_escalations() -> int:
+    """Time out every open escalation no request in this process is waiting on (battlefield restarted
+    mid-hold: the held HTTP request died with the old process). Meant for startup; returns the count."""
+    rows = await db.fetch("SELECT id FROM escalations WHERE status='open'")
+    n = 0
+    for r in rows:
+        if r["id"] not in _escalation_waiters and await _close(r["id"], "timeout", "system"):
+            n += 1
+    if n:
+        log.warning("orphaned_escalations_expired", count=n)
+    return n

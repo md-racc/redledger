@@ -20,6 +20,36 @@ from agentkit.models import AuditRequest, AuditResponse, GateRequest, GateRespon
 s = AgentSettings(AGENT_NAME=os.environ.get("AGENT_NAME", "red"))
 app = FastAPI(title=f"mock-{s.agent_name}")
 THRESHOLD = float(os.environ.get("APPROVAL_THRESHOLD", "5000"))
+# Opt-in, deterministic escalations from the mock gate (unset = default behavior). Comma-separated
+# triggers; a gated call matching any of them gets `escalate` whatever the default verdict was:
+#   all | *               every gated call
+#   amount>N              amount strictly above N (e.g. amount>4000)
+#   action:<action>       that gated action (e.g. action:invoices.pay)
+#   <rule id>             that mock rule fired (e.g. near_threshold, vendor_age_lt_7d)
+# Battlefield only holds escalations in `enforce`; in `shadow` they are recorded, nothing waits.
+MOCK_BLUE_ESCALATE = os.environ.get("MOCK_BLUE_ESCALATE", "")
+
+
+def escalate_trigger(spec: str, action: str, amount: float | None, rules: list[str]) -> str | None:
+    """The first MOCK_BLUE_ESCALATE trigger this call matches, or None."""
+    for raw in spec.split(","):
+        t = raw.strip()
+        if not t:
+            continue
+        if t in ("all", "*"):
+            return t
+        if t.startswith("amount>"):
+            try:
+                if amount is not None and amount > float(t[len("amount>") :]):
+                    return t
+            except ValueError:
+                continue
+        elif t.startswith("action:"):
+            if action == t[len("action:") :]:
+                return t
+        elif t in rules:
+            return t
+    return None
 
 
 def _auth(authorization: str | None) -> None:
@@ -204,6 +234,10 @@ async def gate(req: GateRequest, authorization: str | None = Header(default=None
         verdict = "block"
     elif rules:
         verdict = "escalate" if req.controller_mode == "enforce" and "near_threshold" in rules else "block"
+    trigger = escalate_trigger(MOCK_BLUE_ESCALATE, req.action, req.amount, rules)
+    if trigger is not None:
+        verdict = "escalate"
+        rules.append(f"mock_escalate:{trigger}")
     reason = {"allow": "No control exceptions.", "block": f"Blocked: {', '.join(rules)}.", "escalate": f"Needs human review: {', '.join(rules)}."}[verdict]
     return GateResponse(verdict=verdict, reason=reason, confidence=0.9 if rules else 0.99, rules_fired=rules, latency_ms=int((time.monotonic() - t0) * 1000))
 

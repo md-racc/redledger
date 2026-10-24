@@ -6,12 +6,20 @@ import logging
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from . import db
+from . import db, turns
 from .api import blue_writes, control, events_api, extension_points, frontend, green_writes, reads, red_writes
 from .config import settings
+from .events import bus
+from .gate import gatekeeper
+
+log = structlog.get_logger(__name__)
+
+RESTART_MESSAGE = "battlefield restarted mid-episode; resume to continue"
+REPLAY_RESTART_MESSAGE = "battlefield restarted mid-replay"
 
 
 def _configure_logging() -> None:
@@ -26,12 +34,39 @@ def _configure_logging() -> None:
 async def lifespan(app: FastAPI):
     _configure_logging()
     await db.init_pool()
+    await recover_after_restart()
     yield
     await control.shutdown_replays()  # before the pool closes: cancelled replays mark themselves failed
     await db.close_pool()
 
 
+async def recover_after_restart() -> None:
+    """State a previous process left behind. The orchestrator loop and the escalation waiters live in
+    memory, so after a restart (1) open escalations have no held request behind them: time them out;
+    (2) episodes still marked `running` have no loop: mark them `paused` with an `error` event so the
+    UI shows why. Never auto-resumed; a human resumes. (3) replay episodes (`replay_*`) still `running`
+    lost their streaming task without the graceful shutdown that marks them failed: mark them `failed`
+    with an `error {where:"replay"}` event."""
+    expired = await gatekeeper.expire_orphaned_escalations()
+    rows = await db.fetch("UPDATE episodes SET status='paused' WHERE status='running' AND id NOT LIKE 'replay\\_%' RETURNING id, current_day")
+    for r in rows:
+        await bus.emit(r["id"], r["current_day"], "error", {"where": "orchestrator", "message": RESTART_MESSAGE})
+        await bus.emit(r["id"], r["current_day"], "episode.paused", {})
+    replays = await db.fetch("UPDATE episodes SET status='failed', finished_at=now() WHERE status='running' AND id LIKE 'replay\\_%' RETURNING id, current_day")
+    for r in replays:
+        await bus.emit(r["id"], r["current_day"], "error", {"where": "replay", "message": REPLAY_RESTART_MESSAGE})
+    if expired or rows or replays:
+        log.warning("recovered_after_restart", escalations_expired=expired, episodes_paused=[r["id"] for r in rows], replays_failed=[r["id"] for r in replays])
+
+
 app = FastAPI(title="Red Ledger — battlefield", version="0.1.0", lifespan=lifespan)
+
+
+@app.exception_handler(turns.NoActiveTurnError)
+async def _no_active_turn(request: Request, exc: turns.NoActiveTurnError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"error": turns.NO_ACTIVE_TURN})
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
