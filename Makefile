@@ -10,7 +10,7 @@ SHELL := /bin/bash
 MODE ?= shadow
 DAYS ?= 10
 SEED ?= 42
-unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG LN GENS REVEAL_DAYS REVEAL_GENERATIONS MAX_CREDITS GEN
+unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG LN GENS REVEAL_DAYS REVEAL_GENERATIONS MAX_CREDITS GEN AGENTS RED GREEN BLUE RESET CONFIRM
 COMPOSE := docker compose
 DEV := -f docker-compose.yml -f docker-compose.dev.yml
 MOCK := -f docker-compose.yml -f docker-compose.mock.yml
@@ -20,7 +20,9 @@ API ?= http://localhost:8000
 # stale .env with only INTERNAL_TOKEN would send a token battlefield never sees (401). Quotes are
 # stripped because deploy/render-env.sh writes NAME='value'.
 env_get = $(shell grep -E '^$(1)=' .env 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d "'\"")
-TOKEN ?= $(call env_get,OPERATOR_TOKEN)
+# While `make local-stack` is up, its generated operator token (.local-stack/env) wins over .env.
+LOCAL_STACK_TOKEN = $(shell grep -E '^OPERATOR_TOKEN=' .local-stack/env 2>/dev/null | tail -n 1 | cut -d= -f2-)
+TOKEN ?= $(if $(wildcard .local-stack/pids/battlefield),$(LOCAL_STACK_TOKEN),$(call env_get,OPERATOR_TOKEN))
 TOKEN := $(if $(TOKEN),$(TOKEN),change-me)
 AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
 # `make evolve` defaults follow the lineage config (docs/EVOLUTION-DESIGN.md E-D8), not the episode
@@ -29,6 +31,7 @@ LN_MODE = $(if $(filter command line,$(origin MODE)),$(MODE),enforce)
 LN_DAYS = $(if $(filter command line,$(origin DAYS)),$(DAYS),6)
 
 .PHONY: help up up-dry mock-agents down logs ps db-reset db-shell seed episode step toggle attack escalations score record replay \
+        local-stack local-stack-status local-stack-stop \
         evolve lineage-status lineage-pause lineage-resume evolution-report lineage-export \
         prod-health prod-ps prod-logs prod-episode prod-step prod-pause prod-resume prod-toggle prod-attack prod-escalations \
         prod-resolve prod-score prod-wait prod-record prod-credits \
@@ -55,6 +58,23 @@ db-reset: ## wipe the database volume (schema re-applies on next start)
 	$(COMPOSE) down -v --remove-orphans
 db-shell: ## psql into the running db
 	$(COMPOSE) exec postgres psql -U redledger redledger
+
+# ---------- local stack without docker: pgserver Postgres 16 + battlefield + agents as processes ----------
+# State in .local-stack/ (self-ignoring). Mixed mode: real blue on top of mock red/green = BLUE=real.
+# Real agents run DRY_RUN=true unless you export DRY_RUN=false or DRY_RUN_<AGENT>=false; FACTORY_API_KEY,
+# DROID_MODEL_<AGENT> and CRS_* come from your own shell environment (never from a .env file).
+local-stack: export LS_AGENTS := $(value AGENTS)
+local-stack: export LS_RED := $(value RED)
+local-stack: export LS_GREEN := $(value GREEN)
+local-stack: export LS_BLUE := $(value BLUE)
+local-stack: ## start the stack without docker: make local-stack [AGENTS=mock|real] [RED=|GREEN=|BLUE=mock|real]
+	@AGENTS="$$LS_AGENTS" RED="$$LS_RED" GREEN="$$LS_GREEN" BLUE="$$LS_BLUE" battlefield/scripts/local_stack.sh up
+local-stack-status: ## health of the local stack's processes
+	@battlefield/scripts/local_stack.sh status
+local-stack-stop: export LS_RESET := $(value RESET)
+local-stack-stop: export LS_CONFIRM := $(value CONFIRM)
+local-stack-stop: ## stop the local stack (RESET=1 CONFIRM=yes also wipes its database)
+	@RESET="$$LS_RESET" CONFIRM="$$LS_CONFIRM" battlefield/scripts/local_stack.sh stop
 
 # ---------- episode control (curl against battlefield) ----------
 episode: ## create + start an episode: make episode MODE=enforce SEED=42 DAYS=10
