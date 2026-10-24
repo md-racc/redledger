@@ -94,11 +94,11 @@ async def test_profile_to_crs_finding_receipt_then_expense_gate(monkeypatch, gat
     employee = {"id": "emp", "name": "MARGARET OKAFOR", "status": "active", "start_day": 5, "hr_record": True, "bank_account": "employee-only"}
     ledger = FakeLedger(employees=[employee])
 
-    async def profile(path):
-        assert path == "/x/blue/crs/employees/emp"
+    async def profile(area, path):
+        assert (area, path) == ("blue", "crs/employees/emp")
         return {"persona_id": "P01"}
 
-    ledger._get = profile
+    ledger.get_extension = profile
 
     # Unit-supplied SDK metadata, not evidence of an authenticated live session.
     async def invoke(name, invocation_id, **arguments):

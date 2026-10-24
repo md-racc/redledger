@@ -1,0 +1,1 @@
+- 2026-10-24T19:51Z · M · blue: read CRS employee profiles via the public LedgerClient.get_extension instead of the private _get (#104 follow-up)
