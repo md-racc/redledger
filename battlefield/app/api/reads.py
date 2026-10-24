@@ -9,6 +9,8 @@ from ..auth import Caller, agent_episode, allow, caller
 
 router = APIRouter()
 
+UNREVEALED_ATTACK_FIELDS = ("outcome", "amount_extracted", "detected_day", "resolved_day")  # agent view of GET /attacks
+
 
 def _ep(c: Caller, episode_id: str | None) -> str:
     return agent_episode(c, episode_id)
@@ -162,4 +164,11 @@ async def get_report(report_id: str, c: Caller = Depends(caller)):
 async def list_attacks(episode_id: str | None = None, c: Caller = Depends(allow("red"))):
     ep = _ep(c, episode_id)
     rows = await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 ORDER BY day_launched, created_at, id", ep)
-    return db.rows_to_list(rows)
+    out = db.rows_to_list(rows, hide=c.hide)
+    if c.is_agent:
+        # Outcomes are disclosed only by a lineage debrief (revealed_day set; invariant 4), never by this read.
+        for a in out:
+            if a["revealed_day"] is None:
+                for k in UNREVEALED_ATTACK_FIELDS:
+                    a.pop(k, None)
+    return out

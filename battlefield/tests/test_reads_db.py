@@ -58,3 +58,33 @@ async def test_red_vendor_creation_leaks_no_provenance_via_created_by(episode: s
         assert not ({"origin", "created_by"} & set(row))
     assert operator["origin"] == "red"
     assert operator["created_by"] == "procurement"  # same value as legit mid-episode onboarding
+
+
+_OUTCOME = {"outcome": "extracted", "amount_extracted": 4380.0, "detected_day": 3, "resolved_day": 4}
+_DECLARED = {"id", "scheme_id", "display_name", "story", "params", "target_amount", "day_launched", "notes", "created_at", "revealed_day"}
+
+
+async def _red_and_operator_attacks(episode: str) -> tuple[list[dict], list[dict]]:
+    async with _client() as c:
+        red = await c.get("/api/attacks", headers=f.auth("red", episode=episode, day=5))
+        op = await c.get("/api/attacks", params={"episode_id": episode}, headers=f.auth())
+    assert red.status_code == 200 and op.status_code == 200
+    return red.json(), op.json()
+
+
+async def test_red_attacks_withhold_outcome_until_revealed(episode: str) -> None:
+    # outside a lineage debrief red never learns how an attack went (invariant 4)
+    aid = await f.attack(episode, scheme_id="ghost_vendor", **_OUTCOME)
+    [red], [op] = await _red_and_operator_attacks(episode)
+    assert red["id"] == aid and red["revealed_day"] is None
+    assert not (set(_OUTCOME) & set(red))
+    assert _DECLARED <= set(red)
+    assert {k: op[k] for k in _OUTCOME} == _OUTCOME  # operator: full row
+
+
+async def test_red_attacks_show_outcome_once_revealed(episode: str) -> None:
+    aid = await f.attack(episode, scheme_id="ghost_vendor", revealed_day=5, **_OUTCOME)
+    [red], [op] = await _red_and_operator_attacks(episode)
+    assert red["id"] == aid and red["revealed_day"] == 5
+    assert {k: red[k] for k in _OUTCOME} == _OUTCOME
+    assert red == op  # attacks carry no provenance columns: a revealed row is the operator's row
