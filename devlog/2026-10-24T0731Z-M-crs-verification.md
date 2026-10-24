@@ -1,0 +1,1 @@
+- 2026-10-24T07:31Z · M · blue: add sandbox-only ghost-employee CRS client, explicit profile extension and sanitized findings; lint and 241 tests pass; next: merge runtime/docs prerequisites and seed a demo; blocked: live credentials, audit SDK readiness and Docker smoke
