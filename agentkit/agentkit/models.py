@@ -187,6 +187,61 @@ class AttackCreate(BaseModel):
     target_amount: float
 
 
+# ---------- gate preparations (contracts/ledger-api.yaml POST /preparations) ----------
+
+GatedAction = Literal[
+    "invoices.match",
+    "invoices.approve",
+    "invoices.reject",
+    "invoices.pay",
+    "vendor_changes.approve",
+    "vendor_changes.reject",
+    "expenses.approve",
+    "expenses.pay",
+    "gl.post",
+]  # same set as GATED_ACTIONS
+VerdictCause = Literal["control", "gate_unavailable"]
+# Why green's permission handler cancelled a tool call (in its cancel comment and tool_result summary).
+CancelCause = Literal["control_hold", "escalation_timeout", "integration_failure", "invalid_state"]
+PREPARATION_TTL_SEC = 120  # fixed from created_at, never extended
+
+
+class PreparationCreate(BaseModel):
+    action: GatedAction
+    entity_id: str | None = None  # required except for gl.post
+    args: dict[str, Any] = Field(default_factory=dict)  # the exact body the execution will send
+
+
+class Preparation(BaseModel):
+    preparation_id: str
+    idempotency_key: str
+    controller_mode: ControllerMode
+    day: int
+    action: GatedAction
+    entity_type: str | None = None
+    entity_id: str | None = None
+    amount: float | None = None
+    effective: Literal["allow", "block", "pending"]  # what execution under this key will do
+    enforced: bool = False
+    decided_by: Literal["mode", "gate", "human", "timeout"]
+    verdict_id: str | None = None  # None in off
+    verdict: VerdictKind | None = None
+    cause: VerdictCause | None = None
+    reason: str = ""
+    rules_fired: list[str] = Field(default_factory=list)
+    escalation_id: str | None = None
+    expires_at: datetime
+    consumed: bool
+    consumed_status: int | None = None
+
+
+class PreparationRejected(BaseModel):
+    error: Literal["preparation_expired", "preparation_stale", "preparation_consumed", "preparation_pending"]
+    preparation_id: str
+    detail: str = ""
+    consumed_status: int | None = None
+
+
 # ---------- lineages (contracts/agent-service.md "Lineages") ----------
 
 
