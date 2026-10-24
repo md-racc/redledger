@@ -28,7 +28,7 @@ from .. import db
 from ..events import bus
 from ..evolution import review
 from ..scoring import score
-from . import agents, runner
+from . import active, agents, runner
 
 log = structlog.get_logger(__name__)
 
@@ -177,6 +177,8 @@ _ONLY_ONE = "AND NOT EXISTS (SELECT 1 FROM lineages o WHERE o.status='running' A
 async def start(lineage_id: str) -> bool:
     """created → running and spawn the loop. False (→ 409) if not created or another lineage runs."""
     async with _control:
+        if b := await active.blocker(lineage_id=lineage_id):
+            raise b
         if await db.fetchval(f"UPDATE lineages SET status='running' WHERE id=$1 AND status='created' {_ONLY_ONE} RETURNING id", lineage_id) is None:
             return False
         _spawn(lineage_id)
@@ -202,6 +204,8 @@ async def resume(lineage_id: str) -> bool:
     """paused → running. Resumes the generation episode only if the lineage paused it (§ paused_by_lineage);
     an episode paused by MAX_CREDITS_PER_EPISODE or by hand stays paused until POST /episodes/{id}/resume."""
     async with _control:
+        if b := await active.blocker(lineage_id=lineage_id):
+            raise b
         ln = await db.fetchrow(f"UPDATE lineages SET status='running' WHERE id=$1 AND status='paused' {_ONLY_ONE} RETURNING current_generation", lineage_id)
         if ln is None:
             return False

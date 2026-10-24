@@ -5,14 +5,19 @@ prompt, deterministic rotation, and no playbook I/O. Forced scheme/parameters ta
 The live prompt reads the own playbook and previews the debrief fold; `inspect_books`
 re-reads the current version and persists new evidence inside its decorated invocation.
 LedgerClient supplies its write ID (or `:n`), and the wrapper emits one event pair.
-409/413/server errors are surfaced without mutation retries; keyless turns stop on errors.
+409/413/server errors never retry the write and never cost the attack: a failed playbook
+read drops the learning section from the prompt, `inspect_books` still returns the books with
+`lineage: {"error": <status>}`, and keyless turns fall back to the plain rotation.
+On judge-forced scheme days learning persists only if the model calls `inspect_books`; the
+sliding debrief window and the between-generation reflection cover any day it does not.
 A missing playbook is neutral, not permission to guess a base version.
 
 `red_evolution` version 1 retains at most 128 typed categorical observations, ordered by
 generation/launch day/hashed episode+attack identity. Repeated sliding-window/AAR items
 deduplicate; replayed evicted items cannot displace the retained window. Summaries count
 only that bounded window. The most recent result per scheme determines preference:
-undetected extraction, then untried schemes, then caught/partial/failed attempts. Day
+undetected extraction, then untried schemes, then uncaught failures, then caught attempts.
+A `failed` outcome counts as caught only with a detection or a blocking control. Day
 rotation breaks ties. Later catches override earlier wins, not vice versa.
 
 Only own attack disclosures are consumed. Daily unresolved/pending and unknown schemes

@@ -115,7 +115,8 @@ def fold(content: dict[str, Any], items: Any, generation: int, episode_id: str, 
             id=identity,
             scheme=scheme,
             outcome=outcome,
-            caught=outcome != "extracted" or detected is not None,
+            # red's own execution failure is not a catch unless a detection or a blocking control touched it
+            caught=detected is not None or outcome in ("blocked", "flagged", "partial") or bool(categories & CATCHES),
             controls=sorted(categories),
         )
     observations = sorted(rows.values(), key=_key)[-LIMIT:]
@@ -123,6 +124,18 @@ def fold(content: dict[str, Any], items: Any, generation: int, episode_id: str, 
         return None
     updated = {**content, NAMESPACE: _Memory(version=1, observations=observations).model_dump()}
     return updated if _fits(updated) else None
+
+
+CATCHES = frozenset({"block", "escalate", "flag", "freeze"})
+
+
+def _rank(summary: dict[str, Any] | None) -> float:
+    """Undetected extraction first, then untried, then uncaught failures, then caught attempts."""
+    if summary is None:
+        return 0
+    if summary["caught"]:
+        return 1
+    return 0.5 if summary["last_outcome"] == "failed" else -1
 
 
 def view(content: dict[str, Any], day: int) -> dict[str, Any]:
@@ -135,5 +148,5 @@ def view(content: dict[str, Any], day: int) -> dict[str, Any]:
     order = list(SCHEMES)
     order = order[day % len(order) :] + order[: day % len(order)]
     # Latest evidence dominates: an old winning streak cannot outweigh a later catch.
-    order.sort(key=lambda s: (1 if summaries[s]["caught"] else -1) if s in summaries else 0)
+    order.sort(key=lambda s: _rank(summaries.get(s)))
     return {"schemes": summaries, "preference": order}

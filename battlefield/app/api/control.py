@@ -14,6 +14,7 @@ from typing import Any
 import asyncpg
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from agentkit.models import LineageConfig
@@ -25,7 +26,7 @@ from ..config import settings
 from ..events import bus
 from ..evolution import export
 from ..gate import gatekeeper
-from ..orchestrator import agents, lineage, runner
+from ..orchestrator import active, agents, lineage, runner
 from ..scoring import score
 
 log = structlog.get_logger(__name__)
@@ -166,10 +167,18 @@ async def export_lineage(lineage_id: str, generation: int | None = None):
     return out
 
 
+def _busy(e: active.ActiveRunError) -> JSONResponse:
+    return JSONResponse(status_code=409, content=e.body())
+
+
 @router.post("/lineages/{lineage_id}/start", status_code=202)
 async def start_lineage(lineage_id: str):
     await _lineage_row(lineage_id)
-    if not await lineage.start(lineage_id):  # conditional transition: concurrent starts get exactly one 202
+    try:
+        started = await lineage.start(lineage_id)
+    except active.ActiveRunError as e:
+        return _busy(e)
+    if not started:  # conditional transition: concurrent starts get exactly one 202
         raise HTTPException(409, "another lineage is running, or this one is not in status created")
     return {"ok": True}
 
@@ -185,7 +194,11 @@ async def pause_lineage(lineage_id: str):
 @router.post("/lineages/{lineage_id}/resume")
 async def resume_lineage(lineage_id: str):
     await _lineage_row(lineage_id)
-    if not await lineage.resume(lineage_id):
+    try:
+        resumed = await lineage.resume(lineage_id)
+    except active.ActiveRunError as e:
+        return _busy(e)
+    if not resumed:
         raise HTTPException(409, "not paused, or another lineage is running")
     return {"ok": True}
 
@@ -206,7 +219,10 @@ async def get_episode(episode_id: str):
 @router.post("/episodes/{episode_id}/start", status_code=202)
 async def start_episode(episode_id: str):
     await _must_exist(episode_id, live=True)
-    await runner.start(episode_id)
+    async with lineage._control:  # check + status flip are atomic with every other start/resume
+        if b := await active.blocker(episode_id=episode_id):
+            return _busy(b)
+        await runner.start(episode_id)
     return {"ok": True}
 
 
@@ -221,7 +237,10 @@ async def pause_episode(episode_id: str):
 async def resume_episode(episode_id: str):
     await _must_exist(episode_id, live=True)
     await _not_held_by_paused_lineage(episode_id)
-    await runner.resume(episode_id)
+    async with lineage._control:
+        if b := await active.blocker(episode_id=episode_id):
+            return _busy(b)
+        await runner.resume(episode_id)
     return {"ok": True}
 
 
@@ -229,10 +248,16 @@ async def resume_episode(episode_id: str):
 async def step_episode(episode_id: str):
     await _must_exist(episode_id, live=True)
     await _not_held_by_paused_lineage(episode_id)
+    async with lineage._control:
+        if b := await active.blocker(episode_id=episode_id):
+            return _busy(b)
+        active.begin_step(episode_id)  # active while the day runs (its status stays paused)
     try:
         return await runner.step(episode_id)
     except RuntimeError as e:
         raise HTTPException(409, str(e))
+    finally:
+        active.end_step(episode_id)
 
 
 @router.get("/episodes/{episode_id}/score")
