@@ -90,6 +90,37 @@ jobs:
           PYTHONPATH: "."
         run: uv sync --extra dev && uv run pytest -q
 
+  battlefield-timescale:
+    # Same battlefield suite on the TimescaleDB image: events/audit_log become hypertables at startup
+    # (app/timescale.py) and test_timescale_db.py must find them (EXPECT_TIMESCALE=1 fails instead of skipping).
+    needs: changes
+    if: ${{ always() && needs.changes.result == 'success' && needs.changes.outputs.battlefield == 'true' }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: redledger
+          POSTGRES_PASSWORD: redledger
+          POSTGRES_DB: redledger
+          TIMESCALEDB_TELEMETRY: "off"
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U redledger -d redledger"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: test on timescale
+        working-directory: battlefield
+        env:
+          TEST_DATABASE_URL: postgresql://redledger:redledger@localhost:5432/redledger
+          EXPECT_TIMESCALE: "1"
+          PYTHONPATH: "."
+        run: uv sync --extra dev && uv run pytest -q
+
   frontend:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
