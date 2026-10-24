@@ -18,7 +18,8 @@ log = structlog.get_logger(__name__)
 
 _pool: asyncpg.Pool | None = None
 
-HIDDEN_COLUMNS = {"origin", "attack_id", "origin_of_source"}  # never shown to agents
+# never shown to agents. created_by distinguishes seed vs mid-episode vendors, which is provenance.
+HIDDEN_COLUMNS = {"origin", "attack_id", "origin_of_source", "created_by"}
 
 
 def new_id(prefix: str) -> str:
