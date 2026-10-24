@@ -48,7 +48,8 @@ async def start(episode_id: str) -> None:
         return
     await db.execute("UPDATE episodes SET status='running', started_at=COALESCE(started_at, now()) WHERE id=$1", episode_id)
     ep = await db.fetchrow("SELECT * FROM episodes WHERE id=$1", episode_id)
-    if ep["current_day"] == 0:
+    # once per episode: a resume after a restart on day 0 must not announce the episode again
+    if not await db.fetchval("SELECT 1 FROM events WHERE episode_id=$1 AND type='episode.started' LIMIT 1", episode_id):
         await bus.emit(episode_id, 0, "episode.started", {"controller_mode": ep["controller_mode"], "days": ep["days"], "seed": ep["seed"]})
     st.pause.set()
     st.task = asyncio.create_task(_loop(episode_id), name=f"episode-{episode_id}")
@@ -131,41 +132,34 @@ async def run_day(episode_id: str) -> dict[str, Any]:
         await _seed_credits(episode_id)
 
         # Idempotent per day: a day that already started (battlefield restarted mid-day, the episode was
-        # paused by recover_after_restart and is now resumed) is not injected or announced again; its
-        # turns run again. legit_traffic.inject has no per-day guard of its own.
-        if await db.fetchval("SELECT 1 FROM events WHERE episode_id=$1 AND type='day.started' AND day=$2 LIMIT 1", episode_id, day):
+        # paused by recover_after_restart and is now resumed) is not injected or announced again, and
+        # agent turns that already ended that day are skipped; only the interrupted turn and the ones
+        # after it run. legit_traffic.inject has no per-day guard of its own.
+        resumed = bool(await db.fetchval("SELECT 1 FROM events WHERE episode_id=$1 AND type='day.started' AND day=$2 LIMIT 1", episode_id, day))
+        if resumed:
             log.info("day_resumed", episode_id=episode_id, day=day)
         else:
             counts = await legit_traffic.inject(episode_id, ep["seed"], day)
             await bus.emit(episode_id, day, "day.started", {"day": day, "legit_injected": counts})
 
         # red
-        options: dict[str, Any] = {}
-        if st.forced_attack:
-            options = st.forced_attack
-            st.forced_attack = None
-        elif ep["attack_plan"]:
-            for item in ep["attack_plan"]:
-                if item.get("day") == day:
-                    options = {"scheme_id": item["scheme_id"], "params": item.get("params", {})}
-        await _turn(episode_id, day, "red", mode, options)
+        if resumed and await _turn_ended(episode_id, day, "red"):
+            log.info("turn_skipped_resumed", episode_id=episode_id, day=day, agent="red")
+        else:
+            await _red_turn(episode_id, day, mode, ep, st)
 
         # green (controller mode may have been toggled mid-day; re-read)
         mode = await db.fetchval("SELECT controller_mode FROM episodes WHERE id=$1", episode_id)
-        await _turn(episode_id, day, "green", mode, {})
+        if resumed and await _turn_ended(episode_id, day, "green"):
+            log.info("turn_skipped_resumed", episode_id=episode_id, day=day, agent="green")
+        else:
+            await _turn(episode_id, day, "green", mode, {})
 
         # blue audit
-        blue_inputs = await _drain_inputs(episode_id, "blue", day)
-        await bus.emit(episode_id, day, "turn.started", {"agent": "blue", "inputs": len(blue_inputs)})
-        res = await agents.audit(episode_id, day, blue_inputs)
-        blue_credits = (res.get("usage") or {}).get("factory_credits")
-        await bus.emit(
-            episode_id,
-            day,
-            "turn.ended",
-            {"agent": "blue", "ok": bool(res.get("ok")), "summary": res.get("summary", ""), "factory_credits": blue_credits},
-        )
-        await _charge_credits(episode_id, day, blue_credits)
+        if resumed and await _turn_ended(episode_id, day, "blue"):
+            log.info("turn_skipped_resumed", episode_id=episode_id, day=day, agent="blue")
+        else:
+            await _blue_audit(episode_id, day)
 
         sc = await score.end_of_day(episode_id, day)
         await bus.emit(episode_id, day, "day.ended", {"day": day})
@@ -173,6 +167,39 @@ async def run_day(episode_id: str) -> dict[str, Any]:
         if day + 1 >= ep["days"]:
             await _finish(episode_id, day + 1)
         return {"day": day, "score": sc}
+
+
+async def _turn_ended(episode_id: str, day: int, agent: str) -> bool:
+    """Did this agent's turn already finish on this day (before a restart)?"""
+    return bool(
+        await db.fetchval("SELECT 1 FROM events WHERE episode_id=$1 AND type='turn.ended' AND day=$2 AND payload->>'agent'=$3 LIMIT 1", episode_id, day, agent)
+    )
+
+
+async def _red_turn(episode_id: str, day: int, mode: str, ep: Any, st: EpisodeState) -> None:
+    options: dict[str, Any] = {}
+    if st.forced_attack:
+        options = st.forced_attack
+        st.forced_attack = None
+    elif ep["attack_plan"]:
+        for item in ep["attack_plan"]:
+            if item.get("day") == day:
+                options = {"scheme_id": item["scheme_id"], "params": item.get("params", {})}
+    await _turn(episode_id, day, "red", mode, options)
+
+
+async def _blue_audit(episode_id: str, day: int) -> None:
+    blue_inputs = await _drain_inputs(episode_id, "blue", day)
+    await bus.emit(episode_id, day, "turn.started", {"agent": "blue", "inputs": len(blue_inputs)})
+    res = await agents.audit(episode_id, day, blue_inputs)
+    blue_credits = (res.get("usage") or {}).get("factory_credits")
+    await bus.emit(
+        episode_id,
+        day,
+        "turn.ended",
+        {"agent": "blue", "ok": bool(res.get("ok")), "summary": res.get("summary", ""), "factory_credits": blue_credits},
+    )
+    await _charge_credits(episode_id, day, blue_credits)
 
 
 async def _drain_inputs(episode_id: str, agent: str, day: int) -> list[dict[str, Any]]:

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from app import db, main
+from app.events import bus
 from app.orchestrator import agents, runner
 from seed.company import seed_episode
 from tests import factories as f
@@ -39,11 +40,14 @@ async def test_resume_after_restart_mid_day_does_not_inject_the_day_twice(monkey
     eid = f.uid("ep")
     await db.execute("INSERT INTO episodes (id, seed, controller_mode, days, status, current_day) VALUES ($1,$2,'enforce',3,'running',1)", eid, SEED)
     await seed_episode(eid, SEED)
+    await bus.emit(eid, 0, "episode.started", {"controller_mode": "enforce", "days": 3, "seed": SEED})  # day 0 already ran
     turns: list[tuple[str, int]] = []
     crash = {"on": True}
 
     async def turn(agent: str, episode_id: str, day: int, mode: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
         turns.append((agent, day))
+        if agent == "red":
+            await f.attack(episode_id, day=day, scheme_id="ghost_vendor")  # what a red turn leaves behind
         if agent == "green" and crash["on"]:
             raise _Crash
         return {"ok": True, "summary": "stub", "duration_sec": 0}
@@ -75,7 +79,12 @@ async def test_resume_after_restart_mid_day_does_not_inject_the_day_twice(monkey
     await task
     assert await _legit_rows(eid, 1) == once
     assert await _count(eid, "day.started", 1) == 1 and await _count(eid, "day.ended", 1) == 1
-    assert ("red", 1) in turns and ("green", 1) in turns  # the interrupted day's turns ran again
+    # red's turn had ended before the crash: skipped, no duplicate attack; green's was interrupted: re-run
+    assert [t for t in turns if t[1] == 1] == [("green", 1)]
+    assert await db.fetchval("SELECT COUNT(*) FROM attacks WHERE episode_id=$1 AND day_launched=1", eid) == 1
+    turn_ended = await db.fetch("SELECT payload->>'agent' AS agent FROM events WHERE episode_id=$1 AND type='turn.ended' AND day=1 ORDER BY id", eid)
+    assert [r["agent"] for r in turn_ended] == ["red", "green", "blue"]
+    assert await _count(eid, "episode.started") == 1  # announced on day 0, not again on resume
     # later days are untouched by the guard: day 2 started and injected normally
     assert await _count(eid, "day.started", 2) == 1 and sum((await _legit_rows(eid, 2)).values()) > 0
     ep = await db.fetchrow("SELECT status, current_day FROM episodes WHERE id=$1", eid)
@@ -98,4 +107,50 @@ async def test_a_fresh_day_still_injects(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(agents, "audit", audit)
     await runner.run_day(eid)
     assert await _count(eid, "day.started", 0) == 1 and sum((await _legit_rows(eid, 0)).values()) > 0
+    runner._states.pop(eid, None)
+
+
+async def test_resume_on_day_zero_skips_finished_turns_and_does_not_restart_the_episode(monkeypatch: pytest.MonkeyPatch) -> None:
+    eid = f.uid("ep")
+    await db.execute("INSERT INTO episodes (id, seed, controller_mode, days) VALUES ($1,$2,'enforce',1)", eid, SEED)
+    await seed_episode(eid, SEED)
+    turns: list[str] = []
+    crash = {"on": True}
+
+    async def turn(agent: str, episode_id: str, day: int, mode: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        turns.append(agent)
+        if agent == "red":
+            await f.attack(episode_id, day=day, scheme_id="ghost_vendor")
+        return {"ok": True, "summary": "stub", "duration_sec": 0}
+
+    async def audit(episode_id: str, day: int, inputs: list | None = None) -> dict[str, Any]:
+        turns.append("blue")
+        if crash["on"]:
+            raise _Crash
+        return {"ok": True, "summary": "stub"}
+
+    monkeypatch.setattr(agents, "turn", turn)
+    monkeypatch.setattr(agents, "audit", audit)
+
+    # started normally, then the process dies during blue's audit on day 0
+    await runner.start(eid)
+    task = runner.state(eid).task
+    assert task is not None
+    await task  # the loop records the crash as a failed episode; a real crash leaves it `running`
+    await db.execute("UPDATE episodes SET status='running' WHERE id=$1", eid)
+    assert await _count(eid, "episode.started") == 1 and turns == ["red", "green", "blue"]
+
+    runner._states.pop(eid, None)
+    await main.recover_after_restart()
+    crash["on"] = False
+    turns.clear()
+    await runner.resume(eid)
+    task = runner.state(eid).task
+    assert task is not None
+    await task
+    assert turns == ["blue"]  # red and green had ended on day 0
+    assert await _count(eid, "episode.started") == 1  # not announced again on resume
+    assert await _count(eid, "day.started", 0) == 1 and await _count(eid, "day.ended", 0) == 1
+    assert await db.fetchval("SELECT COUNT(*) FROM attacks WHERE episode_id=$1", eid) == 1
+    assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", eid) == "finished"
     runner._states.pop(eid, None)

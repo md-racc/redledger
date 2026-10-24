@@ -108,7 +108,9 @@ Goal for this session: <fill in>
   `error {where:"orchestrator"}`, never auto-resumed; `replay_*` episodes still `running` are marked
   `failed` with `error {where:"replay"}`. Resuming such an episode re-runs its current
   day, but `run_day` is idempotent per day: if the episode already has that day's `day.started`, it
-  skips legit traffic and the event (logs `day_resumed`) and goes on with the turns. Mock blue
+  skips legit traffic and the event (logs `day_resumed`) and every agent turn that already has a
+  `turn.ended` that day (logs `turn_skipped_resumed`); `episode.started` is emitted once per episode.
+  Gate checks are single-flight per (episode, X-Tool-Use-Id). Mock blue
   escalates on demand with `MOCK_BLUE_ESCALATE`; drive it with `scripts/escalation_smoke.py`. **Docs PR needed:** README §11
   should list `MOCK_BLUE_ESCALATE` (mock only), and events.md could list `where: orchestrator`.
 - Replays (done): `POST /replays/{id}/play` creates a real `episodes` row `replay_<fixture>_<8hex>`
