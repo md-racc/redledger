@@ -24,6 +24,7 @@ pytestmark = pytest.mark.usefixtures("pg")
 async def _fresh(pg: None, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     """One running lineage per battlefield: park any a crashed earlier run left in the shared test DB."""
     await db.execute("UPDATE lineages SET status='failed' WHERE status IN ('running','paused')")
+    await db.execute("UPDATE episodes SET status='finished' WHERE status='running'")  # one active run per battlefield
     monkeypatch.setattr(lineage, "POLL_SEC", 0.01)
     monkeypatch.setattr(settings, "day_pause_sec", 0.0)
     monkeypatch.setattr(lineage, "_control", asyncio.Lock())  # module-level lock binds to the first test's loop
