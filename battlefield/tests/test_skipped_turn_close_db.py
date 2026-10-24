@@ -139,3 +139,41 @@ async def test_red_skipped_on_attack_evidence_alone_gets_no_closing_event(monkey
     await _resume(eid)
     assert await _ended(eid, 1, "red") == []
     assert "red" not in await _pairs(eid, 1)
+
+
+async def test_green_interrupted_on_resume_is_superseded_before_its_rerun(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Green re-runs on a resumed day (its writes are CAS-guarded): its orphaned start is closed first,
+    so the day reads started → ended(superseded) → started → ended for green."""
+    eid = await _running_episode()
+    crash = {"on": True}
+
+    async def turn(agent: str, episode_id: str, day: int, mode: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        if agent == "green" and crash["on"]:
+            raise _Crash
+        return {"ok": True, "summary": "stub", "duration_sec": 0}
+
+    async def audit(*_: Any, **__: Any) -> dict[str, Any]:
+        return {"ok": True, "summary": "stub"}
+
+    monkeypatch.setattr(agents, "turn", turn)
+    monkeypatch.setattr(agents, "audit", audit)
+    with pytest.raises(_Crash):
+        await runner.run_day(eid)
+    assert (await _pairs(eid, 1))["green"] == (1, 0)
+
+    crash["on"] = False
+    await _resume(eid)
+    seq = [
+        (r["type"], r["payload"].get("ok"), r["payload"].get("summary"))
+        for r in await db.fetch(
+            "SELECT type, payload FROM events WHERE episode_id=$1 AND day=1 AND type IN ('turn.started','turn.ended') AND payload->>'agent'='green' ORDER BY id",
+            eid,
+        )
+    ]
+    assert seq == [
+        ("turn.started", None, None),
+        ("turn.ended", False, runner.SUPERSEDED_ON_RESUME),
+        ("turn.started", None, None),
+        ("turn.ended", True, "stub"),
+    ]
+    assert await _pairs(eid, 1) == {"red": (1, 1), "green": (2, 2), "blue": (1, 1)}

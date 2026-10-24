@@ -34,7 +34,19 @@ async def test_get_extension_passes_params_and_maps_errors() -> None:
     assert e.value.status == 404
 
 
-@pytest.mark.parametrize(("area", "path"), [("purple", "x"), ("blue", ""), ("blue", "../events"), ("blue", "a/../../b"), ("blue", "a?b=1")])
+@pytest.mark.parametrize(
+    ("area", "path"),
+    [
+        ("purple", "x"),
+        ("blue", ""),
+        ("blue", "../events"),
+        ("blue", "a/../../b"),
+        ("blue", "a?b=1"),
+        ("blue", "%2e%2e/events"),
+        ("blue", "a/%2E%2E/b"),
+        ("blue", "a\\..\\b"),
+    ],
+)
 async def test_get_extension_refuses_bad_areas_and_paths(area: str, path: str) -> None:
     async with LedgerClient(S, episode_id="ep_1", day=2) as ledger:
         with pytest.raises(ValueError):

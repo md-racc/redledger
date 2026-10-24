@@ -161,6 +161,8 @@ async def run_day(episode_id: str) -> dict[str, Any]:
         if resumed and await _turn_ended(episode_id, day, "green"):
             log.info("turn_skipped_resumed", episode_id=episode_id, day=day, agent="green")
         else:
+            if resumed:  # green re-runs: close its interrupted start first so the new turn pairs cleanly
+                await _close_skipped_turn(episode_id, day, "green", SUPERSEDED_ON_RESUME)
             await _turn(episode_id, day, "green", mode, {})
 
         # blue audit: flags and reports are plain inserts, so a started audit is not re-run either
@@ -196,14 +198,15 @@ async def _turn_started(episode_id: str, day: int, agent: str) -> bool:
 
 
 SKIPPED_ON_RESUME = "skipped on resume"
+SUPERSEDED_ON_RESUME = "superseded on resume"
 
 
-async def _close_skipped_turn(episode_id: str, day: int, agent: str) -> None:
+async def _close_skipped_turn(episode_id: str, day: int, agent: str, summary: str = SKIPPED_ON_RESUME) -> None:
     """A turn interrupted by a restart left `turn.started` without `turn.ended`. Close the pair once with
     an `ok: false` turn.ended so viewers and fixtures stay balanced. No credits: the turn's usage was never
     reported, and charging a guess would trip the credit guard on nothing."""
     if await _turn_started(episode_id, day, agent) and not await _turn_ended(episode_id, day, agent):
-        await bus.emit(episode_id, day, "turn.ended", {"agent": agent, "ok": False, "summary": SKIPPED_ON_RESUME, "duration_sec": 0})
+        await bus.emit(episode_id, day, "turn.ended", {"agent": agent, "ok": False, "summary": summary, "duration_sec": 0})
 
 
 async def _red_started(episode_id: str, day: int) -> bool:

@@ -92,11 +92,13 @@ async def post_input(body: InputCreate, c: Caller = Depends(caller)):
         await _audit_refusal(c, args, 403, "episode_id must match X-Episode")
         raise HTTPException(403, "episode_id must match X-Episode")
     source = c.agent or body.source
-    row = await db.fetchrow(
-        "INSERT INTO inputs (episode_id, target, source, payload) VALUES ($1,$2,$3,$4) RETURNING id", body.episode_id, body.target, source, body.payload
-    )
-    if c.is_agent:
-        await audit.record(c, INPUTS_ACTION, args, {"id": row["id"]}, 201)
+    sql = "INSERT INTO inputs (episode_id, target, source, payload) VALUES ($1,$2,$3,$4) RETURNING id"
+    if c.is_agent:  # the queued input and its audit row commit together: never an unaudited agent input
+        async with db.pool().acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(sql, body.episode_id, body.target, source, body.payload)
+            await audit.record(c, INPUTS_ACTION, args, {"id": row["id"]}, 201, conn=conn)
+    else:
+        row = await db.fetchrow(sql, body.episode_id, body.target, source, body.payload)
     return {"id": row["id"], "queued_for": f"{body.target}'s next turn"}
 
 

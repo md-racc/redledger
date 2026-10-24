@@ -226,7 +226,7 @@ class LedgerClient:
         if area not in self.EXTENSION_AREAS:
             raise ValueError(f"unknown extension area {area!r}")
         rel = path.lstrip("/")
-        if not rel or ".." in rel.split("/") or "?" in rel or "#" in rel:
+        if not rel or any(ch in rel for ch in "?#%\\") or ".." in rel.split("/"):  # no query, fragment, escapes or traversal
             raise ValueError(f"bad extension path {path!r}")
         return await self._get(f"/x/{area}/{rel}", **params)
 
