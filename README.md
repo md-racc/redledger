@@ -274,7 +274,6 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 | `AGENT_TOKEN`, `OPERATOR_TOKEN` | any two different strings | `openssl rand -hex 32` each; secrets |
 | `FACTORY_API_KEY` | **your own key**, or empty with `DRY_RUN=true` | dedicated prod key; secret; exists nowhere else |
 | `DROID_MODEL_RED/GREEN/BLUE` | a cheap / low-multiplier model | pinned prod models; variables |
-| `DROID_REASONING_RED/GREEN/BLUE` | blank (model default) or `none\|off\|minimal\|low\|medium\|high\|xhigh\|max` | optional; variables (a bad value stops that agent at startup) |
 | `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
 | `BLUE_GATE_LLM_API_KEY`, `CRS_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
 | `MAX_CREDITS_PER_EPISODE` | `0` (off) | e.g. `40`; variable |
