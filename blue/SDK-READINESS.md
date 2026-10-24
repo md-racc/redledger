@@ -190,6 +190,9 @@ cd blue
 UV_NO_ENV_FILE=1 uv run --no-sync python tests/sdk_authenticated_probe.py --allow-model-call
 ```
 
+The portable replay later matched all Session IDs but ended without a permission callback,
+tool event, write or reported usage. Reproducibility remains unqualified; do not retry blindly.
+
 This command is billable. It uses an empty temporary cwd, disables dotenv, clears sponsor
 credentials in its child process, forbids CRS construction and intercepts all Ledger HTTP.
 Only its test subclass bypasses the guard. This proves controlled SDK identity delivery,
