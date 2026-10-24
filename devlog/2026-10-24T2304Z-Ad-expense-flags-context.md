@@ -1,0 +1,1 @@
+- 2026-10-24T23:04Z · Ad · battlefield: expense gate context now carries employee and expense flags, so blue's already_flagged_high holds a CRS-flagged employee's next expense (#137 §2, M's finding in #134); verified end to end on a local stack; next: M re-runs the CRS driver; blocked: none
