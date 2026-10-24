@@ -1,0 +1,1 @@
+- 2026-10-24T08:34Z · Ad · battlefield: GET /lineages/{id}/export returns a lineage as one JSON bundle (per generation: episode, score, credits, events, audit_log, verdicts, attacks, debriefs, playbook versions; demo generations included; operator only); next: make lineage-export + evolution report; blocked: none
