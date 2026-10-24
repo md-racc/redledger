@@ -58,9 +58,9 @@ class IdempotencyConflictError(Exception):
     """The X-Tool-Use-Id already has a verdict for a different action/entity/amount. Replaying that
     verdict would let one approval authorize another action, so the request is refused (409)."""
 
-    def __init__(self, verdict_id: str):
+    def __init__(self, verdict_id: str | None):
         super().__init__(IDEMPOTENCY_CONFLICT)
-        self.verdict_id = verdict_id
+        self.verdict_id = verdict_id  # None when the key's preparation was made in off (no verdict)
 
 
 class GateBlockedError(Exception):
@@ -340,7 +340,11 @@ async def _apply(
     # escalate. A replay of an escalated key (a retry, or a parallel call with the same key) gets the
     # same human decision: it joins the open escalation or reuses the finished one, never a second card.
     joined = await _join_escalation(vid) if replay else None
-    esc_id, decision = joined if joined is not None else await _escalate(vid, c, action, et, eid, amount, reason)
+    if joined is None:
+        cause = verdict_cause(await db.fetchval("SELECT rules_fired FROM verdicts WHERE id=$1", vid))
+        esc_id, decision = await _escalate(vid, c, action, et, eid, amount, reason, cause=cause)
+    else:
+        esc_id, decision = joined
     if decision == "approve":
         return Decision(allowed=True, verdict_id=vid, verdict="escalate", reason="escalated; human approved", enforced=True)
     raise GateBlockedError(f"escalated; {decision}", vid, esc_id)
@@ -532,9 +536,9 @@ async def prepare(
         if existing is not None:
             if not same_binding(existing, action, entity_id, amount, args):
                 log.warning("idempotency_key_reused", key=c.tool_use_id, preparation_id=existing["id"], stored_action=existing["action"], action=action)
-                raise IdempotencyConflictError(existing["verdict_id"] or existing["id"])
+                raise IdempotencyConflictError(existing["verdict_id"])
             if existing["effective"] == "pending":
-                await _finish_pending(existing, c, mark_blocked)
+                await _resume_pending(existing, mark_blocked)
                 return await _prep_row(c.episode_id, c.tool_use_id)
             return existing
         # The key may already have an inline verdict (the gated route ran unprepared first): reuse it,
@@ -546,21 +550,20 @@ async def prepare(
             log.warning("idempotency_key_reused", key=c.tool_use_id, verdict_id=prior["id"], stored_action=prior["action"], action=action)
             raise IdempotencyConflictError(prior["id"])
         prep_id = db.new_id("prep")
-        expires = datetime.now(UTC) + timedelta(seconds=PREPARATION_TTL_SEC)
         if mode == "off":
-            await _insert_prep(prep_id, c, mode, action, entity_type, entity_id, amount, args, state_hash, None, "allow", "mode", expires)
+            await _insert_prep(prep_id, c, mode, action, entity_type, entity_id, amount, args, state_hash, None, "allow", "mode")
             return await _prep_row(c.episode_id, c.tool_use_id)
         if prior is None:
             verdict_entity = None if entity_type == "gl_entry" else entity_id
             prior, _ = await _record_verdict(c, mode, action, entity_type, verdict_entity, verdict_amount, args, context, preparation_id=prep_id)
         vid, verdict = prior["id"], prior["verdict"]
         if mode == "shadow" or verdict == "allow":
-            await _insert_prep(prep_id, c, mode, action, entity_type, entity_id, amount, args, state_hash, vid, "allow", "gate", expires)
+            await _insert_prep(prep_id, c, mode, action, entity_type, entity_id, amount, args, state_hash, vid, "allow", "gate")
         elif verdict == "block":
-            await _insert_prep(prep_id, c, mode, action, entity_type, entity_id, amount, args, state_hash, vid, "block", "gate", expires)
+            await _insert_prep(prep_id, c, mode, action, entity_type, entity_id, amount, args, state_hash, vid, "block", "gate")
             await mark_blocked()
         else:  # enforce + escalate: pending until the human (or the timeout) decides
-            await _insert_prep(prep_id, c, mode, action, entity_type, entity_id, amount, args, state_hash, vid, "pending", None, expires)
+            await _insert_prep(prep_id, c, mode, action, entity_type, entity_id, amount, args, state_hash, vid, "pending", None)
             await _finish_pending(
                 await _prep_row(c.episode_id, c.tool_use_id), c, mark_blocked, reason=prior["reason"], cause=verdict_cause(prior["rules_fired"])
             )
@@ -568,10 +571,10 @@ async def prepare(
 
 
 async def _finish_pending(prep: Any, c: Caller, mark_blocked: MarkBlocked, *, reason: str | None = None, cause: str | None = None) -> None:
-    """Hold an escalated preparation until its escalation is decided, then record the outcome. A pending
-    row left by a request that was cancelled mid-hold joins that escalation (or, an orphan, times out)."""
-    joined = await _join_escalation(prep["verdict_id"])
-    if joined is None:
+    """Open the escalation of a freshly prepared escalate verdict and hold until it is decided. If this
+    request is cancelled mid-hold its waiter is gone and no decision could ever reach it: the
+    preparation is closed as block / timeout on the way out (shielded), never left pending."""
+    try:
         _, decision = await _escalate(
             prep["verdict_id"],
             c,
@@ -583,14 +586,51 @@ async def _finish_pending(prep: Any, c: Caller, mark_blocked: MarkBlocked, *, re
             cause=cause,
             preparation_id=prep["id"],
         )
-    else:
-        esc_id, decision = joined
-        await db.execute("UPDATE preparations SET escalation_id=COALESCE(escalation_id, $2) WHERE id=$1", prep["id"], esc_id)
+    except asyncio.CancelledError:
+        await asyncio.shield(_abandon(prep, mark_blocked))
+        raise
+    await _record_decision(prep, decision, mark_blocked)
+
+
+async def _resume_pending(prep: Any, mark_blocked: MarkBlocked) -> None:
+    """A retry of a key whose preparation is still pending: join the escalation if its holder is alive
+    in this process, else (holder cancelled, or a restart) close it as block / timeout. Never opens a
+    second escalation for the key."""
+    joined = await _join_escalation(prep["verdict_id"])  # an orphaned open escalation is timed out here
+    if joined is None:
+        await _abandon(prep, mark_blocked)
+        return
+    esc_id, decision = joined
+    await db.execute("UPDATE preparations SET escalation_id=COALESCE(escalation_id, $2) WHERE id=$1", prep["id"], esc_id)
+    await _record_decision(prep, decision, mark_blocked)
+
+
+async def _abandon(prep: Any, mark_blocked: MarkBlocked) -> None:
+    """Nobody waits on this preparation's escalation any more: time it out (unless a human already
+    decided it, which then stands) and record the outcome."""
+    esc = await db.fetchrow("SELECT id, status FROM escalations WHERE verdict_id=$1 ORDER BY opened_at DESC, id DESC LIMIT 1", prep["verdict_id"])
+    decision = "timeout"
+    if esc is not None:
+        if esc["status"] == "open":
+            await _close(esc["id"], "timeout", "system")
+        decision = await _final_decision(esc["id"])
+    await _record_decision(prep, decision, mark_blocked)
+
+
+async def _record_decision(prep: Any, decision: str, mark_blocked: MarkBlocked) -> None:
+    """Record an escalation outcome on a pending preparation (once). An approval that lands after the
+    preparation expired can no longer authorize it (fixed lifetime, never extended): block / timeout."""
     effective, decided_by = ("allow", "human") if decision == "approve" else ("block", "timeout" if decision == "timeout" else "human")
-    await db.execute(
-        "UPDATE preparations SET effective=$2, decided_by=$3, decided_at=now() WHERE id=$1 AND effective='pending'", prep["id"], effective, decided_by
+    row = await db.fetchrow(
+        "UPDATE preparations SET "
+        "effective = CASE WHEN $2 = 'allow' AND now() >= expires_at THEN 'block' ELSE $2 END, "
+        "decided_by = CASE WHEN $2 = 'allow' AND now() >= expires_at THEN 'timeout' ELSE $3 END, "
+        "decided_at = now() WHERE id=$1 AND effective='pending' RETURNING effective",
+        prep["id"],
+        effective,
+        decided_by,
     )
-    if effective == "block":
+    if row is not None and row["effective"] == "block":
         await mark_blocked()
 
 
@@ -616,14 +656,13 @@ async def _insert_prep(
     verdict_id: str | None,
     effective: str,
     decided_by: str | None,
-    expires: datetime,
 ) -> None:
     # Under the per-key single flight nothing else inserts this key in this process; ON CONFLICT keeps
     # a second process (never deployed) from failing the request instead of reading the winner.
     await db.execute(
         "INSERT INTO preparations (id, episode_id, idempotency_key, day, agent, controller_mode, action, entity_type, entity_id, amount, args, state_hash, "
         "verdict_id, effective, decided_by, decided_at, expires_at) "
-        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, CASE WHEN $15::text IS NULL THEN NULL ELSE now() END, $16) "
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, CASE WHEN $15::text IS NULL THEN NULL ELSE now() END, now() + make_interval(secs => $16)) "
         "ON CONFLICT (episode_id, idempotency_key) DO NOTHING",
         prep_id,
         c.episode_id,
@@ -640,7 +679,7 @@ async def _insert_prep(
         verdict_id,
         effective,
         decided_by,
-        expires,
+        PREPARATION_TTL_SEC,  # created_at + TTL in one statement: the same now()
     )
 
 

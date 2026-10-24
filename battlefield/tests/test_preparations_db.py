@@ -228,7 +228,7 @@ async def test_escalation_holds_until_a_human_approves(blue: dict[str, Any]) -> 
             await asyncio.sleep(0.02)
         assert esc is not None
         pending = (await cl.get(f"/api/preparations/{key}", headers=f.auth("green", episode=ep, day=1))).json()
-        assert pending["effective"] == "pending" and pending["escalation_id"] == esc["id"]
+        assert (pending["effective"], pending["decided_by"], pending["escalation_id"]) == ("pending", None, esc["id"])
         assert (await cl.post(f"/api/escalations/{esc['id']}/resolve", json={"decision": "approve", "by": "ad"}, headers=OP)).status_code == 200
         p = (await held).json()
         again = (await _prepare(cl, ep, key, "invoices.approve", inv)).json()
@@ -392,3 +392,146 @@ async def test_mock_green_prepares_then_executes_under_the_same_key() -> None:
     summary = await mock.green_turn(None, led, Em())  # type: ignore[arg-type]
     assert led.calls == [("prepare:invoices.pay", "k1"), ("invoices.pay:inv_ok", "k1"), ("prepare:invoices.pay", "k2")]
     assert summary == "processed 1 items, 1 blocked/failed"
+
+
+# ---------- holders that go away ----------
+
+
+def _caller(ep: str, key: str) -> Caller:
+    return Caller(agent="green", episode_id=ep, day=1, tool_use_id=key)
+
+
+async def _prepare_direct(ep: str, key: str, inv: str) -> Any:
+    return await gate.prepare(
+        _caller(ep, key),
+        action="invoices.approve",
+        entity_type="invoice",
+        entity_id=inv,
+        amount=1000.0,
+        verdict_amount=1000.0,
+        args={},
+        context={},
+        state_hash="h",
+        mark_blocked=preparations.block_marker("invoices.approve", inv, 1),
+    )
+
+
+async def _wait_open_escalation(ep: str) -> str:
+    for _ in range(250):
+        esc = await db.fetchval("SELECT id FROM escalations WHERE episode_id=$1 AND status='open'", ep)
+        if esc:
+            return esc
+        await asyncio.sleep(0.02)
+    raise AssertionError("no escalation opened")
+
+
+async def test_cancelled_holder_closes_as_timeout_and_a_retry_opens_no_second_card(blue: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    blue["verdict"] = "escalate"
+    monkeypatch.setattr(settings, "escalation_timeout_sec", 30)
+    ep = await _episode("enforce")
+    inv = await _invoice(ep)
+    key = _key()
+    held = asyncio.create_task(_prepare_direct(ep, key, inv))
+    esc = await _wait_open_escalation(ep)
+    held.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await held
+    row = await db.fetchrow("SELECT effective, decided_by, escalation_id FROM preparations WHERE episode_id=$1 AND idempotency_key=$2", ep, key)
+    assert (row["effective"], row["decided_by"], row["escalation_id"]) == ("block", "timeout", esc)
+    assert await db.fetchval("SELECT status FROM escalations WHERE id=$1", esc) == "timeout"
+    assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "blocked"
+    async with _client() as cl:
+        await db.execute("UPDATE invoices SET status='pending' WHERE id=$1", inv)  # so the route's state check lets the retry through
+        p = (await _prepare(cl, ep, key, "invoices.approve", inv)).json()
+    assert (p["effective"], p["decided_by"]) == ("block", "timeout")
+    assert await db.fetchval("SELECT COUNT(*) FROM escalations WHERE episode_id=$1", ep) == 1
+    assert len(blue["calls"]) == 1
+
+
+async def test_retry_of_a_pending_row_without_a_live_holder_blocks_it(blue: dict[str, Any]) -> None:
+    ep = await _episode("enforce")
+    inv = await _invoice(ep)
+    key = _key()
+    vd = await f.verdict(ep, "invoice", inv, verdict="escalate")
+    await db.execute("UPDATE verdicts SET idempotency_key=$2, action='invoices.approve', amount=1000 WHERE id=$1", vd, key)
+    esc = f.uid("esc")
+    await db.execute("INSERT INTO escalations (id, episode_id, verdict_id, expires_at) VALUES ($1,$2,$3, now() + interval '1 minute')", esc, ep, vd)
+    await db.execute(
+        "INSERT INTO preparations (id, episode_id, idempotency_key, day, agent, controller_mode, action, entity_type, entity_id, amount, state_hash, "
+        "verdict_id, escalation_id, effective, expires_at) "
+        "VALUES ($1,$2,$3,1,'green','enforce','invoices.approve','invoice',$4,1000,'h',$5,$6,'pending', now() + interval '2 minutes')",
+        f.uid("prep"),
+        ep,
+        key,
+        inv,
+        vd,
+        esc,
+    )
+    async with _client() as cl:
+        p = (await _prepare(cl, ep, key, "invoices.approve", inv)).json()
+    assert (p["effective"], p["decided_by"]) == ("block", "timeout")
+    assert await db.fetchval("SELECT status FROM escalations WHERE id=$1", esc) == "timeout"
+    assert await db.fetchval("SELECT COUNT(*) FROM escalations WHERE episode_id=$1", ep) == 1
+    assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "blocked"
+    assert blue["calls"] == []
+
+
+async def test_an_approval_after_expiry_cannot_authorize(blue: dict[str, Any]) -> None:
+    ep = await _episode("enforce")
+    inv = await _invoice(ep)
+    prep = f.uid("prep")
+    await db.execute(
+        "INSERT INTO preparations (id, episode_id, idempotency_key, day, agent, controller_mode, action, entity_type, entity_id, amount, state_hash, "
+        "effective, expires_at) VALUES ($1,$2,$3,1,'green','enforce','invoices.approve','invoice',$4,1000,'h','pending', now() - interval '1 second')",
+        prep,
+        ep,
+        _key(),
+        inv,
+    )
+    await gate._record_decision({"id": prep}, "approve", preparations.block_marker("invoices.approve", inv, 1))
+    row = await db.fetchrow("SELECT effective, decided_by FROM preparations WHERE id=$1", prep)
+    assert (row["effective"], row["decided_by"]) == ("block", "timeout")
+    assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "blocked"
+
+
+async def test_expiry_is_created_at_plus_ttl(blue: dict[str, Any]) -> None:
+    ep = await _episode("enforce")
+    inv = await _invoice(ep)
+    async with _client() as cl:
+        p = (await _prepare(cl, ep, _key(), "invoices.approve", inv)).json()
+    gap = await db.fetchval("SELECT EXTRACT(EPOCH FROM expires_at - created_at) FROM preparations WHERE id=$1", p["preparation_id"])
+    assert float(gap) == 120.0
+
+
+# ---------- smaller contract points ----------
+
+
+async def test_off_mode_conflict_has_no_verdict_id(blue: dict[str, Any]) -> None:
+    ep = await _episode("off")
+    inv, other = await _invoice(ep), await _invoice(ep)
+    key = _key()
+    async with _client() as cl:
+        await _prepare(cl, ep, key, "invoices.approve", inv)
+        r = await _prepare(cl, ep, key, "invoices.approve", other)
+    assert (r.status_code, r.json()) == (409, {"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": None})
+
+
+async def test_non_object_and_non_json_bodies_are_audited_422(blue: dict[str, Any]) -> None:
+    ep = await _episode("enforce")
+    async with _client() as cl:
+        r1 = await cl.post("/api/preparations", json=["invoices.approve"], headers=_green(ep, _key()))
+        r2 = await cl.post("/api/preparations", content=b"not json", headers={**_green(ep, _key()), "content-type": "application/json"})
+    assert r1.status_code == 422 and r2.status_code == 422
+    assert await db.fetchval("SELECT COUNT(*) FROM audit_log WHERE episode_id=$1 AND action='prepare:unknown' AND http_status=422", ep) == 2
+
+
+async def test_inline_escalation_carries_cause(blue: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    blue["verdict"] = "escalate"
+    monkeypatch.setattr(settings, "escalation_timeout_sec", 0.3)
+    ep = await _episode("enforce")
+    inv = await _invoice(ep)
+    async with _client() as cl:
+        r = await cl.post(f"/api/invoices/{inv}/approve", headers=_green(ep, _key()))
+    assert r.status_code == 403
+    (opened,) = await _events(ep, "escalation.opened")
+    assert opened["cause"] == "control" and "preparation_id" not in opened

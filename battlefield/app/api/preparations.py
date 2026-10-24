@@ -18,7 +18,7 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -137,7 +137,14 @@ def _invalid_state(detail: str) -> dict[str, Any]:
 
 
 @router.post("/preparations")
-async def create_preparation(body: dict[str, Any], c: Caller = Depends(GREEN)):
+async def create_preparation(request: Request, c: Caller = Depends(GREEN)):
+    # The body is parsed here, not by FastAPI, so a malformed or non-object body is an audited 422 too.
+    try:
+        body = await request.json()
+    except ValueError:
+        return await _fail(c, "unknown", {}, 422, {"error": "invalid body", "detail": "body is not JSON"})
+    if not isinstance(body, dict):
+        return await _fail(c, "unknown", {"body": body}, 422, {"error": "invalid body", "detail": "body must be a JSON object"})
     try:
         req = PreparationCreate.model_validate(body)
     except ValidationError as e:
