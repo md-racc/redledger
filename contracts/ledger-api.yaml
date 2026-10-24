@@ -232,6 +232,8 @@ components:
             amount_extracted: { $ref: '#/components/schemas/Money' }
             detected_day: { type: integer, nullable: true }
             created_at: { type: string, format: date-time, description: "declaration time; orders same-day attacks" }
+            resolved_day: { type: integer, nullable: true, description: "first day the attack was resolved (outcome failed, or entities and none pending)" }
+            revealed_day: { type: integer, nullable: true, description: "lineage episodes: day a debrief first revealed it; outcome, amount_extracted and detected_day are frozen from then on" }
     Reason:
       type: object
       properties: { reason: { type: string } }
@@ -251,6 +253,8 @@ components:
         days: { type: integer }
         status: { type: string }
         current_day: { type: integer }
+        lineage_id: { type: string, nullable: true }
+        generation: { type: integer, nullable: true }
     EpisodeCreate:
       type: object
       required: [controller_mode]
@@ -261,6 +265,14 @@ components:
         attack_plan:
           type: array
           items: { type: object, properties: { day: { type: integer }, scheme_id: { type: string }, params: { type: object } } }
+        lineage_id:
+          type: string
+          description: |
+            Run this episode as the lineage's next generation (generation = current_generation + 1), with
+            the agents' latest playbooks, daily debriefs and the lineage's reveal window. This is how the
+            real-time demo runs evolved agents: such an episode is never headless (human escalations,
+            DAY_PAUSE_SEC as usual). `seed` must not be a seed any episode of the lineage used; omitted →
+            `base_seed + generation`.
     Score:
       type: object
       properties:
@@ -298,6 +310,76 @@ components:
       properties:
         ticket: { type: string, description: 'opaque to clients; pass verbatim as `/ws?ticket=`' }
         expires_at: { type: string, format: date-time, description: 'ISO 8601; issue time + 60 s' }
+    LineageConfig:
+      type: object
+      description: Validated by battlefield (agentkit.models.LineageConfig). Unknown keys → 422.
+      properties:
+        generations: { type: integer, minimum: 1, default: 3, description: generations the lineage runner creates }
+        days: { type: integer, minimum: 1, default: 6 }
+        controller_mode: { type: string, enum: [off, shadow, enforce], default: enforce }
+        reveal_days: { type: integer, minimum: 0, default: 3, description: 'debrief window: resolved items of the last N completed days (0 = no daily reveal)' }
+        reveal_generations: { type: integer, minimum: 0, default: 2, description: 'after-action review window: the finished generation plus summaries of the N-1 before it (0 = no review)' }
+        headless:
+          type: object
+          nullable: true
+          description: applies to the generations the lineage runner creates; never to an episode made by POST /episodes {lineage_id}
+          properties:
+            day_pause_sec: { type: number, minimum: 0, default: 0 }
+            escalation_policy: { type: string, enum: [block], default: block, description: how an unanswered escalation resolves (today's timeout semantics) }
+            escalation_timeout_sec: { type: integer, minimum: 1, default: 5, description: 'must be ≤ ESCALATION_TIMEOUT_SEC' }
+          default: { day_pause_sec: 0, escalation_policy: block, escalation_timeout_sec: 5 }
+        max_credits: { type: number, minimum: 0, default: 0, description: 'cap on summed factory_credits over the lineage (turns + reflections); 0 = off' }
+    LineageCreate:
+      type: object
+      properties:
+        name: { type: string }
+        base_seed: { type: integer, description: 'omitted → random' }
+        config: { $ref: '#/components/schemas/LineageConfig' }
+    Lineage:
+      type: object
+      properties:
+        id: { type: string, description: 'ln_…' }
+        name: { type: string }
+        base_seed: { type: integer }
+        config: { $ref: '#/components/schemas/LineageConfig' }
+        status: { type: string, enum: [created, running, paused, finished, failed] }
+        current_generation: { type: integer }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time, nullable: true }
+        generations:
+          type: array
+          items:
+            type: object
+            properties:
+              generation: { type: integer }
+              episode_id: { type: string }
+              seed: { type: integer }
+              status: { type: string }
+              score: { $ref: '#/components/schemas/Score' }
+        playbook_versions:
+          type: object
+          description: latest version per agent
+          properties: { red: { type: integer }, green: { type: integer }, blue: { type: integer } }
+    Playbook:
+      type: object
+      required: [version, generation, source, content, rationale]
+      properties:
+        version: { type: integer }
+        parent_version: { type: integer, nullable: true }
+        generation: { type: integer }
+        episode_id: { type: string, nullable: true }
+        day: { type: integer, nullable: true }
+        source: { type: string, enum: [seed, turn, reflect, operator] }
+        content: { type: object, description: 'opaque to battlefield; ≤ 64 KiB serialized' }
+        rationale: { type: string }
+        created_at: { type: string, format: date-time }
+    PlaybookPut:
+      type: object
+      required: [content, base_version]
+      properties:
+        content: { type: object }
+        rationale: { type: string, default: '' }
+        base_version: { type: integer, description: version this write is based on; must be the latest }
     Escalation:
       type: object
       properties:
@@ -500,7 +582,11 @@ paths:
     post:
       security: [ { operatorBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/EpisodeCreate' } } } }
-      responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Episode' } } } } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Episode' } } } }
+        '404': { description: unknown lineage_id }
+        '409': { description: the lineage is running (its runner owns generation creation) }
+        '422': { description: 'invalid body, or seed already used by an episode of this lineage' }
     get: { security: [ { operatorBearer: [] } ], responses: { '200': { description: list } } }
   /episodes/{id}:
     get: { security: [ { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Episode' } } } } } }
@@ -560,6 +646,98 @@ paths:
         '404': { description: unknown fixture }
         '409': { description: episode_id already exists }
         '422': { description: bad episode_id or malformed fixture }
+
+  # ---------- lineages (operator; docs/EVOLUTION-DESIGN.md) ----------
+  /lineages:
+    post:
+      summary: Create a lineage. Writes version 0 ({}, source seed) of each agent's playbook.
+      security: [ { operatorBearer: [] } ]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/LineageCreate' } } } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Lineage' } } } }
+        '422': { description: invalid config }
+    get: { security: [ { operatorBearer: [] } ], responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Lineage' } } } } } } }
+  /lineages/{id}:
+    get:
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Lineage' } } } }, '404': { description: unknown lineage } }
+  /lineages/{id}/start:
+    post:
+      summary: Run the lineage headless - for each generation create its episode, run it, then call every agent's POST /reflect.
+      description: One lineage runs at a time per battlefield (agent services serve one turn at a time). A battlefield restart pauses a running lineage.
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '202': { description: running }
+        '404': { description: unknown lineage }
+        '409': { description: 'another lineage is running, or this one is not in status created' }
+  /lineages/{id}/pause:
+    post:
+      summary: Pause the lineage and its running generation episode.
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses: { '200': { description: paused }, '404': { description: unknown lineage }, '409': { description: not running } }
+  /lineages/{id}/resume:
+    post:
+      summary: Continue a paused lineage at the same generation (also the only way out of a lineage credit_guard pause).
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses: { '200': { description: resumed }, '404': { description: unknown lineage }, '409': { description: 'not paused, or another lineage is running' } }
+  /lineages/{id}/export:
+    get:
+      summary: Everything about the lineage as one JSON document (the log bundle source for `make lineage-export`).
+      description: 'Per generation: episode, events, audit_log, verdicts, attacks (ground truth), score, credits per agent/day, debriefs, playbook versions. Operator only; contains origin.'
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' }, { name: generation, in: query, schema: { type: integer }, description: 'only this generation' } ]
+      responses: { '200': { description: bundle }, '404': { description: unknown lineage } }
+  /fe/lineages/{id}/timeline:
+    get:
+      summary: Playbook versions (with structural diffs vs. their parent), generation scores and debrief counts, ordered by time.
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses: { '200': { description: timeline }, '404': { description: unknown lineage } }
+  /fe/lineages/{id}/report:
+    get:
+      summary: The evolution report as JSON (same document as `make evolution-report` writes to report.json). Partial while the lineage runs.
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses: { '200': { description: report }, '404': { description: unknown lineage } }
+
+  # ---------- playbooks (agents; lineage episodes only) ----------
+  /playbook:
+    get:
+      summary: "The caller's latest playbook version in the lineage of X-Episode."
+      x-agents: [red, green, blue]
+      security: [ { agentBearer: [] } ]
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Playbook' } } } }
+        '404': { description: "{error: 'not a lineage episode'}" }
+    put:
+      summary: Write a new playbook version (source turn). Only inside the caller's active turn.
+      description: |
+        Audited; emits `playbook.updated`. A retry with the same X-Tool-Use-Id returns the version it
+        created (200) instead of writing again. There is no route that reads or writes another
+        agent's playbook.
+      x-agents: [red, green, blue]
+      security: [ { agentBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/XToolUseId' } ]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/PlaybookPut' } } } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Playbook' } } } }
+        '200': { description: retry of an earlier write with the same X-Tool-Use-Id; body is that version }
+        '404': { description: "{error: 'not a lineage episode'}" }
+        '409': { description: "{error: 'stale base_version', latest: <int>} on a lost race, or {error: 'no active turn for this agent'}" }
+        '413': { description: content over 64 KiB serialized }
+  /playbook/history:
+    get:
+      summary: "The caller's own playbook versions, newest first."
+      x-agents: [red, green, blue]
+      security: [ { agentBearer: [] } ]
+      parameters: [ { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } } ]
+      responses:
+        '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Playbook' } } } } }
+        '404': { description: "{error: 'not a lineage episode'}" }
 
   # ---------- extension points (README §16) ----------
   /state/{key}:

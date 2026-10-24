@@ -5,6 +5,22 @@
 -- `origin` is provenance for scoring: 'sim' (seeded/legit), 'red', 'green', 'blue'.
 -- Battlefield NEVER returns `origin` to any X-Agent caller.
 
+-- A lineage is a chain of episodes, one per generation, whose agents carry versioned playbooks
+-- from one generation to the next (docs/EVOLUTION-DESIGN.md). `config` is validated by battlefield
+-- (LineageConfig in agentkit/models.py). Generation g runs on seed `base_seed + g`; no two episodes
+-- of a lineage share a seed (episodes_lineage_seed below), so the legit traffic agents learn about in
+-- one generation is never replayed verbatim in the next.
+CREATE TABLE IF NOT EXISTS lineages (
+  id                  TEXT PRIMARY KEY,
+  name                TEXT NOT NULL DEFAULT '',
+  base_seed           INTEGER NOT NULL,
+  config              JSONB NOT NULL,
+  status              TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created','running','paused','finished','failed')),
+  current_generation  INTEGER NOT NULL DEFAULT 0,   -- last generation created (0 = none yet)
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at         TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS episodes (
   id               TEXT PRIMARY KEY,
   seed             INTEGER NOT NULL,
@@ -13,6 +29,8 @@ CREATE TABLE IF NOT EXISTS episodes (
   status           TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created','running','paused','finished','failed')),
   current_day      INTEGER NOT NULL DEFAULT 0,
   attack_plan      JSONB,                       -- optional forced schedule: [{day, scheme_id, params}]
+  lineage_id       TEXT REFERENCES lineages(id), -- NULL = a plain episode: nothing is ever revealed to its agents
+  generation       INTEGER,                      -- set iff lineage_id is set; 1-based
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   started_at       TIMESTAMPTZ,
   finished_at      TIMESTAMPTZ
@@ -162,7 +180,13 @@ CREATE TABLE IF NOT EXISTS attacks (
   amount_extracted  NUMERIC(14,2) NOT NULL DEFAULT 0,
   detected_day      INTEGER,
   notes             TEXT,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()  -- orders a day's attacks for attack_id linking
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),  -- orders a day's attacks for attack_id linking
+  -- First day the attack is resolved: outcome 'failed', or it has entities and none is pending.
+  -- Only resolved attacks may be revealed to agents mid-episode (lineage episodes only).
+  resolved_day      INTEGER,
+  -- Day a debrief first revealed it. Once set, battlefield stops re-resolving the attack: outcome,
+  -- amount_extracted and detected_day are frozen, so hindsight after the reveal never scores as detection.
+  revealed_day      INTEGER
 );
 CREATE INDEX IF NOT EXISTS attacks_ep ON attacks(episode_id);
 
@@ -247,6 +271,44 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_ep ON events(episode_id, id);
 
+-- ---------- evolution (lineages; docs/EVOLUTION-DESIGN.md) ----------
+
+-- Per (lineage, agent) versioned playbook. Content is opaque to battlefield and owned by the agent's
+-- team. Versions are immutable; version 0 is the seed ({}), every write adds one. Agents read and
+-- write only their own. Diffs between versions are computed at read time, never stored.
+CREATE TABLE IF NOT EXISTS playbooks (
+  id              BIGSERIAL PRIMARY KEY,
+  lineage_id      TEXT NOT NULL REFERENCES lineages(id) ON DELETE CASCADE,
+  agent           TEXT NOT NULL CHECK (agent IN ('red','green','blue')),
+  version         INTEGER NOT NULL,
+  parent_version  INTEGER,                      -- NULL only for version 0
+  generation      INTEGER NOT NULL,             -- generation it was written in (reflect: the one reflected on; seed: 0)
+  episode_id      TEXT,                         -- NULL for seed/operator
+  day             INTEGER,                      -- set for source 'turn' only
+  source          TEXT NOT NULL CHECK (source IN ('seed','turn','reflect','operator')),
+  content         JSONB NOT NULL CHECK (octet_length(content::text) <= 65536),
+  rationale       TEXT NOT NULL DEFAULT '',
+  tool_use_id     TEXT,                         -- X-Tool-Use-Id of a 'turn' write; a retry returns the same version
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (lineage_id, agent, version)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS playbooks_tool_use ON playbooks(lineage_id, agent, tool_use_id) WHERE tool_use_id IS NOT NULL;
+
+-- Every disclosure of ground truth to an agent: daily debriefs (day set) and after-action reviews
+-- between generations (day NULL). `payload` is exactly what the agent was shown.
+CREATE TABLE IF NOT EXISTS debriefs (
+  id          BIGSERIAL PRIMARY KEY,
+  lineage_id  TEXT NOT NULL REFERENCES lineages(id) ON DELETE CASCADE,
+  generation  INTEGER NOT NULL,
+  episode_id  TEXT NOT NULL,
+  day         INTEGER,                          -- NULL = after-action review
+  agent       TEXT NOT NULL CHECK (agent IN ('red','green','blue')),
+  payload     JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS debriefs_lineage ON debriefs(lineage_id, generation, agent);
+CREATE INDEX IF NOT EXISTS debriefs_ep ON debriefs(episode_id, day);
+
 -- ---------- extension points (core, owned by Ad; see README §16) ----------
 
 -- Per-agent key/value memory across turns. No schema change needed to persist agent state.
@@ -283,3 +345,12 @@ CREATE INDEX IF NOT EXISTS inputs_pending ON inputs(episode_id, target) WHERE co
 ALTER TABLE attacks ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 ALTER TABLE vendor_changes ADD COLUMN IF NOT EXISTS attack_id TEXT;
 CREATE INDEX IF NOT EXISTS vendor_changes_attack ON vendor_changes(attack_id) WHERE attack_id IS NOT NULL;
+
+-- 2026-10-24: lineages (evolution). episodes.lineage_id/generation (existing rows stay NULL = plain
+-- episodes), attacks.resolved_day/revealed_day (existing rows stay NULL = never revealed).
+ALTER TABLE episodes ADD COLUMN IF NOT EXISTS lineage_id TEXT REFERENCES lineages(id);
+ALTER TABLE episodes ADD COLUMN IF NOT EXISTS generation INTEGER;
+ALTER TABLE attacks ADD COLUMN IF NOT EXISTS resolved_day INTEGER;
+ALTER TABLE attacks ADD COLUMN IF NOT EXISTS revealed_day INTEGER;
+CREATE UNIQUE INDEX IF NOT EXISTS episodes_lineage_gen ON episodes(lineage_id, generation) WHERE lineage_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS episodes_lineage_seed ON episodes(lineage_id, seed) WHERE lineage_id IS NOT NULL;

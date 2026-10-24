@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 Agent = Literal["red", "green", "blue"]
 Emitter = Literal["red", "green", "blue", "battlefield", "human"]
@@ -58,6 +58,13 @@ class EventType(StrEnum):
     REPORT_POSTED = "report.posted"
     SCORE_UPDATED = "score.updated"
     ERROR = "error"
+    # lineages (battlefield-only; docs/EVOLUTION-DESIGN.md)
+    GENERATION_STARTED = "generation.started"
+    GENERATION_ENDED = "generation.ended"
+    PLAYBOOK_UPDATED = "playbook.updated"
+    DEBRIEF_DELIVERED = "debrief.delivered"
+    LINEAGE_PAUSED = "lineage.paused"
+    LINEAGE_RESUMED = "lineage.resumed"
 
 
 AGENT_EMITTABLE: frozenset[str] = frozenset({EventType.AGENT_THINKING, EventType.AGENT_TOOL_CALL, EventType.AGENT_TOOL_RESULT})
@@ -146,6 +153,7 @@ class GateRequest(BaseModel):
     amount: float | None = None
     args: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
+    playbook_version: int | None = None  # blue's latest playbook version; lineage episodes only
 
 
 class GateResponse(BaseModel):
@@ -160,6 +168,8 @@ class AuditRequest(BaseModel):
     episode_id: str
     day: int
     inputs: list[dict[str, Any]] = Field(default_factory=list)
+    lineage: LineageInfo | None = None  # lineage episodes only
+    debrief: Debrief | None = None
 
 
 class AuditResponse(BaseModel):
@@ -175,3 +185,74 @@ class AttackCreate(BaseModel):
     story: str
     params: dict[str, Any] = Field(default_factory=dict)
     target_amount: float
+
+
+# ---------- lineages (contracts/agent-service.md "Lineages") ----------
+
+
+class HeadlessConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    day_pause_sec: float = Field(0.0, ge=0)
+    escalation_policy: Literal["block"] = "block"
+    escalation_timeout_sec: int = Field(5, ge=1)
+
+
+class LineageConfig(BaseModel):
+    """Validated by battlefield on POST /lineages. Unknown keys are refused."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    generations: int = Field(3, ge=1)
+    days: int = Field(6, ge=1)
+    controller_mode: ControllerMode = "enforce"
+    reveal_days: int = Field(3, ge=0)  # debrief window in completed days; 0 = no daily reveal
+    reveal_generations: int = Field(2, ge=0)  # this generation + N-1 summaries; 0 = no review, no /reflect
+    headless: HeadlessConfig | None = Field(default_factory=HeadlessConfig)
+    max_credits: float = Field(0.0, ge=0)  # whole lineage, turns + reflections; 0 = off
+
+
+class LineageInfo(BaseModel):
+    """`options.lineage` on /turn, `lineage` on blue /audit."""
+
+    id: str
+    generation: int
+    playbook_version: int
+
+
+class Debrief(BaseModel):
+    """`options.debrief` on /turn, `debrief` on blue /audit. Item shapes per agent: agent-service.md."""
+
+    day: int
+    window_days: int
+    items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class Playbook(BaseModel):
+    version: int
+    parent_version: int | None = None
+    generation: int
+    episode_id: str | None = None
+    day: int | None = None
+    source: Literal["seed", "turn", "reflect", "operator"]
+    content: dict[str, Any] = Field(default_factory=dict)
+    rationale: str = ""
+    created_at: datetime | None = None
+
+
+class ReflectRequest(BaseModel):
+    lineage_id: str
+    generation: int
+    episode_id: str
+    review: dict[str, Any] = Field(default_factory=dict)
+    playbook: Playbook
+
+
+class ReflectResponse(BaseModel):
+    ok: bool
+    playbook: dict[str, Any] | None = None  # new content; None keeps the current version
+    rationale: str = ""
+    usage: Usage | None = None
+
+
+AuditRequest.model_rebuild()  # resolves the forward refs to LineageInfo / Debrief above

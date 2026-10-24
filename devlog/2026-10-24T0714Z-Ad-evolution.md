@@ -1,0 +1,1 @@
+- 2026-10-24T07:14Z · Ad · contracts: lineages, versioned playbooks, debriefs, POST /reflect, lineage events (EVOLUTION-DESIGN §4; schema applies fresh and over main's twice; all service suites + battlefield DB tier pass); next: battlefield E2a playbooks/debrief ∥ E2b agentkit reflect; blocked: none

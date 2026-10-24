@@ -39,6 +39,11 @@ from the ordered stream of these; it never queries ledger tables.
 | `report.posted` | battlefield | `{report_id, day}` (fetch body via `GET /api/reports/{id}`) |
 | `score.updated` | battlefield | `Score` (below) |
 | `error` | battlefield | `{where, message}` — non-fatal problems the UI may surface. Documented cases below |
+| `generation.started` | battlefield | `{lineage_id, generation, seed, playbook_versions: {red, green, blue}}` — lineage episodes only |
+| `generation.ended` | battlefield | `{lineage_id, generation, score: Score}` |
+| `playbook.updated` | battlefield | `{agent, version, parent_version, generation, source: "turn"\|"reflect"\|"operator", rationale}` — content via `GET /api/fe/lineages/{id}/timeline` |
+| `debrief.delivered` | battlefield | `{agent, day, revealed_attacks, new_items, window_days}` — counts only, never the items |
+| `lineage.paused` / `lineage.resumed` | battlefield | `{lineage_id, generation}` |
 | `x.<area>.<name>` | anyone | team-defined; payload is whatever the team says it is (document it in your AGENTS.md) |
 
 `error` documented cases (`where` values code may rely on; others are free-form):
@@ -46,6 +51,8 @@ from the ordered stream of these; it never queries ledger tables.
 | `where` | `message` | when / effect |
 |---|---|---|
 | `credit_guard` | `"episode paused at <n> credits (limit <m>)"` | `MAX_CREDITS_PER_EPISODE > 0` and the episode's summed `turn.ended.factory_credits` (missing/`null` counts as 0, e.g. `DRY_RUN`) reaches the limit after a turn. Battlefield emits the `error`, then pauses the episode and emits `episode.paused` (if the episode is already paused, e.g. during a manual `step`, only the `error` is emitted). It resumes only by an explicit `POST /api/episodes/{id}/resume`; it is never auto-resumed. |
+
+| `credit_guard` | `"lineage paused at <n> credits (limit <m>)"` | Lineage `config.max_credits > 0` and the lineage's summed credits (every generation's `turn.ended.factory_credits` plus `/reflect` usage) reach it. Emitted into the current generation's episode, followed by `lineage.paused` and `episode.paused` (when an episode is running). Resumes only by `POST /api/lineages/{id}/resume`. |
 
 `Score`:
 ```json
@@ -61,6 +68,17 @@ red's `agent.*` and `attack.launched` → `turn.ended(red)` → `turn.started(gr
 `agent.*`, `gate.verdict`, `ledger.mutation`, `escalation.*` → `turn.ended(green)` →
 `turn.started(blue)` → blue's `agent.*`, `flag.raised`, `vendor.frozen`, `report.posted` →
 `turn.ended(blue)` → `attack.outcome`* → `score.updated` → `day.ended`.
+
+Lineage episodes add, in this order:
+- at the start of a generation's episode (day 0, before anything else): one `playbook.updated`
+  (`source: "reflect"`) per agent whose reflection on the previous generation produced a new
+  version → `generation.started` → `episode.started`;
+- a `playbook.updated` (`source: "turn"`) inside the writing agent's turn, among its `agent.*` events;
+- at the end of each day: … `score.updated` → `debrief.delivered`* → `day.ended`;
+- after the last day: `episode.ended` → `generation.ended`.
+
+So a viewer of the real-time demo episode (the lineage's next generation) sees the agents arrive
+with their evolved playbooks before day 0 starts.
 
 ## Fixture format
 
