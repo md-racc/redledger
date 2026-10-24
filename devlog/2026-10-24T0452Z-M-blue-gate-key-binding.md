@@ -1,0 +1,1 @@
+- 2026-10-24T04:52Z · M · blue: bind pending and retained gate keys to their first action, reject cross-action replay with 409, and preserve same-action replay and TTL; next: independent verification and Ad integration; blocked: none

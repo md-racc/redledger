@@ -65,4 +65,6 @@ red's `agent.*` and `attack.launched` → `turn.ended(red)` → `turn.started(gr
 ## Fixture format
 
 A recorded episode is a `.jsonl` file, one event per line, in `id` order. `make record EP=<id>`
-produces one; the frontend mock and `make replay` consume it.
+produces one; the frontend mock and `make replay` consume it. A server-side replay re-emits each
+event under a new `replay_*` episode with fresh `id`/`ts` (original type, agent, day, payload); the
+envelope carries no `replay` flag, so clients dedupe and order by `id` as for any episode.

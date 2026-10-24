@@ -18,6 +18,7 @@ from agentkit.tools import ToolFn
 from . import tools
 from .evidence import collect_snapshot, model_view
 from .models import AuditOutcome, AuditSession, ConfirmedEffect
+from .readiness import live_readiness
 
 PROMPT = (Path(__file__).parent.parent / "prompts" / "audit.md").read_text()
 MAX_RECORDED_DAYS = 512
@@ -36,6 +37,10 @@ class AuditAgent(DroidAgent):
 
     def tools(self) -> list[tuple[str, str, ToolFn]]:
         return collect_tools(tools)
+
+    async def health(self) -> dict[str, Any]:
+        # Service liveness is independent of live SDK readiness. Never probe on this route.
+        return {"ok": True, "agent": self.name, "model": self.s.droid_model, "droid_ok": live_readiness().ready, "dry_run": self.s.dry_run}
 
     def outcome(self, episode_id: str, day: int) -> AuditOutcome:
         item = self.completed.get((episode_id, day))
@@ -115,14 +120,17 @@ class AuditAgent(DroidAgent):
 
     async def _droid_turn(self, req: TurnRequest, emitter: Any) -> tuple[str, Usage | None]:
         # Shared lifecycle now restricts the first session and offloads synchronous MCP tools.
-        # Exact Blue IDs, worker-thread Blue context and invocation-to-write binding are still
-        # unverified. Never stream or write until those Blue-specific prerequisites are proven.
+        # Shared offload copies Blue context and binds its own Invocation, but owner-loop safety,
+        # Blue invocation/write/narration integration and exact session IDs remain unverified.
+        # Never stream or write until those Blue-specific prerequisites are proven.
         await self._prepare(req)
         session = tools.SESSION.get()
         assert session is not None
-        session.gaps.append("Live audit unavailable: exact Blue tool IDs, worker-thread Blue context and verified invocation binding remain unverified")
+        session.gaps.append(
+            "Live audit unavailable: exact Blue tool IDs, worker-thread Blue context/owner-loop safety and verified invocation binding remain unverified"
+        )
         raise RuntimeError(
-            "Blue live audit unavailable: exact Blue tool IDs, worker-thread Blue context and verified invocation binding remain unverified; no stream or write attempted."
+            "Blue live audit unavailable: exact Blue tool IDs, worker-thread Blue context/owner-loop safety and verified invocation binding remain unverified; no stream or write attempted."
         )
 
     async def dry_run_turn(self, req: TurnRequest) -> str:
