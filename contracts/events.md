@@ -9,7 +9,8 @@ from the ordered stream of these; it never queries ledger tables.
 ```
 
 - `id` is a monotonically increasing integer per deployment (DB serial). Clients catch up with
-  `GET /api/events?episode_id=&after_id=`.
+  `GET /api/events?episode_id=&after_id=` (operator token only; agents get 403 — agents emit
+  events, they never read them).
 - `agent` is `red | green | blue | battlefield | human`.
 - Agents may emit the three `agent.*` types and any `x.<area>.<name>` custom type via `POST /api/events`. Battlefield emits the rest. `x.*` events are team-defined, need no contracts change, and the frontend keeps them verbatim in `state.custom`.
 - Payload fields marked `?` are optional. Money is a JSON number (dollars, 2dp).
@@ -37,8 +38,14 @@ from the ordered stream of these; it never queries ledger tables.
 | `vendor.frozen` / `vendor.unfrozen` | battlefield | `{vendor_id, reason?}` |
 | `report.posted` | battlefield | `{report_id, day}` (fetch body via `GET /api/reports/{id}`) |
 | `score.updated` | battlefield | `Score` (below) |
-| `error` | battlefield | `{where, message}` — non-fatal problems the UI may surface |
+| `error` | battlefield | `{where, message}` — non-fatal problems the UI may surface. Documented cases below |
 | `x.<area>.<name>` | anyone | team-defined; payload is whatever the team says it is (document it in your AGENTS.md) |
+
+`error` documented cases (`where` values code may rely on; others are free-form):
+
+| `where` | `message` | when / effect |
+|---|---|---|
+| `credit_guard` | `"episode paused at <n> credits (limit <m>)"` | `MAX_CREDITS_PER_EPISODE > 0` and the episode's summed `turn.ended.factory_credits` (missing/`null` counts as 0, e.g. `DRY_RUN`) reaches the limit after a turn. Battlefield pauses the episode and emits `episode.paused` alongside the `error`. It resumes only by an explicit `POST /api/episodes/{id}/resume`; it is never auto-resumed. |
 
 `Score`:
 ```json

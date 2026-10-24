@@ -1,7 +1,28 @@
 # Agent service contract
 
 Each of `red`, `green`, `blue` is an HTTP service that battlefield drives. Battlefield is the only
-caller. All requests carry `Authorization: Bearer $INTERNAL_TOKEN`.
+caller (plus green's `/gate` mirror to blue). All requests carry `Authorization: Bearer $AGENT_TOKEN`.
+
+## Tokens
+
+| Token | Who holds it | What it authorizes |
+|---|---|---|
+| `AGENT_TOKEN` | battlefield, red, green, blue containers | Every Ledger API request carrying `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes` (and `/health`); green → blue `/gate` mirror |
+| `OPERATOR_TOKEN` | battlefield, frontend **server** (Next route handler), Makefile/curl, the owner | Every Ledger API request without `X-Agent`: control plane (`/episodes*`, `/escalations*`, `/replays*`, `/schemes`, `/health`, `/attacks/all`), `/fe/*` incl. `/fe/query`, `GET /events`, `/inputs`, `POST /ws/ticket`, `/ws?token=` (curl/debug) |
+| WS ticket | browser, ≤60 s lifetime, single use | One `/ws` connection, for one episode (or `*`). Minted by `POST /api/ws/ticket` with `OPERATOR_TOKEN` |
+| none | anyone | `battlefield/extensions/fe_*` routes deliberately marked public |
+
+Rules (battlefield enforces; see `ledger-api.yaml` per-route `security`):
+- A request with `X-Agent` must present `AGENT_TOKEN`. `OPERATOR_TOKEN` + `X-Agent` → 401.
+- A request without `X-Agent` must present `OPERATOR_TOKEN`. `AGENT_TOKEN` without `X-Agent` → 401.
+- A correctly authenticated agent on a route its role may not call → 403. `GET /api/events` is
+  operator-only: agents emit events, they never read them.
+- Agent services accept only `AGENT_TOKEN` on `/turn` `/gate` `/audit` `/schemes` → else 401.
+- Transition: when `AGENT_TOKEN` / `OPERATOR_TOKEN` is unset, each falls back to the legacy
+  `INTERNAL_TOKEN`; battlefield logs a warning when the two resolved values are equal.
+  `agentkit.AgentSettings.internal_token` keeps its name and reads `AGENT_TOKEN` first, then
+  `INTERNAL_TOKEN`, so agent code needs no change.
+- The browser never holds `AGENT_TOKEN` or `OPERATOR_TOKEN`; no token goes in a `NEXT_PUBLIC_*` var.
 
 ## Common
 
