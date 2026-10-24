@@ -1,0 +1,3 @@
+# Per-service validation artifacts, not controller source.
+/uv.lock
+/.review-*.log

@@ -1,0 +1,1 @@
+- 2026-10-24T03:34Z · M · blue: current review 1 introduce deterministic gate policy and retained verdicts; 4 Blue tests; next: dependent checkpoint; blocked: live Blue SDK binding unverified

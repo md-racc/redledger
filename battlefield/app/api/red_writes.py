@@ -126,7 +126,9 @@ async def create_vendor(body: VendorCreate, c: Caller = Depends(allow("red", ope
         body.address,
         body.category,
         c.day,
-        c.agent,
+        # same value legit mid-episode onboarding writes (legit_traffic.ONBOARDED_BY); 'red' here
+        # would be provenance in plain sight (invariant 4). origin='red' is the ground truth.
+        "procurement",
     )
     await audit.record(c, "vendors.create", body.model_dump(), {"id": vid}, 201)
     await audit.mutation(c, "vendors.create", "vendor", vid)
