@@ -1,0 +1,1 @@
+- 2026-10-24T23:10Z · Ad · battlefield: red's GET /attacks withholds outcome/amount/detection until an attack is revealed by a debrief (#137 §1, contract #138); next: none; blocked: none
