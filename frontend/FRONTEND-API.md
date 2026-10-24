@@ -1,11 +1,30 @@
 # Frontend API reference
 
-Base URL: `${NEXT_PUBLIC_BATTLEFIELD_URL}/api`. Header: `Authorization: Bearer <INTERNAL_TOKEN>`.
-Interactive docs with live schemas: `${BATTLEFIELD_URL}/docs`. `lib/api.ts` wraps all of this.
+Browser base URL: same-origin `/api/bf`. `/api/bf/<path>?<query>` mirrors battlefield
+`/api/<path>?<query>` exactly (method, body, content-type, status, streamed body); the Next
+route handler `app/api/bf/[...path]/route.ts` adds `Authorization: Bearer $OPERATOR_TOKEN`
+server-side. The browser sends no token and no `Authorization` header; the proxy drops the
+browser's `Authorization`, cookies and any `X-*` headers. Paths below are relative to that base
+(battlefield `/api/episodes` = browser `/api/bf/episodes`). Interactive docs with live schemas:
+`${BATTLEFIELD_URL}/docs`. `lib/api.ts` wraps all of this.
+
+Server env (no `NEXT_PUBLIC_` prefix, read per request): `BATTLEFIELD_URL`, `OPERATOR_TOKEN`.
+**Never put a token in a `NEXT_PUBLIC_` var**; those are inlined into the browser bundle at build.
+Proxy errors: `502 {error}` if those vars are unset or battlefield is unreachable, `504` on
+upstream timeout (30 s; 300 s for `POST /episodes/{id}/step`), `400` on a path containing
+`..`/encoded slashes, `403` for a cross-site (`Sec-Fetch-Site: cross-site`) mutation.
 
 Two layers:
-- **Live stream** — `WS /api/ws?episode_id=&token=&after_id=` and `GET /api/events`. One
-  `RLEvent` per frame, see `contracts/events.md`. Fold with `lib/reducer.ts`.
+- **Live stream** — WebSocket and `GET /api/events` (browser: `/api/bf/events`). One `RLEvent`
+  per frame, see `contracts/events.md`. Fold with `lib/reducer.ts`. Socket auth is a ticket:
+  1. `GET /api/bf/ws-ticket?episode_id=<id>` (Next route; calls battlefield
+     `POST /api/ws/ticket {episode_id}` with the operator token) → `{ticket, expires_at, ws_url}`.
+     The ticket is valid 60 s, single use, scoped to that episode (`*` when `episode_id` omitted).
+     `ws_url` is `NEXT_PUBLIC_WS_URL` read at request time on the server.
+  2. Open `${ws_url}/api/ws?episode_id=<id>&ticket=<ticket>&after_id=<n>`.
+  3. Invalid/expired ticket → server closes with code `4401`. On any unrequested close,
+     `lib/ws.ts` fetches a new ticket and reconnects with backoff, resuming from `after_id`.
+  (`?token=<OPERATOR_TOKEN>` on `/api/ws` exists for curl/debug only; never from the browser.)
 - **Read API** — `/api/fe/...` returns derived views of the same episode. Poll these or call on
   demand (click an attack → fetch its trail). All return JSON; money is a number in dollars.
 
@@ -113,5 +132,7 @@ All escalations (open and resolved) joined with their verdicts.
 - `shadow` mode records verdicts with `enforced=false` and does not block. Useful to show
   "would have caught" during a baseline.
 - Escalations time out after `ESCALATION_TIMEOUT_SEC` (90 s) and default to block.
+- Public `battlefield/extensions/fe_*` routes (`/api/x/fe/...`) need no token; call them through
+  the proxy (`/api/bf/x/fe/...`) or directly at the battlefield's public URL.
 - Replays broadcast under a virtual `episode_id` (`replay_<fixture>` by default) and are not
   persisted; `/api/events` won't have them. The reducer handles `replay: true` frames.
