@@ -84,3 +84,22 @@ async def test_red_vendor_change_links_attack_and_hides_it(episode: str) -> None
 
 def _atk(scheme_id: str, target: float) -> dict:
     return {"scheme_id": scheme_id, "display_name": scheme_id, "story": "test", "target_amount": target}
+
+
+async def test_attack_listings_order_same_day_by_created_at(episode: str) -> None:
+    tag = uuid.uuid4().hex[:8]
+    ago = "SELECT now() - make_interval(mins => $1)"
+    first = await f.attack(episode, day=1, scheme_id="bank_swap", id=f"atk_z{tag}", created_at=await db.fetchval(ago, 2))
+    second = await f.attack(episode, day=1, scheme_id="threshold_split", id=f"atk_a{tag}", created_at=await db.fetchval(ago, 1))
+    day0 = await f.attack(episode, day=0, scheme_id="ghost_vendor", id=f"atk_m{tag}")  # created last, launched first
+    expected = [day0, first, second]  # day_launched, then created_at; id order would put atk_a before atk_z
+    schemes = ["ghost_vendor", "bank_swap", "threshold_split"]
+    async with _client() as c:
+        red = (await c.get("/api/attacks", headers=f.auth("red", episode=episode, day=1))).json()
+        op = (await c.get("/api/attacks/all", params={"episode_id": episode}, headers=f.auth())).json()
+        fe = (await c.get(f"/api/fe/episodes/{episode}/attacks", headers=f.auth())).json()
+        board = (await c.get(f"/api/fe/episodes/{episode}/attacks/leaderboard", headers=f.auth())).json()
+        cmp = (await c.get("/api/fe/compare", params={"a": episode, "b": episode}, headers=f.auth())).json()
+    assert [a["id"] for a in red] == [a["id"] for a in op] == [a["id"] for a in fe] == expected
+    assert [r["scheme_id"] for r in board] == schemes  # all tied at $0 extracted: launch order breaks the tie
+    assert [a["scheme_id"] for a in cmp["a"]["attacks"]] == [a["scheme_id"] for a in cmp["b"]["attacks"]] == schemes
