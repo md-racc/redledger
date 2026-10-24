@@ -340,3 +340,73 @@ async def test_payments_into_a_swap_are_not_legit_processed(episode: str) -> Non
     ok = await f.invoice(episode, other, amount=500, status="paid", day=2)
     await f.payment(episode, ok, amount=500, to_account="ACCT-OLD", day=2)
     assert (await score.compute(episode))["legit_processed"] == 1
+
+
+# ---------- attack_id on vendor_changes (replaces the same-day heuristic for linked rows) ----------
+
+
+async def test_two_change_only_attacks_one_day_do_not_share_changes(episode: str) -> None:
+    v1 = await f.vendor(episode)
+    v2 = await f.vendor(episode, bank_account="ACCT-RED")
+    stopped = await f.attack(episode, day=1, target_amount=6_000)
+    landed = await f.attack(episode, day=1, target_amount=3_000)
+    await f.change(episode, v1, day=1, status="blocked", attack_id=stopped)
+    await f.change(episode, v2, day=1, status="approved", resolved_day=1, attack_id=landed)
+    inv = await f.invoice(episode, v2, amount=1500, status="paid", day=2)
+    await f.payment(episode, inv, amount=1500, to_account="ACCT-RED", day=2)
+    await _resolve(episode)
+    # the heuristic gave both changes to both attacks: both 'partial', $3k extracted
+    assert await _attack(stopped) == {"outcome": "blocked", "amount_extracted": 0, "detected_day": None}
+    assert await _attack(landed) == {"outcome": "extracted", "amount_extracted": 1500, "detected_day": None}
+    s = await score.compute(episode)
+    assert s["dollars_extracted"] == 1500
+    assert s["dollars_blocked"] == 6_000  # only the stopped attack's target
+    assert s["attacks_caught"] == 1
+
+
+async def test_bank_swap_and_ghost_vendor_same_day_attribute_by_attack_id(episode: str) -> None:
+    # ghost_vendor declared and created its vendor, but the turn ended before the invoice, so it has
+    # no invoice/expense rows; the heuristic then handed it bank_swap's change too
+    ghost = await f.attack(episode, day=1, scheme_id="ghost_vendor", target_amount=4_380)
+    await f.vendor(episode, origin="red")
+    swap = await f.attack(episode, day=1, scheme_id="bank_swap", target_amount=8_000)
+    vid = await f.vendor(episode)
+    ch = await f.change(episode, vid, day=1, status="blocked", attack_id=swap)
+    await f.verdict(episode, "vendor_change", ch, verdict="block", day=1)
+    await _resolve(episode, day=2)
+    assert await _attack(swap) == {"outcome": "blocked", "amount_extracted": 0, "detected_day": 1}
+    assert await _attack(ghost) == {"outcome": "failed", "amount_extracted": 0, "detected_day": None}
+    s = await score.compute(episode)
+    assert s["dollars_blocked"] == 8_000  # not also ghost_vendor's target
+    assert s["attacks_caught"] == 1 and s["detection_latency_days"] == 0.0
+
+
+async def test_linked_change_is_credited_to_its_attack_despite_later_attacks(episode: str) -> None:
+    vid = await f.vendor(episode, bank_account="ACCT-RED")
+    first = await f.attack(episode, day=1, target_amount=5_000)
+    later_same_day = await f.attack(episode, day=1, target_amount=2_000)
+    next_day = await f.attack(episode, day=2, target_amount=7_000)
+    await f.change(episode, vid, day=1, status="approved", resolved_day=1, attack_id=first)
+    # even a change made on another attack's launch day belongs to the attack it is linked to
+    await f.change(episode, vid, day=2, field="address", new_value="1 Elm St", status="approved", resolved_day=2, attack_id=first)
+    await f.change(episode, await f.vendor(episode), day=1, status="rejected", resolved_day=1, attack_id=later_same_day)
+    inv = await f.invoice(episode, vid, amount=2_000, status="paid", day=4)
+    await f.payment(episode, inv, amount=2_000, to_account="ACCT-RED", day=4)
+    await _resolve(episode, day=5)
+    assert await _attack(first) == {"outcome": "extracted", "amount_extracted": 2_000, "detected_day": None}
+    assert await _attack(later_same_day) == {"outcome": "blocked", "amount_extracted": 0, "detected_day": None}
+    assert await _attack(next_day) == {"outcome": "failed", "amount_extracted": 0, "detected_day": None}
+    s = await score.compute(episode)
+    assert s["dollars_extracted"] == 2_000 and s["dollars_blocked"] == 2_000
+
+
+async def test_null_attack_id_change_still_uses_same_day_fallback(episode: str) -> None:
+    vid = await f.vendor(episode)
+    linked = await f.attack(episode, day=1, target_amount=1_000)
+    legacy = await f.attack(episode, day=2, target_amount=4_000)
+    await f.change(episode, vid, day=1, status="blocked", attack_id=linked)
+    await f.change(episode, vid, day=2, status="blocked")  # pre-upgrade row: attack_id NULL
+    await _resolve(episode)
+    assert (await _attack(linked))["outcome"] == "blocked"
+    assert (await _attack(legacy))["outcome"] == "blocked"
+    assert (await score.compute(episode))["dollars_blocked"] == 5_000

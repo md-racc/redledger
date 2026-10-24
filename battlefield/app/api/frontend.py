@@ -222,7 +222,7 @@ async def vendor_profiles(episode_id: str, sort: str = Query("risk", pattern="^(
 @router.get("/episodes/{episode_id}/attacks")
 async def attacks(episode_id: str):
     """Every declared attack with its entities and detection trail."""
-    rows = db.rows_to_list(await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 ORDER BY day_launched, id", episode_id))
+    rows = db.rows_to_list(await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 ORDER BY day_launched, created_at, id", episode_id))
     for a in rows:
         a["invoices"] = db.rows_to_list(
             await db.fetch("SELECT id, vendor_id, amount, invoice_number, status, status_day FROM invoices WHERE attack_id=$1", a["id"])
@@ -243,7 +243,7 @@ async def attack_leaderboard(episode_id: str):
     rows = await db.fetch(
         "SELECT scheme_id, display_name, COUNT(*) AS attempts, SUM(amount_extracted) AS extracted, SUM(target_amount) AS targeted, "
         "COUNT(*) FILTER (WHERE outcome IN ('blocked','flagged')) AS caught, AVG(detected_day - day_launched) AS avg_latency "
-        "FROM attacks WHERE episode_id=$1 GROUP BY 1,2 ORDER BY extracted DESC",
+        "FROM attacks WHERE episode_id=$1 GROUP BY 1,2 ORDER BY extracted DESC, MIN(day_launched), MIN(created_at), scheme_id, display_name",
         episode_id,
     )
     return db.rows_to_list(rows)
@@ -342,10 +342,14 @@ async def compare(a: str, b: str):
     sa, sb = await score.compute(a), await score.compute(b)
     ta, tb = await timeline(a), await timeline(b)
     aa = db.rows_to_list(
-        await db.fetch("SELECT scheme_id, outcome, amount_extracted, day_launched, detected_day FROM attacks WHERE episode_id=$1 ORDER BY day_launched", a)
+        await db.fetch(
+            "SELECT scheme_id, outcome, amount_extracted, day_launched, detected_day FROM attacks WHERE episode_id=$1 ORDER BY day_launched, created_at, id", a
+        )
     )
     ab = db.rows_to_list(
-        await db.fetch("SELECT scheme_id, outcome, amount_extracted, day_launched, detected_day FROM attacks WHERE episode_id=$1 ORDER BY day_launched", b)
+        await db.fetch(
+            "SELECT scheme_id, outcome, amount_extracted, day_launched, detected_day FROM attacks WHERE episode_id=$1 ORDER BY day_launched, created_at, id", b
+        )
     )
     return {
         "a": {"episode": ea, "score": sa, "timeline": ta, "attacks": aa},

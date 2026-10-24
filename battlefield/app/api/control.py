@@ -159,7 +159,7 @@ async def resolve(esc_id: str, body: Resolve):
 
 @router.get("/attacks/all")
 async def all_attacks(episode_id: str):
-    return db.rows_to_list(await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 ORDER BY day_launched, id", episode_id))
+    return db.rows_to_list(await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 ORDER BY day_launched, created_at, id", episode_id))
 
 
 @router.get("/health")
