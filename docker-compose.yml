@@ -8,7 +8,8 @@
 x-agent-env: &agent-env
   BATTLEFIELD_URL: http://battlefield:8000
   BLUE_URL: http://blue:8003
-  INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me}
+  # Agent-scope token: agent routes (X-Agent) and battlefield -> agent calls. Never the operator token.
+  AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent}
   FACTORY_API_KEY: ${FACTORY_API_KEY:-}
   DRY_RUN: ${DRY_RUN:-false}
   TURN_TIMEOUT_SEC: ${TURN_TIMEOUT_SEC:-180}
@@ -41,7 +42,9 @@ services:
       RED_URL: http://red:8001
       GREEN_URL: http://green:8002
       BLUE_URL: http://blue:8003
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me}
+      AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent}
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:-change-me}
+      MAX_CREDITS_PER_EPISODE: ${MAX_CREDITS_PER_EPISODE:-0}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       EPISODE_DEFAULT_DAYS: ${EPISODE_DEFAULT_DAYS:-10}
       TURN_TIMEOUT_SEC: ${TURN_TIMEOUT_SEC:-180}
@@ -104,12 +107,15 @@ services:
     ports: ["127.0.0.1:8003:8003"]
 
   frontend:
+    # No build args: the image carries no secrets or per-environment values. Everything below is
+    # runtime env. BATTLEFIELD_URL and OPERATOR_TOKEN are read only by the Next server-side proxy
+    # (/api/bf/*); they must never get a NEXT_PUBLIC_ prefix.
     build:
       context: ./frontend
     environment:
-      NEXT_PUBLIC_BATTLEFIELD_URL: ${NEXT_PUBLIC_BATTLEFIELD_URL:-http://localhost:8000}
+      BATTLEFIELD_URL: http://battlefield:8000
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:-change-me}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
-      NEXT_PUBLIC_INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me}
       NEXT_PUBLIC_MOCK: ${NEXT_PUBLIC_MOCK:-false}
     depends_on: [battlefield]
     ports: ["3000:3000"]

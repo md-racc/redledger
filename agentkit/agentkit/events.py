@@ -103,7 +103,7 @@ class EventEmitter:
         if not batch:
             return
         try:
-            # battlefield's auth requires X-Tool-Use-Id on every agent write, POST /events included
+            # battlefield requires X-Tool-Use-Id on every agent write; a narration batch is its own write
             r = await self._client.post("/events", json=batch, headers={"X-Tool-Use-Id": uuid.uuid4().hex})
             if r.status_code >= 400:
                 log.warning("event_emit_failed", status=r.status_code, body=r.text[:200])
