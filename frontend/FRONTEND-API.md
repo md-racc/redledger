@@ -14,6 +14,13 @@ Proxy errors: `502 {error}` if those vars are unset or battlefield is unreachabl
 upstream timeout (30 s; 300 s for `POST /episodes/{id}/step`), `400` on a path containing
 `..`/encoded slashes, `403` for a cross-site (`Sec-Fetch-Site: cross-site`) mutation.
 
+Origin auth: when `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set (prod), `middleware.ts`
+requires a valid Cloudflare Access JWT (`Cf-Access-Jwt-Assertion` header or `CF_Authorization`
+cookie) on every page and `/api/bf/*` call, else `403 {"error":"forbidden"}`. The browser does
+nothing: Access sets both on requests through `app.<domain>`. Unset (local, mock, CI) → no check.
+A `403 {error: "forbidden"}` from `/api/bf/*` therefore means "not through our Access app", not a
+battlefield error. See `AGENTS.md` for the details.
+
 Two layers:
 - **Live stream** — WebSocket and `GET /api/events` (browser: `/api/bf/events`). One `RLEvent`
   per frame, see `contracts/events.md`. Fold with `lib/reducer.ts`. Socket auth is a ticket:
