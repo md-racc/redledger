@@ -113,6 +113,15 @@ See README §16. For `green/` specifically:
 - Your own battlefield routes: `battlefield/extensions/green_<name>.py` with `router = APIRouter()`, mounted at `/api/x/green/...`. Read-only on core tables; writes only to `green_*` tables.
 CI allows exactly those extra paths on a `green/` branch. Nothing else outside `green/`.
 
+## Evolution / lineages
+
+In lineage episodes your `/turn` gets `options.lineage` and `options.debrief`: `fraud` items of
+**resolved** red attacks you actually acted on (invoices, expenses, vendor changes; outcome
+paid/approved/blocked/rejected). Legit items you had blocked arrive only in the after-action review.
+- Playbook: `ledger.get_playbook()` / `ledger.put_playbook(...)` inside your turn (procedures as data).
+- Override `reflect(req)` / `dry_run_reflect(req)` to turn the after-action review into the next
+  playbook; the agentkit default keeps it. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
+
 ## Paste this to your coding agent as its first message
 
 ```

@@ -53,9 +53,14 @@ Branching, commits, PRs, and the coding-agent git rules are in `GIT.md`. Short v
 3. **The Ledger API is the enforcement point.** Blue's verdict is consulted inside battlefield on
    green's gated routes. Anything else (green's permission handler, UI hints) is a mirror, never a
    second source of truth.
-4. **`origin` is secret.** `origin='red'` rows are ground truth for scoring. Battlefield strips
-   `origin` from every response to any `X-Agent`. Never leak it through another field, an error
-   message, or an event payload visible to agents.
+4. **`origin` is secret during play.** `origin='red'` rows are ground truth for scoring. Battlefield
+   strips `origin` from every response to any `X-Agent`. Never leak it through another field, an
+   error message, or an event payload visible to agents. The only exception is battlefield's
+   debrief and after-action review in a lineage episode (`contracts/agent-service.md`, Lineages):
+   daily debriefs may reveal **resolved** red attacks within the lineage's reveal window, legit
+   items appear only in the after-action review once the episode has ended, and every disclosure
+   is stored in `debriefs`. Plain episodes reveal nothing. No agent ever sees another agent's
+   playbook.
 5. **Every agent action is logged.** Every Ledger API call writes `audit_log`. Every tool call an
    agent makes also emits `agent.tool_call` / `agent.tool_result` events via `EventEmitter`.
    Don't add a code path that mutates state without both.
@@ -214,6 +219,15 @@ Before pushing: `make test` in your directory and `make lint`. CI runs both per 
 - **Verdict card** — frontend rendering of a `gate.verdict` event: what it saw, why, what it did.
 - **Origin** — hidden provenance column (`sim | red | green | blue`) used for scoring.
 - **Fixture** — a recorded episode (`*.jsonl` of events) used for replay and frontend dev.
+- **Lineage** — a chain of episodes, one per generation, that share versioned agent playbooks.
+- **Generation** — one episode of a lineage (seed `base_seed + g`). The real-time demo is the
+  lineage's next generation, created with `POST /episodes {lineage_id}`.
+- **Playbook** — an agent's versioned, team-defined JSON memory within a lineage (`GET/PUT /playbook`).
+- **Debrief** — `options.debrief` on an agent's next turn: resolved red attacks from the last
+  `reveal_days` completed days, as that agent may see them.
+- **After-action review (AAR)** — the full disclosure sent to `POST /reflect` once a generation
+  ends (incl. legit items); the agent answers with its next playbook.
+- **Reveal window** — `reveal_days` inside an episode, `reveal_generations` across a lineage.
 
 ## 10. If you are an orchestrator spawning subagents (read this first)
 

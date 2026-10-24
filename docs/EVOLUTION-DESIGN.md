@@ -1,7 +1,9 @@
 # Evolution design: lineages, playbooks, debriefs, headless generations (Ad)
 
-Status: **decided — Ad accepted E-D1–E-D6 and E-D8 on 2026-10-24; E-D7 deferred** (§10); contracts land in E1. Baseline: main
-`0e62024`. Companion to [`AD-INTEGRATION-DESIGN.md`](AD-INTEGRATION-DESIGN.md) (packages A/B),
+Status: **implemented on main (2026-10-24)**: contracts #57, #60, #69; battlefield/agentkit #58,
+#59, #62, #65, #66, #70, #71, #72 (§11). Decisions in §10 (E-D7 deferred). Where this text and
+`contracts/` differ, the contracts win; the main differences are folded in below (§3.1, §4 note).
+Original baseline: main `0e62024`. Companion to [`AD-INTEGRATION-DESIGN.md`](AD-INTEGRATION-DESIGN.md) (packages A/B),
 which this does not replace. Ad scaffolds battlefield/agentkit/contracts; what each agent *learns*
 is Al's (red), M's (green, blue) and R's (frontend) to build on top.
 
@@ -94,9 +96,13 @@ visible to agents.*
 
 | | Debrief (daily, window `reveal_days`) | AAR (between generations, window `reveal_generations`) |
 |---|---|---|
-| **red** | its own resolved attacks: outcome, amount extracted, detected day, and the controls it ran into: `rules_fired` + reasons of verdicts on its entities, flags (severity, reason), freezes | the same for the whole generation + score; summaries of earlier generations in the window |
-| **blue** | resolved red attacks: scheme id, display name, day launched, entities, amounts, outcome; which of its blocks/escalations/flags hit red and which hit legit items (precision), red attacks it missed | the same for the whole generation, plus every legit item it blocked/escalated, precision/recall per rule id, score |
-| **green** | items it acted on that resolved as red (paid fraud) and legit items whose actions were blocked | the same for the whole generation + score |
+| **red** | its own resolved attacks: outcome, amount extracted, detected day, and the controls it ran into up to `revealed_day`: `rules_fired` + reasons of verdicts on its entities, flags (severity, reason), freezes | every attack of the generation (resolved or not) + score; summaries of earlier generations in the window |
+| **blue** | resolved red attacks: scheme id, display name, day launched, entities, amounts, outcome, `caught_by` (empty = missed) — **no legit items** | every attack of the generation, plus `false_positive` items (every legit item it blocked/escalated/flagged/froze), precision/recall per rule id, score |
+| **green** | `fraud` items of resolved red attacks it actually acted on: invoices, expenses and vendor changes (`field`, outcome paid/approved/blocked/rejected) — **no legit items** | the same for every red item it acted on (incl. live bank swaps), plus `legit_blocked` items, score |
+
+Daily debriefs never list legit items (#60): a list of the legit items an agent blocked or froze
+would let it infer that the unlisted ones are red from attacks still in play. A live approved bank
+swap counts as unresolved, and a revealed attack is scored as of `revealed_day`.
 
 Nobody sees an opponent's **playbook**: patterns come from behaviour only. Agents read only their
 own playbook history (§4.2).
@@ -125,7 +131,11 @@ lists legit items would let blue memorise "these vendors are fine" and the repor
 learning that is really overfitting. Generation `g` therefore uses `base_seed + g`, and the demo
 episode a seed no generation used. The report states the seeds.
 
-## 4. Contract changes (text for PR E1; not applied)
+## 4. Contract changes (as proposed for E1; superseded by `contracts/`)
+
+Applied in #57 with gap-fills (idempotent playbook PUT on `X-Tool-Use-Id`, kind-tagged debrief
+items, unique seeds per lineage, `lineage.resumed`), then tightened by #60 (debrief safety) and
+#69 (green vendor-change items). Read `contracts/` for the current text.
 
 ### 4.1 `contracts/schema.sql`
 
@@ -323,26 +333,32 @@ watches agents react within seconds. Already supported. On top:
 | E-D6 | No agent sees an opponent's playbook | Accepted |
 | E-D7 | Mailroom (§5) | Deferred to phase 2 (own contracts PR if revived) |
 | E-D8 | Defaults `reveal_days 3`, `reveal_generations 2`, training mode `enforce` | Accepted |
+| E-D9 | Daily debriefs: resolved red attacks only; legit items AAR-only; live bank swaps unresolved; revealed attacks scored as of `revealed_day` (#60, from verification) | Accepted (integration) |
+| E-D10 | Demo generations are reflected too; a reflection that finishes after the next demo starts is discarded (#72) | Accepted (integration) |
 
-## 11. Implementation plan
+## 11. Implementation plan (done)
 
-| PR | Branch | Files (exclusive while open) | Tests | Needs |
-|---|---|---|---|---|
-| E0 | `docs/evolution-design` | this doc | — | — |
-| E1 | `contracts/evolution` | `contracts/{schema.sql,ledger-api.yaml,agent-service.md,events.md,CHANGELOG.md}`, `agentkit/agentkit/models.py` | schema applies twice cleanly; frontend `gen:api` compiles | E0; verifier; owners notified (non-blocking). Serialised with integration PR1 (same files): E1 first |
-| E2a | `battlefield/playbooks-debrief` | new `app/api/playbooks.py`, new `app/evolution/debrief.py`, `scoring/score.py` (resolved/revealed), `orchestrator/runner.py` (debrief hook), `main.py` (mount), tests | DB: playbook CRUD + stale 409 + guard 409 + 413; each agent's debrief contents per §3.1; unresolved never revealed; revealed outcome frozen; no disclosure outside lineages; every disclosure in `debriefs` | E1 |
-| E2b | `battlefield/agentkit-reflect` | `agentkit/agentkit/{server,droid_agent,ledger_client}.py`, `agentkit/tests/*` | unit: `/reflect` route + auth, default `reflect()` → null, DRY_RUN no model calls, `get/put_playbook` | E1; parallel with E2a |
-| E3 | `battlefield/lineage-runner` | new `app/orchestrator/lineage.py`, `api/control.py` (lineage routes, `lineage_id` on episodes), `mock_agents/server.py` (`/reflect` + adaptation), `Makefile` (`evolve`, `lineage-*`), `main.py` (recovery), tests; headless escalation hook in `gate/gatekeeper.py` **after integration 2a merges** (2a owns that file) | DB: 3-generation mock lineage end to end, seeds distinct, reflect versions written, restart → paused → resume, credit cap; `make mock-agents && make evolve GENS=3` | E2a, E2b |
-| E4 | `battlefield/lineage-report` | `api/control.py` export route, new `scripts/evolution_report.py`, `api/frontend.py` (`/fe/lineages/*`), `Makefile` (`lineage-export`, `evolution-report`), `.gitignore` (`runs/`), tests | report from a mock lineage is deterministic (golden JSON); export secret scan | E3 |
-| E5 | `docs/evolution-invariants` | `AGENTS.md` invariant 4, README §3/§7/§16 | — | E2a merged |
-| T-red | `red/evolving-schemes` (Al) | `red/**` | keyless: composed scheme from playbook, `/reflect` | E2b |
-| T-blue | `blue/learned-rules` (M) | `blue/**` | keyless: learned rule evaluation, `/reflect` | E2b |
-| T-green | `green/procedures` (M) | `green/**` | keyless | E2b + packages A/B for live |
-| T-fe | `frontend/ops-console` (R) | `frontend/**`, `battlefield/extensions/fe_*.py` | `NEXT_PUBLIC_MOCK=true` | wire tap now; lineage view after E4 |
+| Step | PR | Branch | What landed |
+|---|---|---|---|
+| E0 | #55 | `docs/evolution-design` | this doc |
+| E1 | #57 | `contracts/evolution` | lineages, playbooks, debriefs, `/reflect`, events, models |
+| — | #60 | `contracts/debrief-safety` | daily debriefs: resolved red attacks only; scoring as of reveal |
+| E2b | #58 | `battlefield/agentkit-reflect` | agent `/reflect`, `LedgerClient` playbook methods |
+| E2a-1 | #59 | `battlefield/playbooks` | `GET/PUT /playbook`, history; playbook rows hidden from agent `/audit_log` |
+| E2a-2 | #62 | `battlefield/debriefs` | daily debriefs, `resolved_day`, revealed attacks frozen |
+| E3b | #65 | `battlefield/evolve-mocks` | adapting mock agents, headless escalation hold, `make evolve` |
+| E3a | #66 | `battlefield/lineage-runner` | lineage routes, generation loop, AAR + reflect, credit cap, restart recovery |
+| — | #69 | `contracts/green-fraud-changes` | green `fraud` items for vendor changes |
+| E4a | #70 | `battlefield/lineage-export` | `GET /lineages/{id}/export` |
+| E4b | #71 | `battlefield/evolution-report` | `/fe/lineages/{id}/report\|timeline`, `make evolution-report`, `make lineage-export`, fixtures |
+| — | #72 | `battlefield/evolution-polish` | mock evasion ladder + blue learning from extractions, demo reflection |
+| E5 | this PR | `docs/evolution-invariants` | invariant 4, glossary, README §15 |
 
-File conflicts with the integration plan: E1 vs PR1 (contracts, serialised); E2a/E3 `main.py`
-vs 2a (small hunks, merged sequentially, never edited concurrently); E3's gatekeeper hook waits
-for 2a. Everything else is disjoint.
+Follow-ups (not scheduled): `/reflect` credits are not persisted (after a restart the lineage cap
+re-counts only `turn.ended`); agents share one `AGENT_TOKEN`, so own-only playbook access relies on
+honest `X-Agent` (per-agent tokens would be a contracts change); mailroom (E-D7) deferred; real
+generations wait for the live hold to lift. Teammate work (T-red, T-blue, T-green, T-fe in §12)
+builds on the merged routes.
 
 ## 12. Briefs for teammates (paste after your directory's AGENTS.md block)
 
