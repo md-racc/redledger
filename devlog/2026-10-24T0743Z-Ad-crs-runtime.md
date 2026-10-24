@@ -1,0 +1,1 @@
+- 2026-10-24T07:43Z · Ad · battlefield: wire Blue-only CRS sandbox login secrets and extension-aware core-contract CI guard; verified: 37 runtime regressions, battlefield 215 passed/155 DB skips, agentkit 79 passed/5 skips, Python lint; next: independent verifier and draft PR; blocked: frontend tsc unavailable, Docker/Postgres smoke and live CRS/Factory acceptance not run

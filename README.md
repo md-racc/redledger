@@ -276,7 +276,9 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 | `FACTORY_API_KEY` | **your own key**, or empty with `DRY_RUN=true` | dedicated prod key; secret; exists nowhere else |
 | `DROID_MODEL_RED/GREEN/BLUE` | a cheap / low-multiplier model | pinned prod models; variables |
 | `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
-| `BLUE_GATE_LLM_API_KEY`, `CRS_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
+| `BLUE_GATE_LLM_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
+| `CRS_USERNAME`, `CRS_PASSWORD` | CRS sandbox login credentials, or empty (Blue returns `unknown`) | secrets; passed only to Blue at runtime |
+| `CRS_API_KEY` | legacy placeholder, unused by the CRS identity client | legacy compatibility only |
 | `MAX_CREDITS_PER_EPISODE` | `0` (off) | e.g. `40`; variable |
 | `DOMAIN`, `CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` | n/a / `.env.example` defaults | variables (`CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` default from `DOMAIN`) |
 | `GITHUB_REPO` | n/a | not settable (GitHub reserves `GITHUB_`); `deploy.yml` passes `github.repository` |
@@ -284,6 +286,12 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 
 Repository-level Actions secrets hold only deploy plumbing: `VULTR_HOST`, `VULTR_USER`,
 `VULTR_SSH_KEY`; repository variable `DEPLOY_ENABLED` (§17).
+
+CRS uses username/password login, not an API key. Its REST sandbox is
+`https://api-sandbox.stitchcredit.com/api`; the CalHacks signup portal is not the API base.
+Blue checks only explicitly bound, approved fictional employee profiles during audit. Never
+send arbitrary seeded identities: unmatched sandbox requests can reach real vendors.
+See `blue/CRS.md` for the profile API, neutral fallback, and live-demo readiness checklist.
 
 ---
 
