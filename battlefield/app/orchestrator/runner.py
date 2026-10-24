@@ -17,6 +17,7 @@ import structlog
 from .. import db, turns
 from ..config import settings
 from ..events import bus
+from ..evolution import debrief
 from ..scoring import score
 from . import agents, legit_traffic
 
@@ -163,6 +164,8 @@ async def run_day(episode_id: str) -> dict[str, Any]:
             await _blue_audit(episode_id, day)
 
         sc = await score.end_of_day(episode_id, day)
+        if ctx := await debrief.context(episode_id):
+            await debrief.deliver(episode_id, day, ctx)  # lineage episodes only: score.updated → debrief.delivered* → day.ended
         await bus.emit(episode_id, day, "day.ended", {"day": day})
         await db.execute("UPDATE episodes SET current_day=$2 WHERE id=$1", episode_id, day + 1)
         if day + 1 >= ep["days"]:
@@ -205,9 +208,11 @@ async def _red_turn(episode_id: str, day: int, mode: str, ep: Any, st: EpisodeSt
 
 async def _blue_audit(episode_id: str, day: int) -> None:
     blue_inputs = await _drain_inputs(episode_id, "blue", day)
+    ctx = await debrief.context(episode_id)
+    extra = await debrief.turn_fields(episode_id, "blue", day, ctx) if ctx else {}  # lineage + debrief, top-level on /audit
     await bus.emit(episode_id, day, "turn.started", {"agent": "blue", "inputs": len(blue_inputs)})
     with turns.turn(episode_id, "blue", day):
-        res = await agents.audit(episode_id, day, blue_inputs)
+        res = await agents.audit(episode_id, day, blue_inputs, **extra)
     blue_credits = (res.get("usage") or {}).get("factory_credits")
     await bus.emit(
         episode_id,
@@ -229,6 +234,8 @@ async def _drain_inputs(episode_id: str, agent: str, day: int) -> list[dict[str,
 
 async def _turn(episode_id: str, day: int, agent: str, mode: str, options: dict[str, Any]) -> None:
     options = {**options, "inputs": await _drain_inputs(episode_id, agent, day)}
+    if ctx := await debrief.context(episode_id):
+        options.update(await debrief.turn_fields(episode_id, agent, day, ctx))  # options.lineage / options.debrief
     await bus.emit(episode_id, day, "turn.started", {"agent": agent, "inputs": len(options["inputs"])})
     with turns.turn(episode_id, agent, day):  # agent writes are accepted only while this is active
         res = await agents.turn(agent, episode_id, day, mode, options)
