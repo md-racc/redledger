@@ -245,8 +245,9 @@ class _UnlinkedRun:
 class InvocationRegistry:
     """Turn-scoped link between SDK-reported tool uses and executions of our MCP tools.
 
-    Only ever touched on the turn's event-loop thread: the permission handler and the stream run as
-    tasks there, and the SDK calls our (sync) tool handler there too. No locking needed.
+    Only ever touched on the thread that created it, the turn's event-loop thread: the permission
+    handler and the stream run as tasks there, and the SDK calls our (sync) tool handler there too. No
+    locking; a call from any other thread (a tool worker) raises RuntimeError instead of racing.
 
     Guarantee: every registered tool_use_id gets exactly one agent.tool_call/agent.tool_result pair.
     Executed and linked: _offload narrates it. Never ran (cancelled, rejected by the SDK, turn ended):
@@ -260,7 +261,10 @@ class InvocationRegistry:
     (yet) approved, or denied, is never claimed."""
 
     def __init__(self, server_name: str, tools: Iterable[tuple[str, Callable[..., Any]]], emitter: Any | None = None, *, require_permission: bool = False):
+        tools = list(tools)
         self.server_name = server_name
+        self._owner = threading.get_ident()
+        self._redact = dict(tools)  # name -> fn, for ledger_tool(redact=)
         self._canon = {name: _canonicalizer(fn) for name, fn in tools}
         self._full = {f"{server_name}___{name}": name for name in self._canon}  # observed MCP tool id format
         self.emitter = emitter
@@ -269,6 +273,10 @@ class InvocationRegistry:
         self._pending: dict[tuple[str, str | None], deque[str]] = {}
         self._unlinked: dict[tuple[str, str | None], deque[_UnlinkedRun]] = {}
         self._runs: dict[str, _UnlinkedRun] = {}
+
+    def _own(self) -> None:
+        if threading.get_ident() != self._owner:
+            raise RuntimeError("InvocationRegistry used off the thread that owns it (its turn loop); hop with call_soon_threadsafe")
 
     # ---------- naming ----------
     def tool_name(self, raw: str | None) -> str | None:
@@ -285,6 +293,7 @@ class InvocationRegistry:
 
     # ---------- registration ----------
     def observe(self, tool_use_id: str | None, raw_name: str | None, args: Mapping[str, Any] | None, source: str) -> ToolUse | None:
+        self._own()
         tool = self.tool_name(raw_name)
         if tool is None or not tool_use_id:
             return None
@@ -305,6 +314,7 @@ class InvocationRegistry:
     def observe_permission(self, request: Any) -> list[ToolUse]:
         """Register every MCP action of ours in a droid_sdk PermissionRequest (duck-typed so tests and
         DRY_RUN never need the SDK) and mark it asked. Idempotent."""
+        self._own()
         out: list[ToolUse] = []
         for action in getattr(request, "actions", None) or ():
             if getattr(action, "confirmation_type", None) != "mcp_tool":
@@ -328,6 +338,7 @@ class InvocationRegistry:
         return out
 
     def permission_resolved(self, tool_use_id: str, approved: bool) -> None:
+        self._own()
         entry = self._entries.get(tool_use_id)
         if entry is not None and entry.perm in (_PERM_NONE, _PERM_ASKED):
             entry.perm = _PERM_APPROVED if approved else _PERM_DENIED
@@ -344,6 +355,7 @@ class InvocationRegistry:
         """Link an execution of `tool` to a registered tool use, or None if the SDK hasn't told us.
         Preference: an `_meta` hint naming a claimable entry; the oldest approved identical entry;
         unless require_permission, the oldest identical entry never asked about."""
+        self._own()
         for hint in hints:
             entry = self._entries.get(hint)
             if entry is not None and entry.use.tool == tool and self._claimable(entry, self.require_permission):
@@ -364,11 +376,13 @@ class InvocationRegistry:
 
     def note_unlinked(self, tool: str, kwargs: Mapping[str, Any], local_id: str) -> None:
         """An execution runs under a local id; a ToolCall seen later for it gets linked to it."""
+        self._own()
         run = _UnlinkedRun(local_id)
         self._runs[local_id] = run
         self._unlinked.setdefault((tool, self.canonical(tool, kwargs)), deque()).append(run)
 
     def finished(self, tool_use_id: str, ok: bool | None = None) -> None:
+        self._own()
         entry = self._entries.get(tool_use_id)
         if entry is not None and entry.state == _RUNNING:
             entry.state = _DONE
@@ -380,6 +394,7 @@ class InvocationRegistry:
     def cancelled(self, tool_use_id: str, reason: str) -> bool:
         """The permission handler refused the call: emit its tool_call/tool_result pair now, once.
         Returns False if the id already has its pair (closed earlier, or an execution took it)."""
+        self._own()
         entry = self._entries.get(tool_use_id)
         if entry is None:
             return False
@@ -398,6 +413,7 @@ class InvocationRegistry:
         """Stream ToolResult. For a call our handler never linked: if an identical call ran under a
         local id, this is it (link pair); otherwise it never reached our handler (cancelled, arguments
         rejected by the SDK, interrupted): not_run pair."""
+        self._own()
         entry = self._entries.get(tool_use_id)
         if entry is None:
             return
@@ -409,6 +425,7 @@ class InvocationRegistry:
 
     def close(self, reason: str = "turn ended before the tool ran") -> None:
         """Turn end: every registered call that has no pair yet gets one."""
+        self._own()
         for entry in list(self._entries.values()):
             if entry.state != _PENDING:
                 continue
@@ -430,9 +447,14 @@ class InvocationRegistry:
                 "tool": entry.use.tool,
                 "detail": "executed before the SDK reported this tool_use_id; its events and ledger writes carry ran_as",
             }
-            self.emitter.tool_call(entry.use.tool, entry.use.args, entry.use.tool_use_id)
+            self.emitter.tool_call(entry.use.tool, self._shown(entry.use), entry.use.tool_use_id)
             self.emitter.tool_result(entry.use.tool_use_id, bool(run.ok), json.dumps(body))
         return True
+
+    def _shown(self, use: ToolUse) -> dict[str, Any]:
+        from .tools import redacted_args  # tools imports this module
+
+        return redacted_args(self._redact.get(use.tool), use.args)
 
     def _drop_pending(self, entry: _Entry, state: str) -> None:
         entry.state = state
@@ -443,7 +465,7 @@ class InvocationRegistry:
     def _close_unrun(self, entry: _Entry, body: dict[str, Any]) -> None:
         self._drop_pending(entry, _CLOSED)
         if self.emitter is not None:
-            self.emitter.tool_call(entry.use.tool, entry.use.args, entry.use.tool_use_id)
+            self.emitter.tool_call(entry.use.tool, self._shown(entry.use), entry.use.tool_use_id)
             self.emitter.tool_result(entry.use.tool_use_id, False, json.dumps(body))
 
 
