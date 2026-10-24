@@ -162,7 +162,9 @@ async def test_concurrent_first_use_of_a_key_for_two_actions_is_one_verdict_and_
         a, b = await asyncio.gather(
             c.post(f"/api/invoices/{j1}/approve", headers=_green(ep, key)), c.post(f"/api/invoices/{j2}/approve", headers=_green(ep, key))
         )
-    assert len(slow_blue) == 2  # both really raced past the lookup
+    # single flight per key (gatekeeper.check): the second waited for the first and got the 409 from
+    # its verdict without asking blue; the verdicts ON CONFLICT path stays as the multi-process backstop
+    assert len(slow_blue) == 1
     assert sorted([a.status_code, b.status_code]) == [200, 409]  # never a 500
     loser = a if a.status_code == 409 else b
     assert loser.json()["error"] == "idempotency key reused for a different action"
