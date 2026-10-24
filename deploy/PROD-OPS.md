@@ -172,6 +172,44 @@ raise the cap, redeploy, then `make prod-resume EP=…`; the running total is re
 episode's `turn.ended` events, so the new cap applies to what it has already spent. Resuming
 without raising the cap buys exactly one more paid turn before it pauses again.
 
+## Running an evolution on prod (lineages)
+
+A lineage is a chain of headless generations (docs/EVOLUTION-DESIGN.md); on prod every live agent
+turn and every `/reflect` costs Factory credits, so `prod-evolve` refuses to start without a
+lineage cap. Same token-free channel as the episode targets: everything runs inside battlefield on
+the VM.
+
+```bash
+make prod-health                          # which agents are live (dry_run false)
+LN=$(make -s prod-evolve GENS=3 DAYS=5 MODE=enforce SEED=42 MAX_CREDITS=1000000)   # [REVEAL_DAYS= REVEAL_GENERATIONS=]
+make prod-lineage-wait LN=$LN             # progress on stderr (deploy/prod.sh lineage-wait exits 0/3/124; make reports a failure as 2)
+make prod-lineage-status LN=$LN           # per generation: seed, day, status, score, turn credits
+make prod-lineage-pause LN=$LN            # / prod-lineage-resume (also lifts a lineage credit-cap pause)
+make prod-evolution-report LN=$LN         # runs/$LN/report.json + report.md (partial while it runs)
+make prod-lineage-export LN=$LN [GEN=2]   # runs/$LN/{lineage.json,playbooks/,gen-<g>/...}
+```
+
+- **No defaults on prod:** `GENS`, `DAYS`, `MODE`, `SEED` and `MAX_CREDITS` must be given. `MAX_CREDITS`
+  becomes `config.max_credits` (whole lineage, turns + reflections); `MAX_CREDITS_PER_EPISODE` still
+  caps each generation. Rough cost with red live and green/blue keyless: about 7–9k credits per red turn,
+  so a 5-day generation is about 40–50k plus red's reflection.
+- **Per-episode cap vs lineage cap:** `MAX_CREDITS_PER_EPISODE` pauses only the generation's episode
+  (the lineage stays `running`); `prod-lineage-wait` exits 3 naming it. Lift it with
+  `make prod-resume EP=<ep>`, not `prod-lineage-resume`. The lineage cap (`MAX_CREDITS`) pauses the
+  lineage; lift that with `prod-lineage-resume`.
+- **Credits shown are a lower bound:** `prod-lineage-status` sums `turn.ended` credits; `/reflect`
+  usage counts toward the cap but isn't in those events.
+- **Waiting:** `PROD_LINEAGE_WAIT_TIMEOUT` (7200 s) and `PROD_LINEAGE_WAIT_INTERVAL` (30 s; each poll
+  scores every generation on the server). A timed-out wait leaves the lineage running.
+- **Ground truth:** the export and the report contain `origin`. They are fetched into a temp dir
+  outside the repo, secret-scanned by `battlefield/scripts/evolution_report.py` (a key/token shape
+  writes nothing, exits 3, and leaves the fetched JSON quarantined outside the repo, like `record`), and
+  written under `runs/` (or `RUNS_DIR`), which ignores itself. `prod-lineage-status` bounds its own
+  work (~8 min) and marks credits partial if it runs out.
+  Never commit or publish them.
+- One lineage runs at a time: `prod-evolve` refuses (exit 3) while another is running. If two
+  operators race, the loser's lineage is created but not started (409); it just stays `created`.
+
 ## Testing prod.sh without prod
 
 Make-level self-check (after any Makefile edit; must print nothing and create no file):
@@ -195,5 +233,6 @@ The ssh and `docker compose exec` layers can be swapped out:
 Run battlefield (port 8100) and `mock_agents` (8101–8103) on a scratch Postgres with
 `OPERATOR_TOKEN` set only in battlefield's environment, have the `PROD_BF_EXEC` wrapper read it
 from `/proc/<battlefield pid>/environ` (that is what `docker exec` does: the new process gets
-the container's environment), then run `episode`/`wait`/`score`/`record`/`credits` as usual.
+the container's environment), then run `episode`/`wait`/`score`/`record`/`credits` (and `evolve`/`lineage-*`/`evolution-report`, with
+`RUNS_DIR` pointed at a scratch directory) as usual.
 Delete any fixture recorded this way; don't commit it.
