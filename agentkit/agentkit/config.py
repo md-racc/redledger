@@ -18,6 +18,7 @@ class AgentSettings(BaseSettings):
 
     factory_api_key: str | None = Field(None, alias="FACTORY_API_KEY")
     droid_model: str | None = Field(None, alias="DROID_MODEL")
+    droid_reasoning: str | None = Field(None, alias="DROID_REASONING")  # none|off|minimal|low|medium|high|xhigh|max
     dry_run: bool = Field(False, alias="DRY_RUN")
 
     turn_timeout_sec: int = Field(180, alias="TURN_TIMEOUT_SEC")
