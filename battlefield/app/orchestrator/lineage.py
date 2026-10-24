@@ -48,6 +48,8 @@ _credits: dict[str, float] = {}  # lineage → summed factory_credits (turns + r
 _armed: dict[str, bool] = {}
 _reflect_spent: dict[str, float] = {}  # reflect usage has no event to re-seed from (in-memory only)
 _reflect_done: set[tuple[str, int, str]] = set()  # (lineage, generation, agent) answered in this process
+_demo_locks: dict[str, asyncio.Lock] = {}  # one demo reflection at a time per lineage
+_background: set[asyncio.Task] = set()  # demo reflections started from runner._finish (kept referenced)
 
 
 def state(lineage_id: str) -> LineageState:
@@ -74,7 +76,11 @@ async def episode_of(lineage_id: str, generation: int) -> Any:
 
 
 async def create_generation(lineage_id: str, generation: int, *, seed: int, days: int, mode: str, attack_plan: Any = None) -> str:
-    """Insert generation `generation`'s episode, seed its company, bump current_generation, announce it."""
+    """Insert generation `generation`'s episode, seed its company, bump current_generation, announce it.
+
+    A demo (the lineage is finished or failed) first completes the previous demo's reflection if its
+    background task was lost (restart) or is still running, so it starts from reflected playbooks."""
+    await reflect_demo(lineage_id, generation - 1)
     eid = db.new_id("ep")
     async with db.pool().acquire() as conn, conn.transaction():
         await conn.execute(
@@ -305,12 +311,46 @@ async def _reflected(lineage_id: str, g: int, cfg: LineageConfig) -> bool:
     return bool(await db.fetchval("SELECT 1 FROM episodes WHERE lineage_id=$1 AND generation=$2", lineage_id, g + 1))
 
 
-async def _reflect_all(lineage_id: str, g: int, ep: Any, cfg: LineageConfig) -> None:
+def reflect_demo_later(lineage_id: str, generation: int) -> None:
+    """runner._finish hook for every lineage episode: reflect a demo generation in the background (the
+    loop reflects its own generations; `reflect_demo` returns at once for those)."""
+    t = asyncio.create_task(reflect_demo(lineage_id, generation), name=f"demo-reflect-{lineage_id}-{generation}")
+    _background.add(t)
+    t.add_done_callback(_background.discard)
+
+
+async def reflect_demo(lineage_id: str, generation: int) -> None:
+    """After-action review + /reflect for a finished demo generation (POST /episodes {lineage_id}, run outside
+    the loop, so only on a finished or failed lineage). Idempotent like the loop's reflection: stored reviews
+    are reused and an agent with a reflect version for it is skipped. Stops at the lineage credit cap."""
+    async with _demo_locks.setdefault(lineage_id, asyncio.Lock()):
+        ln = await db.fetchrow("SELECT * FROM lineages WHERE id=$1", lineage_id)
+        if ln is None or ln["status"] not in ("finished", "failed"):
+            return  # the loop owns (and reflects) the generations of a created/running/paused lineage
+        ep = await episode_of(lineage_id, generation)
+        if ep is None or ep["status"] != "finished":
+            return
+        try:
+            await _reflect_all(lineage_id, generation, ep, config(ln), demo=True)
+        except Exception:
+            log.exception("demo_reflect_failed", lineage_id=lineage_id, episode_id=ep["id"], generation=generation)
+
+
+async def _over_cap(lineage_id: str, cfg: LineageConfig) -> bool:
+    await _seed_credits(lineage_id)
+    return runner.credit_guard_tripped(_credits[lineage_id], cfg.max_credits)
+
+
+async def _reflect_all(lineage_id: str, g: int, ep: Any, cfg: LineageConfig, *, demo: bool = False) -> None:
     if cfg.reveal_generations == 0:
         return
     await review.close(ep["id"])
     for agent in AGENTS:
-        await state(lineage_id).gate.wait()
+        if demo and await _over_cap(lineage_id, cfg):
+            log.warning("demo_reflect_skipped_credit_cap", lineage_id=lineage_id, episode_id=ep["id"], day=ep["days"], agent=agent)
+            return  # nothing to pause (the lineage is over): the remaining agents keep their playbooks
+        if not demo:
+            await state(lineage_id).gate.wait()
         if (lineage_id, g, agent) in _reflect_done or await db.fetchval(
             "SELECT 1 FROM playbooks WHERE lineage_id=$1 AND agent=$2 AND source='reflect' AND generation=$3", lineage_id, agent, g
         ):
@@ -330,7 +370,7 @@ async def _reflect_all(lineage_id: str, g: int, ep: Any, cfg: LineageConfig) -> 
         if res.get("ok") and isinstance(new, dict):
             await _write_reflect(lineage_id, agent, g, ep["id"], new, str(res.get("rationale") or ""))
         _reflect_done.add((lineage_id, g, agent))
-        await charge_reflect(lineage_id, ep["id"], ep["days"], spent)
+        await charge_reflect(lineage_id, ep["id"], ep["days"], spent, check=not demo)
 
 
 async def _write_reflect(lineage_id: str, agent: str, g: int, episode_id: str, content: dict[str, Any], rationale: str) -> None:
@@ -377,13 +417,14 @@ async def charge_turn(lineage_id: str, episode_id: str, day: int, spent: float) 
     await _check(lineage_id, episode_id, day, spent)
 
 
-async def charge_reflect(lineage_id: str, episode_id: str, day: int, spent: float) -> None:
+async def charge_reflect(lineage_id: str, episode_id: str, day: int, spent: float, *, check: bool = True) -> None:
     _reflect_spent[lineage_id] = _reflect_spent.get(lineage_id, 0.0) + spent
     if lineage_id not in _credits:
         await _seed_credits(lineage_id)
     else:
         _credits[lineage_id] += spent
-    await _check(lineage_id, episode_id, day, spent)
+    if check:  # a demo's reflection stops at the cap itself (_reflect_all): no lineage to pause
+        await _check(lineage_id, episode_id, day, spent)
 
 
 async def _check(lineage_id: str, episode_id: str, day: int, spent: float) -> None:

@@ -1,0 +1,1 @@
+- 2026-10-24T08:38Z · Ad · battlefield: mock agents evolve visibly (red evasion ladder, blue learns from extractions), green debriefs cover vendor changes per #69, demo generations reflect too; next: E4 export/report; blocked: #69 merges first

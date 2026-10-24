@@ -111,12 +111,21 @@ SCHEME_IDS = [x["id"] for x in SCHEMES]
 CAUGHT, WON = ("blocked", "flagged"), ("extracted", "partial")
 # blue's answer to a scheme that got past it
 LEARNED_FOR = {
-    "ghost_vendor": "learned:young_vendor_any_amount",
-    "duplicate_invoice": "learned:duplicate_amount_loose",
-    "bank_swap": "learned:bank_change_any_amount",
-    "threshold_split": "learned:near_threshold_wide",
+    "ghost_vendor": ["learned:young_vendor_any_amount"],
+    "duplicate_invoice": ["learned:duplicate_amount_loose"],
+    "bank_swap": ["learned:bank_change_any_amount"],
+    "threshold_split": ["learned:near_threshold_wide", "learned:young_vendor_any_amount"],
 }
 NEAR_BAND, NEAR_BAND_MIN = 0.95, 0.80
+# red's evasion ladder per scheme: each catch moves it one step further from blue's static rules
+# (ghost: under the >$1k young-vendor rule; duplicate: outside the 5-cent match; split: smaller parts).
+# bank_swap has nowhere to go (every bank change is gated), so it is dropped after two catches.
+LADDER: dict[str, list[dict]] = {
+    "ghost_vendor": [{"amount": 4920.0}, {"amount": 2400.0}, {"amount": 950.0}],
+    "duplicate_invoice": [{"offset": 0.03}, {"offset": 0.5}, {"offset": 0.9}],
+    "bank_swap": [{}],
+    "threshold_split": [{"parts": 3}, {"parts": 5}, {"parts": 8}, {"parts": 15}],
+}
 
 
 def _new_attacks(pb: dict, items: list[dict]) -> tuple[list[str], list[dict]]:
@@ -126,21 +135,37 @@ def _new_attacks(pb: dict, items: list[dict]) -> tuple[list[str], list[dict]]:
 
 
 def red_adapt(pb: dict, items: list[dict]) -> tuple[dict, str]:
-    """Drop schemes caught twice that never paid; favour schemes that extracted. Returns (content, rationale)."""
+    """A caught scheme climbs its evasion ladder; at the top, two more catches without a win drop it.
+    Schemes that extracted keep their step and are favoured. Returns (content, rationale)."""
     seen, fresh = _new_attacks(pb, items)
     caught, won = dict(pb.get("caught", {})), dict(pb.get("won", {}))
+    level, at_top = dict(pb.get("level", {})), dict(pb.get("caught_at_top", {}))
+    moved = []
     for it in fresh:
         sid, out = it.get("scheme_id", ""), it.get("outcome")
+        if sid not in LADDER:
+            continue
         if out in CAUGHT:
             caught[sid] = caught.get(sid, 0) + 1
+            if level.get(sid, 0) + 1 < len(LADDER[sid]):
+                level[sid] = level.get(sid, 0) + 1
+                moved.append(f"{sid}→{LADDER[sid][level[sid]]}")
+            else:
+                at_top[sid] = at_top.get(sid, 0) + 1
         elif out in WON:
             won[sid] = won.get(sid, 0) + 1
-    dropped = sorted(sid for sid in SCHEME_IDS if caught.get(sid, 0) >= 2 and not won.get(sid))
+    dropped = sorted(sid for sid in SCHEME_IDS if at_top.get(sid, 0) >= 2 and not won.get(sid))
     if len(dropped) == len(SCHEME_IDS):  # never give up entirely: keep the least-caught scheme
         dropped.remove(min(SCHEME_IDS, key=lambda sid: (caught.get(sid, 0), SCHEME_IDS.index(sid))))
-    content = {**pb, "seen": seen, "caught": caught, "won": won, "dropped": dropped}
+    content = {**pb, "seen": seen, "caught": caught, "won": won, "level": level, "caught_at_top": at_top, "dropped": dropped}
     favoured = [sid for sid in SCHEME_IDS if won.get(sid)]
-    return content, f"dropped {dropped or 'none'}; favouring {favoured or 'none'} ({len(fresh)} new attack results)"
+    return content, f"evading {moved or 'none'}; dropped {dropped or 'none'}; favouring {favoured or 'none'} ({len(fresh)} new attack results)"
+
+
+def red_params(pb: dict, scheme_id: str) -> dict:
+    """The scheme's current step on its evasion ladder (step 0 = the original mock attack)."""
+    ladder = LADDER.get(scheme_id, [{}])
+    return ladder[min(int(pb.get("level", {}).get(scheme_id, 0)), len(ladder) - 1)]
 
 
 def red_choose(pb: dict, day: int) -> str:
@@ -151,13 +176,13 @@ def red_choose(pb: dict, day: int) -> str:
 
 
 def blue_adapt(pb: dict, items: list[dict]) -> tuple[dict, str]:
-    """For each attack that got past blue (caught_by empty), learn that scheme's rule; a missed split widens the band."""
+    """For each attack that got past blue (money left, or nothing caught it), learn that scheme's rules;
+    a missed split widens the band. A flag on an attack that still extracted is a miss."""
     seen, fresh = _new_attacks(pb, items)
     learned, band = set(pb.get("learned", [])), float(pb.get("near_band", NEAR_BAND))
-    missed = [it.get("scheme_id", "") for it in fresh if not it.get("caught_by")]
+    missed = [it.get("scheme_id", "") for it in fresh if it.get("outcome") in WON or not it.get("caught_by")]
     for sid in missed:
-        if sid in LEARNED_FOR:
-            learned.add(LEARNED_FOR[sid])
+        learned.update(LEARNED_FOR.get(sid, []))
         if sid == "threshold_split":
             band = round(max(NEAR_BAND_MIN, band - 0.05), 2)
     content = {**pb, "seen": seen, "learned": sorted(learned), "near_band": band}
@@ -189,9 +214,10 @@ async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> 
     pb = await adapt_playbook(ledger, req.options.get("debrief"), red_adapt)
     scheme_id = req.options.get("scheme_id") or red_choose(pb, req.day)
     scheme = next(x for x in SCHEMES if x["id"] == scheme_id)
+    params = {**red_params(pb, scheme_id), **req.options.get("params", {})}  # a forced attack's params win
     em.thinking(f"Day {req.day}. Reviewing the books for an opening. Going with: {scheme['display_name']}.")
     if scheme_id == "ghost_vendor":
-        amount = float(req.options.get("params", {}).get("amount", 4920.0))
+        amount = float(params.get("amount", 4920.0))
         atk = await ledger.declare_attack(AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], target_amount=amount))
         v = await ledger.create_vendor(
             {"name": "Acme Office Supply LLC", "ein": "47-1234567", "bank_account": "9988776655", "bank_routing": "021000021", "category": "office"}
@@ -210,7 +236,7 @@ async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> 
         if not paid:
             return "no paid invoices to duplicate"
         src = paid[-1]
-        amount = round(float(src["amount"]) + 0.03, 2)
+        amount = round(float(src["amount"]) + float(params.get("offset", 0.03)), 2)
         atk = await ledger.declare_attack(AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], target_amount=amount))
         await ledger.submit_invoice({"vendor_id": src["vendor_id"], "amount": amount, "invoice_number": src["invoice_number"] + "A", "po_id": src.get("po_id")})
         return f"duplicated {src['invoice_number']} for ${amount:,.2f} (attack {atk['id']})"
@@ -233,7 +259,7 @@ async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> 
         )
         return f"requested bank change on vendor {target['vendor_id']} ahead of ${float(target['amount']):,.2f} invoice (attack {atk['id']})"
     if scheme_id == "threshold_split":
-        parts = int(req.options.get("params", {}).get("parts", 3))
+        parts = int(params.get("parts", 3))
         total = 14400.0
         atk = await ledger.declare_attack(AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], target_amount=total))
         v = await ledger.create_vendor(

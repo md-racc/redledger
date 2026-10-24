@@ -341,3 +341,6 @@ async def _finish(episode_id: str, day: int) -> None:
     gen = await db.fetchrow("SELECT lineage_id, generation FROM episodes WHERE id=$1 AND lineage_id IS NOT NULL", episode_id)
     if gen is not None:  # every lineage generation, runner-owned or a demo: episode.ended → generation.ended
         await bus.emit(episode_id, day, "generation.ended", {"lineage_id": gen["lineage_id"], "generation": gen["generation"], "score": final})
+        from . import lineage  # late: lineage imports this module
+
+        lineage.reflect_demo_later(gen["lineage_id"], gen["generation"])  # a demo reflects too; no-op for the loop's own

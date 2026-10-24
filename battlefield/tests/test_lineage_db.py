@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -19,12 +20,15 @@ pytestmark = pytest.mark.usefixtures("pg")
 
 
 @pytest.fixture(autouse=True)
-async def _fresh(pg: None, monkeypatch: pytest.MonkeyPatch) -> None:
+async def _fresh(pg: None, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     """One running lineage per battlefield: park any a crashed earlier run left in the shared test DB."""
     await db.execute("UPDATE lineages SET status='failed' WHERE status IN ('running','paused')")
     monkeypatch.setattr(lineage, "POLL_SEC", 0.01)
     monkeypatch.setattr(settings, "day_pause_sec", 0.0)
     monkeypatch.setattr(lineage, "_control", asyncio.Lock())  # module-level lock binds to the first test's loop
+    monkeypatch.setattr(lineage, "_demo_locks", {})
+    yield
+    await asyncio.gather(*list(lineage._background), return_exceptions=True)  # demo reflections started by _finish
 
 
 def _client() -> httpx.AsyncClient:
@@ -413,3 +417,63 @@ async def test_fast_pause_then_resume_keeps_one_loop_running(monkeypatch: pytest
         assert await db.fetchval("SELECT COUNT(*) FROM episodes WHERE lineage_id=$1 AND status='finished'", lid) == 2
     finally:
         await _cleanup(lid)
+
+
+async def test_a_demo_generation_reflects_so_the_next_demo_starts_from_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _stub(monkeypatch, _Agents())
+    async with _client() as c:
+        lid = (await _create(c))["id"]
+        await db.execute("UPDATE lineages SET status='finished' WHERE id=$1", lid)
+        body = {"controller_mode": "enforce", "lineage_id": lid, "days": 1}
+        e1 = (await c.post("/api/episodes", json=body, headers=f.auth())).json()["id"]
+        await runner.step(e1)
+        await asyncio.gather(*list(lineage._background))  # _finish reflected the demo in the background
+        assert [a for a, b in stub.reflects] == ["red", "green", "blue"] and all(b["episode_id"] == e1 for _, b in stub.reflects)
+        assert await db.fetchval("SELECT COUNT(*) FROM debriefs WHERE episode_id=$1 AND day IS NULL", e1) == 3
+        red = await db.fetchrow("SELECT version, generation, source FROM playbooks WHERE lineage_id=$1 AND agent='red' ORDER BY version DESC LIMIT 1", lid)
+        assert (red["generation"], red["source"]) == (1, "reflect")
+        e2 = (await c.post("/api/episodes", json=body, headers=f.auth())).json()["id"]
+    assert len(stub.reflects) == 3  # the next demo's creation found the reflection done: nobody asked twice
+    started = await db.fetch("SELECT type, payload FROM events WHERE episode_id=$1 ORDER BY id", e2)
+    assert [r["type"] for r in started] == ["playbook.updated", "generation.started"]
+    assert started[0]["payload"]["source"] == "reflect" and started[1]["payload"]["playbook_versions"]["red"] == red["version"]
+
+
+async def test_demo_reflection_lost_to_a_restart_is_finished_by_the_next_demo(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _stub(monkeypatch, _Agents())
+    monkeypatch.setattr(lineage, "reflect_demo_later", lambda lid, g: None)  # the process died before the task ran
+    async with _client() as c:
+        lid = (await _create(c))["id"]
+        await db.execute("UPDATE lineages SET status='finished' WHERE id=$1", lid)
+        body = {"controller_mode": "enforce", "lineage_id": lid, "days": 1}
+        e1 = (await c.post("/api/episodes", json=body, headers=f.auth())).json()["id"]
+        await runner.step(e1)
+        assert stub.reflects == []
+        r = await c.post("/api/episodes", json=body, headers=f.auth())
+    assert r.status_code == 201 and [a for a, _ in stub.reflects] == ["red", "green", "blue"]
+    assert await db.fetchval("SELECT 1 FROM playbooks WHERE lineage_id=$1 AND agent='red' AND source='reflect' AND generation=1", lid)
+
+
+async def test_demo_reflection_stops_at_the_lineage_credit_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _stub(monkeypatch, _Agents())
+    async with _client() as c:
+        r = await c.post("/api/lineages", json={"base_seed": 9100, "config": {"generations": 1, "days": 1, "max_credits": 5}}, headers=f.auth())
+        lid = r.json()["id"]
+    await db.execute("UPDATE lineages SET status='finished' WHERE id=$1", lid)
+    monkeypatch.setitem(lineage._credits, lid, 5.0)  # the lineage already spent its cap
+    eid = await lineage.create_generation(lid, 1, seed=9101, days=1, mode="enforce")
+    await runner.step(eid)
+    await asyncio.gather(*list(lineage._background))
+    assert stub.reflects == []  # no agent asked: every playbook kept
+    assert not await db.fetchval("SELECT 1 FROM events WHERE episode_id=$1 AND type IN ('lineage.paused','error')", eid)
+
+
+async def test_the_loops_own_generations_are_not_reflected_twice(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _stub(monkeypatch, _Agents())
+    async with _client() as c:
+        lid = (await _create(c))["id"]
+        assert (await c.post(f"/api/lineages/{lid}/start", headers=f.auth())).status_code == 202
+        await asyncio.wait_for(lineage.state(lid).task, 60)
+    await asyncio.gather(*list(lineage._background))
+    assert len(stub.reflects) == 6  # 2 generations × 3 agents, all by the loop
+    await _cleanup(lid)

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from app import db
-from app.evolution import debrief
+from app.evolution import debrief, review
 from app.orchestrator import agents, runner
 from app.scoring import score
 from seed.company import seed_episode
@@ -100,7 +100,7 @@ async def test_each_agent_sees_only_resolved_attacks() -> None:
     events = await db.fetch("SELECT payload FROM events WHERE episode_id=$1 AND type='debrief.delivered' ORDER BY id", eid)
     assert [e["payload"] for e in events] == [
         {"agent": "red", "day": 1, "revealed_attacks": 2, "new_items": 2, "window_days": 3},
-        {"agent": "green", "day": 1, "revealed_attacks": 0, "new_items": 1, "window_days": 3},
+        {"agent": "green", "day": 1, "revealed_attacks": 1, "new_items": 1, "window_days": 3},  # the attack behind its fraud item
         {"agent": "blue", "day": 1, "revealed_attacks": 2, "new_items": 2, "window_days": 3},
     ]
 
@@ -287,3 +287,41 @@ async def test_plain_episode_is_unchanged(episode: str, monkeypatch: pytest.Monk
     assert await db.fetchval("SELECT COUNT(*) FROM debriefs WHERE episode_id=$1", episode) == 0
     assert await db.fetchval("SELECT COUNT(*) FROM attacks WHERE episode_id=$1 AND revealed_day IS NOT NULL", episode) == 0
     assert await db.fetchval("SELECT COUNT(*) FROM events WHERE episode_id=$1 AND type='debrief.delivered'", episode) == 0
+
+
+async def test_green_learns_about_the_vendor_changes_it_acted_on() -> None:
+    eid = await _lineage_episode()
+    vid = await f.vendor(eid)
+    a_addr = await f.attack(eid, day=1, scheme_id="address_change", target_amount=0)
+    addr = await f.change(eid, vid, day=1, status="approved", resolved_day=1, field="address", new_value="1 Red St", attack_id=a_addr)
+    await f.verdict(eid, "vendor_change", addr, verdict="allow", day=1)
+    a_blk = await f.attack(eid, day=1, scheme_id="bank_swap")
+    blk = await f.change(eid, vid, day=1, status="blocked", resolved_day=1, attack_id=a_blk)
+    await f.verdict(eid, "vendor_change", blk, verdict="block", day=1)
+    other = await f.vendor(eid)
+    a_live = await f.attack(eid, day=1, scheme_id="bank_swap")
+    live = await f.change(eid, other, day=1, status="approved", resolved_day=1, attack_id=a_live)
+    await f.verdict(eid, "vendor_change", live, verdict="allow", day=1)
+    await score.end_of_day(eid, 1)
+    await debrief.deliver(eid, 1, await _ctx(eid))
+
+    green = await _items(eid, "green", 1)
+    assert sorted((i["entity_id"], i["field"], i["green_action"], i["outcome"]) for i in green) == sorted(
+        [(addr, "address", "vendor_changes.approve", "approved"), (blk, "bank_account", "vendor_changes.approve", "blocked")]
+    )
+    assert all(i["entity_type"] == "vendor_change" and "amount" not in i and not any(k.startswith("_") for k in i) for i in green)
+    assert live not in str(green)  # a working bank swap is unresolved: never in a daily debrief
+    delivered = await db.fetchval("SELECT payload FROM events WHERE episode_id=$1 AND type='debrief.delivered' AND payload->>'agent'='green'", eid)
+    assert delivered["revealed_attacks"] == 2
+
+    await review.close(eid)  # after the episode: the review covers the live swap too
+    aar = [debrief.public(i) for i in (await debrief.attack_items(eid, -(10**6)))["green"]]
+    assert {
+        "kind": "fraud",
+        "entity_type": "vendor_change",
+        "entity_id": live,
+        "field": "bank_account",
+        "green_action": "vendor_changes.approve",
+        "outcome": "approved",
+        "day": 1,
+    } in aar

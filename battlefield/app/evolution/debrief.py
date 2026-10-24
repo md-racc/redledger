@@ -77,7 +77,7 @@ async def deliver(episode_id: str, day: int, ctx: dict[str, Any]) -> None:
     for agent in AGENTS:
         if await db.fetchval("SELECT 1 FROM debriefs WHERE episode_id=$1 AND agent=$2 AND day=$3", episode_id, agent, day):
             continue
-        items = [{**{k: v for k, v in it.items() if k != "_revealed_day"}, "new": it["_revealed_day"] == day} for it in built[agent]]
+        items = [{**public(it), "new": it["_revealed_day"] == day} for it in built[agent]]
         payload = {"day": day, "window_days": n, "items": items}
         await db.execute(
             "INSERT INTO debriefs (lineage_id, generation, episode_id, day, agent, payload) VALUES ($1,$2,$3,$4,$5,$6)",
@@ -88,14 +88,20 @@ async def deliver(episode_id: str, day: int, ctx: dict[str, Any]) -> None:
             agent,
             payload,
         )
-        revealed = sum(1 for i in items if i["kind"] == "attack")
+        revealed = len({it["_attack_id"] for it in built[agent]})  # distinct attacks behind the items (green: its fraud items)
         new = sum(1 for i in items if i["new"])
         await bus.emit(episode_id, day, "debrief.delivered", {"agent": agent, "day": day, "revealed_attacks": revealed, "new_items": new, "window_days": n})
         log.info("debrief_delivered", episode_id=episode_id, day=day, agent=agent, items=len(items), new=new)
 
 
+def public(item: dict[str, Any]) -> dict[str, Any]:
+    """An item as delivered: without the builder's private `_` keys."""
+    return {k: v for k, v in item.items() if not k.startswith("_")}
+
+
 async def attack_items(episode_id: str, since: int) -> dict[str, list[dict[str, Any]]]:
-    """Per agent, the items of every attack revealed on or after `since` (each carries `_revealed_day`)."""
+    """Per agent, the items of every attack revealed on or after `since` (each carries `_revealed_day`
+    and `_attack_id`, stripped by `public`)."""
     out: dict[str, list[dict[str, Any]]] = {a: [] for a in AGENTS}
     ids_in = {r["id"] for r in await db.fetch("SELECT id FROM attacks WHERE episode_id=$1 AND revealed_day >= $2", episode_id, since)}
     parts = sorted((await score.attack_parts(episode_id, ids_in)).values(), key=lambda p: (p[0]["revealed_day"], p[0]["created_at"], p[0]["id"]))
@@ -123,6 +129,7 @@ async def attack_items(episode_id: str, since: int) -> dict[str, list[dict[str, 
             "amount_extracted": float(a["amount_extracted"]),
             "detected_day": a["detected_day"],
             "_revealed_day": hi,
+            "_attack_id": a["id"],
         }
         controls = (
             [
@@ -150,16 +157,22 @@ async def attack_items(episode_id: str, since: int) -> dict[str, list[dict[str, 
             + [{"kind": "freeze", "id": z["vendor_id"], "day": z["day"]} for z in freezes]
         )
         out["blue"].append({**base, "display_name": a["display_name"], "entities": entities, "caught_by": sorted(caught, key=lambda c: c["day"])})
-        out["green"] += await _fraud(episode_id, rows, verdicts, lo, hi)
+        out["green"] += [{**f, "_attack_id": a["id"]} for f in await _fraud(episode_id, rows, chs, verdicts, lo, hi)]
     return out
 
 
-async def _fraud(episode_id: str, rows: list[Any], verdicts: list[Any], lo: int, hi: int) -> list[dict[str, Any]]:
-    """Green's `fraud` items: red invoices/expenses green actually acted on (a ledger.mutation it made, or
-    a gate verdict on its attempt), in a terminal status. `green_action` is green's last such action."""
+_FRAUD_OUTCOMES = ("paid", "approved", "blocked", "rejected")
+
+
+async def _fraud(episode_id: str, rows: list[Any], chs: list[dict[str, Any]], verdicts: list[Any], lo: int, hi: int) -> list[dict[str, Any]]:
+    """Green's `fraud` items: red invoices/expenses and red vendor changes green actually acted on (a
+    ledger.mutation it made, or a gate verdict on its attempt). `green_action` is green's last such action;
+    `outcome` is the item's status (`approved`: green approved it and it was neither paid nor stopped; an
+    invoice can only be `approved` in the after-action review, a daily debrief has only resolved attacks).
+    Vendor changes carry `field` and no `amount`."""
     out = []
-    for r in rows:
-        if r["status"] not in ("paid", "blocked", "rejected"):
+    for r in [*rows, *({"kind": "vendor_change", "id": ch["id"], "status": ch["status"], "field": ch["field"]} for ch in chs)]:
+        if r["status"] not in _FRAUD_OUTCOMES:
             continue
         acts = [(v["day"], 0, v["action"]) for v in verdicts if v["agent"] == "green" and v["entity_id"] == r["id"]]
         for m in await db.fetch(
@@ -174,18 +187,20 @@ async def _fraud(episode_id: str, rows: list[Any], verdicts: list[Any], lo: int,
         if not acts:
             continue  # green never acted on it (e.g. blocked by a freeze): nothing to learn from
         day, _, action = max(acts)
-        out.append(
-            {
-                "kind": "fraud",
-                "entity_type": r["kind"],
-                "entity_id": r["id"],
-                "amount": float(r["amount"]),
-                "green_action": action,
-                "outcome": r["status"],
-                "day": day,
-                "_revealed_day": hi,
-            }
-        )
+        item = {
+            "kind": "fraud",
+            "entity_type": r["kind"],
+            "entity_id": r["id"],
+            "green_action": action,
+            "outcome": r["status"],
+            "day": day,
+            "_revealed_day": hi,
+        }
+        if r["kind"] == "vendor_change":
+            item["field"] = r["field"]
+        else:
+            item["amount"] = float(r["amount"])
+        out.append(item)
     return out
 
 
