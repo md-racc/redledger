@@ -1,0 +1,51 @@
+# Performance and quality
+
+## The ladder (`lib/arena/quality.ts`, applied in `components/arena/Scene.tsx`)
+
+| level | pixel ratio | shadows | shadow refresh | post-processing |
+|---|---|---|---|---|
+| 3 (default on desktop) | 1 - 1.75 | 2048 | every 2nd frame | bloom, tone map, grade, vignette, grain, SMAA |
+| 2 (default on phones / coarse pointers) | 1 - 1.4 | 1024 | every 3rd frame | bloom + tone map |
+| 1 | 1 - 1.1 | 1024 | every 6th frame | none (renderer's own ACES tone mapping) |
+| 0 | 1 | off | - | none |
+
+- `?q=0` … `?q=3` pins a level and turns the automatic step-down off (useful for comparing, and for slow machines).
+- Without `?q`, drei's `PerformanceMonitor` watches the frame rate and drops one level when it stays under 20 fps.
+  It only goes down, never up, so it cannot flap.
+- The sun never moves, so the shadow map is refreshed every few frames rather than every frame; only the agents' shadows
+  lag slightly.
+
+## What costs what
+
+Measured on an AMD Radeon 880M iGPU in the Claude desktop browser pane: ~57 fps at level 3, 1294×765 CSS px.
+
+| thing | cost / note |
+|---|---|
+| Palace geometry | ~330k unique triangles plus instancing, about 1.7M triangles and ~480 draw calls per frame including the shadow pass |
+| shadow pass | re-renders the Palace; reduced by the refresh cadence above |
+| post chain | bloom (`mipmapBlur`), tone mapping, grade, vignette, grain, SMAA; `lite` keeps bloom and tone mapping only |
+| agents | 30 figures of a few hundred triangles each, 6 beam meshes, 24 instanced coins, 8 shockwave rings |
+| DOM overlays | updated by CSS variables / transforms from `requestAnimationFrame`, not React renders |
+| first load | the glb decode and KTX2 transcode happen behind the loader; the nav grid is built once |
+
+Things that look like performance problems but are not: a browser pane under viewport emulation, or one that is hidden,
+throttles `requestAnimationFrame` hard: the arena measured ~3 fps there against ~57 fps at the real window size, and a trivial page ~26 fps. Test at the real window size.
+
+## Memory
+
+About 52 textures and 96 geometries live after load; the glb files are 6.6 MB over the wire. The agent materials are
+per-agent (so each can flash independently); geometries are shared (`components/arena/assets.ts`).
+
+## Knobs if you need more speed
+
+1. Lower `dpr` in `quality.ts` (the biggest lever on high-DPI screens).
+2. Drop the shadow map to 1024 for level 3.
+3. Remove `Noise` / `HueSaturation` / `BrightnessContrast` from the full chain in `Effects.tsx`.
+4. Restrict `Lights`' shadow camera bounds (±140 m) to the area the camera actually frames.
+
+## Known limits
+
+- Level changes are one-way within a page load.
+- The fallback palace is much simpler and its shadows are cheap; it is not tuned for looks.
+- Touch devices: in the arena the orbit controls take over touch gestures on the canvas, so scrolling back up is by the
+  *Back to tour* button or the chapter rail, not a swipe.

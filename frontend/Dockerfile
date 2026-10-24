@@ -17,7 +17,7 @@ FROM node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# The only build-time switch: app/page.tsx (client code) picks fixture replay vs live at build.
+# The only build-time switch: lib/arena/useFeed.ts and app/ops/page.tsx (client code) pick fixture replay vs live at build.
 # Not a secret. Default builds the live app; `--build-arg NEXT_PUBLIC_MOCK=true` builds the demo-fallback.
 ARG NEXT_PUBLIC_MOCK=false
 RUN npm run build
