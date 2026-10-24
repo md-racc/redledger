@@ -1,8 +1,8 @@
 # Current Blue controller integration handoff
 
-Submission candidates: only the `blue/review-current-*` stack on pinned `68ef4eb`.
-Original `blue/controller` at `78eb287` and the prior non-current `blue/review-*` stack are
-**PRESERVED, NOT SUBMISSION TARGETS**; their worktrees, refs and old staged handoff are untouched.
+Controller and receipt/compatibility work are merged via #19/#24. This checkpoint includes
+main `78a3b25` (#34 bridge) and `f349b47` (#33 contract) via plain merge; legacy worktrees remain untouched.
+See [SDK-READINESS.md](SDK-READINESS.md) for the offline evidence and remaining Ad handoff.
 
 ## Behavior and deliberate costs
 
@@ -61,34 +61,42 @@ in-flight keys, new admissions receive 503 rather than premature eviction. Audit
 
 ## Shared compatibility and required follow-ups
 
-The pinned current baseline is `68ef4eb`, not the scaffold or prior `9736639` stack. Already resolved upstream:
+Merged and validated shared baseline is `78a3b25`. Already resolved upstream:
 - Root uv workspace removal (`fff29f0`) restores normal per-service sync.
-- `d0b5573` fixes bank-swap pay-time attribution and corresponding false-positive accounting.
-  Scoring remains heuristic: multiple same-day change-only attacks can share changes, changes
-  without a same-day attack score no dollars, and any vendor invoice hold during a live swap
-  can get credit regardless of the rule. Explicit attack linkage needs Ad/contracts work.
+- Explicit attack linkage/scoring fixes are merged (#17/#18); the prior heuristic-only
+  scoring handoff is superseded. Red audit rows are hidden server-side (#28); Blue still
+  restricts its own audit-log query to Green activity.
 - `AGENT_TOKEN` wins over legacy `INTERNAL_TOKEN`; `AgentSettings.internal_token` remains the
   resolved agent credential. Blue uses shared constant-time bearer auth, not `OPERATOR_TOKEN`.
 - Shared EventEmitter now supplies UUID4 `X-Tool-Use-Id` on `/events` batches. Shared first-session
   restrictions use `<server>___<tool>` IDs, with prefix-based discovery; they are no longer None.
-  Shared synchronous MCP offload creates a fresh LedgerClient and binds shared ctx in its worker
-  loop. Shared Droid reasoning configuration exists. These are not proof of Blue readiness.
+  Shared synchronous MCP offload creates a fresh LedgerClient, copies Blue contextvars and binds
+  shared ctx/Invocation in its private worker loop. No internal ID keyword is injected now.
+  The registry can correlate SDK permission/stream metadata; the offline probe has no such
+  registration, so its shared invocation is local/unverified. These are not proof of Blue readiness.
+- Contract #33 binds each key to its first action tuple (posted fields for `gl.post`);
+  battlefield returns 409 for different-action reuse. Richer context alone is not another action.
+  Shared multi-write keys use the invocation ID first, then `<id>:<n>`. Blue gate compatibility
+  is an independent review track, not changed or certified by this readiness checkpoint.
 
 Still required:
-1. Exact Blue MCP IDs, worker-thread propagation/binding of Blue SESSION and INVOCATION, and the
-   verified SDK invocation ID bound to each write/event remain unverified. Shared `ledger_tool`
-   still consumes the ID without passing it into the implementation. Blue's private decorator
-   rejects missing invocation metadata; it is not a verified SDK invocation adapter.
+1. Offline SDK 0.5.0/MCP 1.30.0 checks match all six schemas and reject metadata extras.
+   Shared offload now copies Blue SESSION/INVOCATION, but runs off the owner loop and still
+   blocks its heartbeat. Blue lock/client/receipt safety and integration with shared verified
+   Invocation identity remain unproven. Shared/Blue narration ownership also needs reconciliation.
+   Exact Blue session IDs remain unverified; the copied synthetic marker is not authenticated.
    Live audit collects bounded facts then returns unsuccessful readiness, with **no stream or
-   write**, regardless of environment settings. Keep the guard until Blue-specific offline SDK
-   checks coordinated by Ad establish all prerequisites. No shared lifecycle fork or guessed IDs.
+   write**, regardless of environment settings. Health reports `droid_ok=false` without probing.
+   Keep the guard until Ad resolves the shared bridge and coordinated validation establishes
+   all prerequisites in [SDK-READINESS.md](SDK-READINESS.md). No lifecycle fork or guessed IDs.
 2. Green's mirror needs battlefield-equivalent context before the first gate request. The first
    response wins for 120 seconds; a richer later request cannot repair incomplete mirror data.
    Gate lacks pending siblings, so established-vendor splitting is detected post-hoc, not prevented
    before pay. Paid-history context is backend-windowed; older duplicates can be missed.
-3. Human owners must perform future E2E/SDK validation when authorized. No Docker, seeded stack,
-   live provider/model call, deployment, push, PR or merge was performed in this refresh.
-   See `REVIEW-STACK.md` for dependency and Ad/steward integration handoff.
+3. Human owners must perform future E2E/SDK validation when authorized. Validation here used no
+   Docker, seeded stack, live provider/model call or deployment; publication is a separate step.
+   The orchestrator plain-merged upstream before the readiness refresh; no author integration merge occurred.
+   `REVIEW-STACK.md` is historical publication context, not the current SDK-readiness plan.
 
 Collection lives in `audit/snapshot.py`; `audit/evidence.py` derives findings in a worker thread.
 This split is structural: normalization and finding controls match the `78eb287` source; bounded
@@ -100,7 +108,7 @@ Each incremental branch adds exactly one new one-line M `devlog/` fragment. `DEV
 frozen and unchanged. Ad alone integrates after green CI and a PR-steward READY assessment
 pinned to the head SHA; owner routing is not an approval gate. Published dependent PRs must say
 `stacked on #N`; Ad integrates bottom-up and may plain-merge main to resync without force/rewrite.
-No author merges; this session remained local-only. See `REVIEW-STACK.md`.
+No author merges. Publishing this checkpoint does not certify live audit readiness.
 
 Invariant 11: the only audit-log read is `list_audit_log(agent="green", day=day)` through
 LedgerClient. No event/scoreboard/attack reads, raw provenance or raw battlefield HTTP are used.
@@ -108,15 +116,16 @@ The EventEmitter path emits only; raw source prose stays outside model/tool proj
 
 ## Validation on the current baseline
 
-Python 3.11.15: **151 passed**. All 144 source cases remain, redistributed into focused modules;
-one live-guard test is renamed and strengthened. Seven added cases cover confirmed-only outcome
-counts, four agent-auth endpoints, legacy fallback and mocked event-batch auth/UUID4 headers.
+Python 3.11.15: **171 passed** (151 merged baseline + 20 readiness cases, no skips).
+Readiness tests cover absent/installed SDK states, schemas/spoof refusal, copied Blue context
+versus local/unverified shared invocation, owner-loop blocking, truthful
+health, sanitized output and the unchanged no-stream/no-write live guard.
 All current checkpoint Blue ruff checks/format checks pass. Repository Python ruff checks and
 format checks pass; the frontend dependency baseline is recorded below.
 
 Normal per-service setup and tests work, with no root-workspace workaround:
 ```sh
-cd /Users/mateootero-diaz/projects/Hack/Calhacks/redledger-blue-review-current/blue
+cd blue
 UV_NO_ENV_FILE=1 uv sync --python 3.11 --extra dev
 UV_NO_ENV_FILE=1 uv run pytest -q
 ```
@@ -125,9 +134,9 @@ Generated lock/log files are ignored and uncommitted; no dependencies or service
 From the repository root, `make OPERATOR_TOKEN=validation TOKEN=validation lint test-blue`
 passes Python checks but stops at the existing missing frontend `tsc`; no frontend install or
 fix was attempted. Independent `make OPERATOR_TOKEN=validation TOKEN=validation test-blue`
-passes all 151 tests normally. Validation used `UV_NO_ENV_FILE=1` and kept ruff cache under Blue.
+passes all 171 tests normally. Validation used `UV_NO_ENV_FILE=1` and kept ruff cache under Blue.
 
-Prior `9736639`-stack local benchmark (not rerun on `68ef4eb`), 1,000 uncached calls/case;
+Prior `9736639`-stack local benchmark (not rerun on this checkpoint), 1,000 uncached calls/case;
 median/p95/max milliseconds:
 clean **0.0652/0.0720/0.5300**, ghost **0.0705/0.0760/0.1115**,
 new-vendor split **0.0705/0.0752/0.1071**. Mocked hung-provider complete decision:

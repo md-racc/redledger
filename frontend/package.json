@@ -16,6 +16,7 @@
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
     "@react-three/postprocessing": "^3.2.2",
+    "jose": "^6.2.13",
     "next": "^15.5.28",
     "postprocessing": "^6.39.5",
     "react": "^19.3.1",

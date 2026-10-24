@@ -1,0 +1,1 @@
+- 2026-10-24T05:19Z · M · docs: consolidate Blue and user-relayed Green requirements and approval in one sole-writer Ad handoff, with delete-after-merge-and-acceptance instructions; next: Ad protocol decisions and shared implementation; blocked: live acceptance until dependencies land

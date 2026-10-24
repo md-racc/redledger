@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     _configure_logging()
     await db.init_pool()
     yield
+    await control.shutdown_replays()  # before the pool closes: cancelled replays mark themselves failed
     await db.close_pool()
 
 

@@ -1,0 +1,1 @@
+- 2026-10-24T05:37Z · Ad · battlefield: Caddy serves one public host app.$DOMAIN (/api/ws -> battlefield, rest -> frontend); battlefield REST has no public hostname; next: TLS + Cloudflare Access on app.redledger.us; blocked: Cloudflare token needs Zone Settings + Access permissions

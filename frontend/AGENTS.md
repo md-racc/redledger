@@ -29,6 +29,17 @@ yours; nothing in the backend dictates look or tone.
   are read per request in route handlers (`dynamic = "force-dynamic"`), so one image serves
   every environment.
 
+## Cloudflare Access check at the origin
+
+`middleware.ts` (+ `lib/access.ts`) verifies the Cloudflare Access JWT on every request except
+`/_next/static`, `/_next/image` and `/favicon.ico`: RS256 against
+`https://$CF_ACCESS_TEAM_DOMAIN/cdn-cgi/access/certs`, `iss` = `https://$CF_ACCESS_TEAM_DOMAIN`,
+`aud` ∋ `$CF_ACCESS_AUD`, `exp`/`nbf` with 60 s skew. Token from `Cf-Access-Jwt-Assertion`, else
+the `CF_Authorization` cookie. Failure → `403` (`{"error":"forbidden"}` under `/api/*`, plain
+`forbidden` elsewhere). Why: the Caddy IP allowlist admits any Cloudflare zone, including one an
+attacker points at our origin IP; only our Access app can mint this JWT. Both vars unset → check
+off (local dev, mock, CI; one warning at startup in production). Never log the token or claims.
+
 ## Data model in one paragraph
 
 An **episode** is one run (seed + controller mode). Each **day**: legit traffic arrives, red
