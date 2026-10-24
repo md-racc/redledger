@@ -111,7 +111,7 @@ jobs:
           case "$PREFIX" in
             red|green|blue) ALLOWED="^($PREFIX/|battlefield/extensions/${PREFIX}_[^/]*\.py$|contracts/ext/$PREFIX/|DEVLOG.md$)";;
             frontend) ALLOWED="^(frontend/|battlefield/extensions/fe_[^/]*\.py$|contracts/ext/fe/|DEVLOG.md$)";;
-            battlefield) ALLOWED="^(battlefield/|agentkit/|deploy/|docker-compose|Makefile|\.env\.example|\.github/|DEVLOG.md$)";;
+            battlefield) ALLOWED="^(battlefield/|agentkit/|deploy/|docker-compose|Makefile|\.env\.example|\.github/|ruff\.toml$|DEVLOG.md$)";;
             contracts) ALLOWED="^(contracts/|agentkit/agentkit/models.py|DEVLOG.md$)";;
             docs|chore|release) exit 0;;
             *) echo "::error::branch must be prefixed red/ green/ blue/ frontend/ battlefield/ contracts/ docs/ chore/"; exit 1;;

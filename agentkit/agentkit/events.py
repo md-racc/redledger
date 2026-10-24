@@ -7,6 +7,7 @@ best-effort and batched; a failed emit never fails a turn.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Any
 
 import httpx
@@ -102,7 +103,8 @@ class EventEmitter:
         if not batch:
             return
         try:
-            r = await self._client.post("/events", json=batch)
+            # battlefield requires X-Tool-Use-Id on every agent write; a narration batch is its own write
+            r = await self._client.post("/events", json=batch, headers={"X-Tool-Use-Id": uuid.uuid4().hex})
             if r.status_code >= 400:
                 log.warning("event_emit_failed", status=r.status_code, body=r.text[:200])
         except Exception as e:  # never fail a turn over narration

@@ -7,11 +7,17 @@ from typing import Any
 
 from app import db
 
-TOKEN = "test-token"
+AGENT_TOKEN = "test-agent-token"
+OPERATOR_TOKEN = "test-operator-token"
 
 
-def auth(agent: str | None = None, *, episode: str | None = "ep_test", day: int | None = 0, tool_use_id: str | None = None) -> dict[str, str]:
-    h = {"Authorization": f"Bearer {TOKEN}"}
+def auth(
+    agent: str | None = None, *, episode: str | None = "ep_test", day: int | None = 0, tool_use_id: str | None = None, token: str | None = None
+) -> dict[str, str]:
+    """Headers for an agent (X-Agent + AGENT_TOKEN) or, with no agent, the operator (OPERATOR_TOKEN)."""
+    if token is None:
+        token = AGENT_TOKEN if agent is not None else OPERATOR_TOKEN
+    h = {"Authorization": f"Bearer {token}"}
     if agent is not None:
         h["X-Agent"] = agent
         if episode is not None:
