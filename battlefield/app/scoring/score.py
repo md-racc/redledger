@@ -94,18 +94,26 @@ async def _red_changes(episode_id: str) -> list[dict[str, Any]]:
 def _attribute(changes: list[dict[str, Any]], attacks: list[Any], linked: set[str]) -> dict[str, list[dict[str, Any]]]:
     """Attribute red vendor_changes to attacks.
 
-    `vendor_changes` has no `attack_id`, so attribution is a heuristic: a red change belongs to the
-    attacks launched on its `requested_day`; when several attacks launched that day, it goes to
-    the ones with no linked invoice/expense rows, and only if every attack that day has rows does
-    it go to all of them. Two change-only attacks on one day therefore share each other's changes,
-    and a change on a day with no attack is attributed to nobody. The real fix is `attack_id` on
-    `vendor_changes` (contracts change).
+    A change with `attack_id` set (red_writes links every red change to the latest attack red had
+    declared that day when it made the change) belongs to that attack, whatever day it was made or
+    resolved and whatever else launched since.
+
+    Fallback, ONLY for rows with NULL `attack_id` (legacy rows from before the column existed, or a
+    change red made before declaring any attack that day): a same-day heuristic. Such a change
+    belongs to the attacks launched on its `requested_day`; when several launched that day, it
+    goes to the ones with no linked invoice/expense rows, and only if every attack that day has
+    rows does it go to all of them. Two change-only attacks on one day therefore share each
+    other's NULL-linked changes, and a NULL-linked change on a day with no attack is attributed to
+    nobody.
     """
     by_day: dict[int, list[str]] = defaultdict(list)
     for a in attacks:
         by_day[a["day_launched"]].append(a["id"])
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for ch in changes:
+        if ch.get("attack_id"):
+            out[ch["attack_id"]].append(ch)
+            continue
         day_attacks = by_day.get(ch["requested_day"])
         if not day_attacks:
             continue

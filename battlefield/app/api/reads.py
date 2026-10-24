@@ -152,5 +152,5 @@ async def get_report(report_id: str, c: Caller = Depends(caller)):
 @router.get("/attacks")
 async def list_attacks(episode_id: str | None = None, c: Caller = Depends(allow("red"))):
     ep = _ep(c, episode_id)
-    rows = await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 ORDER BY day_launched, id", ep)
+    rows = await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 ORDER BY day_launched, created_at, id", ep)
     return db.rows_to_list(rows)
