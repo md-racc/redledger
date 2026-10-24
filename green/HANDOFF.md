@@ -17,6 +17,25 @@ permission mirroring, and coordinated multi-seed episodes are not claimed by thi
 milestone. Existing shared tool decoration does not propagate one identity from
 events into ledger writes; event presence is not proof of identity parity.
 
+## Response to integration review on #13 and #14
+
+Ad's review on #13 holds both PRs for a live Green demo. The minimal shared
+handoff is now in [INTEGRATION.md](INTEGRATION.md); Green can integrate once that
+reviewed support is merged. There is no confirmed merge date or live-release ETA.
+
+Main `68ef4eb` includes `9736639`: shared Droid tools now run on worker loops,
+and the first executable session has a restricted allowlist built using the
+observed `<server>___<tool>` IDs. Those fixes do not propagate the SDK invocation
+identity into permission callbacks, tool events and ledger headers, and do not
+add authoritative preflight or replay-only cache semantics. Reinstating the old
+mirror with only a different key would still risk priming the cache with
+incomplete context. The live guard therefore remains, and the review hold is not
+claimed resolved.
+
+The unsupported-action regression is addressed in the preceding workflow PR:
+unsupported action/entity pairs must fail before any ledger I/O, not escape via
+`AttributeError` from a nonexistent `pay_vendor_change` method.
+
 ## Dev Ad: requested contract review and shared implementation
 
 Choose and review the HTTP, models, storage, freshness, and `LedgerClient` design.
@@ -51,8 +70,10 @@ Additional shared plumbing prerequisites:
 - Emit exactly one correlated tool-call/result pair for a canceled invocation,
   even when its tool body never runs. Approved invocations must not duplicate
   that pair. Do not confuse cached verdicts with deduplicated mutations.
-- Restrict the **first executable** session to verified Green MCP IDs. Do not use
-  suffix matching, argument matching, or a global last-ID fallback.
+- Verify the merged first-session restriction against Green's exact MCP allowlist.
+  Never authorize unknown tools using suffixes, argument matching or a last-ID fallback.
+- Propagate turn-local clerk state into the merged SDK worker-loop adapter.
+  Rebinding only `agentkit.ctx` does not carry Green's `ContextVar` state.
 - Pass the existing `APPROVAL_THRESHOLD` into Green's Compose environment.
 - Record empirical SDK Findings through Ad's authorized contracts path. The
   ownership guard currently excludes `contracts/CHANGELOG.md` on Green branches;
@@ -74,6 +95,8 @@ The independent verifier's two temporary regression probes both fail on this
 same unchanged shared behavior. Ad must drain all remaining batches at shutdown
 and test event-pair completeness. Green does not patch or wrap shared event
 delivery to hide it. Full event-pair acceptance remains blocked.
+Ad reports the fix is in `battlefield/agentkit-hardening`; it is not present in
+the checked main `68ef4eb`. This is a handoff, not a Green-owned workaround.
 
 ## Blue session: requested replay contract and cache changes
 
@@ -112,7 +135,8 @@ No live SDK experiments are authorized or claimed by this checkpoint. With
 separately authorized credentials and an isolated disposable session, measure:
 
 - Whether `Autonomy.OFF` invokes permission callbacks for Green MCP tools.
-- Exact MCP tool IDs and first-turn restrictions.
+- Green's exact MCP allowlist and first-turn restrictions, using the merged
+  `<server>___<tool>` finding rather than guessing a different ID format.
 - Invocation identity and metadata available to callback and execution contexts.
 - Whether a CANCEL comment reaches the model.
 
@@ -140,12 +164,13 @@ repay an invoice to repair its accounting.
 
 ## Foundation verification record
 
-The original implementation passed 42 Green tests and a fresh independent review.
+Before review fixes, the original implementation passed 42 Green tests and a fresh independent review.
 Splitting the work adds eight clerk-primitive cases without removing or skipping
-existing tests. Each review slice changes only Green and appends one Dev M log line.
+existing tests. Each review slice changes only Green and adds one Dev M log
+fragment; `DEVLOG.md` is now frozen history.
 
 - Green Ruff check and format check: passed.
-- Combined Green suite on the final review branch: **50 passed** on Python 3.11.
+- At the initial split, the combined Green suite passed **50 tests** on Python 3.11.
 - Repository lint passes Python checks but stops at frontend `tsc: command not found`.
 - The first slice passes nine tests; the activated workflow slice passes 18 tests.
 - The current main base includes the root uv-workspace fix. Service imports still
@@ -166,35 +191,23 @@ existing tests. Each review slice changes only Green and appends one Dev M log l
   used. Live permissions, invocation identity, canonical replay, and accounting
   acceptance remain deferred.
 
-## Sequential human PR handoff
+## Current PR and integration handoff
 
-The original `green/ap-workflow` branch is preserved locally. Review slices were
-created from fetched main `3f41c4e` and carry their prerequisites:
+The original `green/ap-workflow` branch is preserved locally. The three initial
+slices were created from main `3f41c4e`; #12 has since been merged. #14 remains
+stacked on #13 and must not be merged before it.
 
-| Order | Head | Review base | Scope |
+| PR | Head | Dependency | Scope |
 |---|---|---|---|
-| 1 | `green/ap-foundation-1` | `main` | Dormant clerk primitives, HTTP fixtures, direct tests |
-| 2 | `green/ap-workflow-2` | `green/ap-foundation-1` | Activate decorated AP, safe live guard, DRY_RUN tests |
-| 3 | `green/ap-verification-3` | `green/ap-workflow-2` | Failure/recovery regressions and protocol handoffs |
+| #12, merged | `green/ap-foundation-1` | None | Clerk primitives, fixtures, direct tests |
+| #13, held | `green/ap-workflow-2` | #12 | Activate AP, live guard, DRY_RUN and dispatch tests |
+| #14, held | `green/ap-verification-3` | #13 | Failure/recovery tests and protocol handoffs |
 
-Each incremental diff stays below 600 changed lines. The first slice leaves the
-existing agent unchanged; the live guard lands in slice two.
+Keep incremental review diffs below 600 lines. Use the PR template and leave
+checks incomplete when their validation is blocked; no green-CI claim is made.
 
-Suggested titles:
-1. `green: add isolated AP clerk primitives and fixtures`
-2. `green: activate the trusting AP clerk workflow`
-3. `green: cover AP failure recovery and document protocol handoffs`
-
-Request review from Green's CODEOWNER; `@md-racc` is the backup when `@moterodiaz`
-authors the PR. Use the repository PR template, check boxes honestly, and leave
-the full-lint box unchecked while frontend tooling is unavailable. Human review
-of the entire diff is still required.
-
-`GIT.md` prohibits agents from creating, approving, or merging PRs. These are
-branch handoffs, not opened PRs or a claim that CI has passed. Review/merge in
-order. Final merge targets main, requires green CI and CODEOWNER approval, and
-uses squash-merge. After a prerequisite is squash-merged, its old commits will
-not be ancestors of main: replay the next slice's single commit onto a fresh
-current-main branch before marking it ready. Publish that fresh branch normally,
-rather than force-pushing or rewriting a review branch another person pulled.
-Do not merge these development branches directly into main.
+Current `GIT.md` allows teammates' agents to push their branches and open PRs.
+Ad is the integration and merge authority: CI and the PR steward must pass before
+integration squash-merges to main. Authors never merge or approve their own PRs.
+Integration can resync stacked branches with plain main merges; authors pull
+before continuing. Never force-push or rewrite shared review history.
