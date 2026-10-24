@@ -547,8 +547,19 @@ paths:
     post:
       security: [ { operatorBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/id' } ]
-      requestBody: { content: { application/json: { schema: { type: object, properties: { speed: { type: number, default: 1.0 }, episode_id: { type: string, description: 'virtual episode id to stream under' } } } } } }
-      responses: { '202': { description: streaming } }
+      description: |
+        Plays a recorded fixture as a new, real episode: battlefield creates an `episodes` row with
+        id `episode_id` (default `replay_<fixture>_<8hex>`) and persists every fixture event under it
+        with fresh ids and timestamps, paced by the original gaps ÷ `speed` (≤ 3 s per gap; speed ≤ 0
+        = no pacing). So `GET /events`, `/ws` `after_id` catch-up and the event-derived `/fe` views
+        work for replays; table-derived `/fe` views are empty (a replay writes no ledger rows).
+        Runner routes (start/pause/resume/step/controller/attack) return 409 for `replay_*` episodes.
+      requestBody: { content: { application/json: { schema: { type: object, properties: { speed: { type: number, default: 1.0 }, episode_id: { type: string, pattern: '^replay_[A-Za-z0-9_-]{1,57}$', description: 'id for the new replay episode; must not exist' } } } } } }
+      responses:
+        '202': { description: 'streaming; body {ok, episode_id, events}' }
+        '404': { description: unknown fixture }
+        '409': { description: episode_id already exists }
+        '422': { description: bad episode_id or malformed fixture }
 
   # ---------- extension points (README §16) ----------
   /state/{key}:
@@ -584,10 +595,12 @@ paths:
       description: |
         The frontend server calls this with OPERATOR_TOKEN and hands the ticket to the browser,
         so the browser never holds a token. Clients treat `ticket` as opaque.
-        Battlefield-internal format (normative for battlefield only): `<scope>.<exp>.<sig>` where
-        `scope` = `episode_id` from the body, or `*` when omitted; `exp` = unix seconds
-        (issue time + 60); `sig` = lowercase hex HMAC-SHA256(key=OPERATOR_TOKEN, msg=`<scope>|<exp>`).
-        TTL 60 s. Single use: battlefield remembers redeemed tickets until `exp` and rejects reuse.
+        Battlefield-internal format (normative for battlefield only): `<scope>.<exp>.<nonce>.<sig>`
+        where `scope` = `episode_id` from the body, or `*` when omitted; `exp` = unix seconds
+        (issue time + 60); `nonce` = 16 lowercase hex chars, random per ticket (so two tickets minted
+        in the same second differ); `sig` = lowercase hex HMAC-SHA256(key=OPERATOR_TOKEN,
+        msg=`<scope>|<exp>|<nonce>`). TTL 60 s. Single use: battlefield remembers redeemed tickets
+        (by `<scope>|<exp>|<nonce>`) until `exp` and rejects reuse. Other formats → 4401.
       security: [ { operatorBearer: [] } ]
       requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/WsTicketCreate' } } } }
       responses:

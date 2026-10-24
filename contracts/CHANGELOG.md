@@ -54,6 +54,8 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
 
 ## Changes
 
+- 2026-10-24 · Ad · ledger-api.yaml, events.md · replays are persisted as real `replay_*` episodes (404/409/422, runner routes 409); ws tickets gain a per-ticket nonce (`<scope>.<exp>.<nonce>.<sig>`); replayed events carry no `replay` flag · frontend (R)
+
 - 2026-10-24 · Ad · agent-service.md, ledger-api.yaml · idempotency keys are bound to their first action (409 on reuse for a different action); n-th ledger write of one tool call is `<tool_use_id>:<n>`; green mirror uses the first write's key · green (M), blue (M), red (Al)
 
 - 2026-10-24 · Ad · ledger-api.yaml, events.md · agent-facing /audit_log excludes red's rows; legit_injected gains vendor_changes/new_vendors · blue (M), red (Al), frontend (R)
