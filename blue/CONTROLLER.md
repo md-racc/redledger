@@ -93,8 +93,8 @@ Still required:
    response wins for 120 seconds; a richer later request cannot repair incomplete mirror data.
    Gate lacks pending siblings, so established-vendor splitting is detected post-hoc, not prevented
    before pay. Paid-history context is backend-windowed; older duplicates can be missed.
-3. Human owners must perform future E2E/SDK validation when authorized. No Docker, seeded stack,
-   live provider/model call, deployment, push or PR was performed in this refresh.
+3. Human owners must perform future E2E/SDK validation when authorized. Validation here used no
+   Docker, seeded stack, live provider/model call or deployment; publication is a separate step.
    The orchestrator plain-merged upstream before the readiness refresh; no author integration merge occurred.
    `REVIEW-STACK.md` is historical publication context, not the current SDK-readiness plan.
 
@@ -108,7 +108,7 @@ Each incremental branch adds exactly one new one-line M `devlog/` fragment. `DEV
 frozen and unchanged. Ad alone integrates after green CI and a PR-steward READY assessment
 pinned to the head SHA; owner routing is not an approval gate. Published dependent PRs must say
 `stacked on #N`; Ad integrates bottom-up and may plain-merge main to resync without force/rewrite.
-No author merges; this checkpoint remains local-only.
+No author merges. Publishing this checkpoint does not certify live audit readiness.
 
 Invariant 11: the only audit-log read is `list_audit_log(agent="green", day=day)` through
 LedgerClient. No event/scoreboard/attack reads, raw provenance or raw battlefield HTTP are used.
