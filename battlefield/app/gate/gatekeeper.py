@@ -14,7 +14,8 @@ Every gated green route calls `check()` before mutating. check():
 Same-key requests are single-flight: they run one at a time, so a key gets one verdict and at most
 one escalation; the later ones replay the first's outcome. Without the lock (the backstop for
 concurrent first uses that bypass it), the verdict INSERT ... ON CONFLICT picks one winner and a
-loser of an escalate verdict waits for the winner's escalation row and joins it.
+loser of an escalate verdict waits for the winner's escalation row and joins it. A verdict replays
+only on its own day and under its own enforcement (enforce vs shadow); otherwise 409 "stale verdict".
 Escalations close exactly once (compare-and-set on status='open': resolver, timeout or orphan sweep).
 A replay of an escalated key joins that escalation or reuses its decision. The waiter lives in this
 process, so an escalation left open by a restart is an orphan: resolving it is a 409 and times it out.
@@ -52,15 +53,32 @@ _key_slots: dict[tuple[str, str], list[Any]] = {}  # (episode_id, idempotency ke
 
 
 IDEMPOTENCY_CONFLICT = "idempotency key reused for a different action"
+STALE_VERDICT = "stale verdict"
 
 
 class IdempotencyConflictError(Exception):
     """The X-Tool-Use-Id already has a verdict for a different action/entity/amount. Replaying that
-    verdict would let one approval authorize another action, so the request is refused (409)."""
+    verdict would let one approval authorize another action, so the request is refused (409).
+    `error` is the 409 body's `error` text."""
+
+    error = IDEMPOTENCY_CONFLICT
 
     def __init__(self, verdict_id: str | None):
-        super().__init__(IDEMPOTENCY_CONFLICT)
+        super().__init__(self.error)
         self.verdict_id = verdict_id  # None when the key's preparation was made in off (no verdict)
+
+
+class StaleVerdictError(IdempotencyConflictError):
+    """The X-Tool-Use-Id has a verdict for this same action, but it was judged on another day or under
+    the other enforcement (`verdicts.day`, `verdicts.enforced`; contracts/agent-service.md). It is
+    never replayed: a shadow block must not become an enforced 403, and a human's escalation decision
+    must not carry over to another day. Refused with 409 {"error": "stale verdict", "verdict_id"}."""
+
+    error = STALE_VERDICT
+
+    def __init__(self, verdict_id: str, detail: str):
+        super().__init__(verdict_id)
+        self.detail = detail  # "day changed" | "mode changed" (logged; not in the contract body)
 
 
 class GateBlockedError(Exception):
@@ -269,7 +287,18 @@ async def _replay(
     if not same_action(existing, action, entity_type, entity_id, amount, args):
         log.warning("idempotency_key_reused", key=c.tool_use_id, verdict_id=existing["id"], stored_action=existing["action"], action=action)
         raise IdempotencyConflictError(existing["id"])
+    _refuse_stale(existing, mode, c)
     return await _apply(existing["id"], existing["verdict"], existing["reason"], mode, c, action, entity_type, entity_id, amount, replay=True)
+
+
+def _refuse_stale(existing: Any, mode: str, c: Caller) -> None:
+    """A verdict is bound to the day and the enforcement it was judged under: raise StaleVerdictError
+    when this request's day or mode (enforce vs shadow) differs. Only shadow/enforce reach here (off
+    neither records nor replays verdicts)."""
+    detail = "day changed" if existing["day"] != c.day else "mode changed" if bool(existing["enforced"]) != (mode == "enforce") else None
+    if detail is not None:
+        log.warning("stale_verdict_refused", key=c.tool_use_id, verdict_id=existing["id"], detail=detail, verdict_day=existing["day"], day=c.day, mode=mode)
+        raise StaleVerdictError(existing["id"], detail)
 
 
 def same_action(existing: Any, action: str, entity_type: str | None, entity_id: str | None, amount: float | None, args: dict[str, Any]) -> bool:
@@ -548,6 +577,8 @@ async def prepare(
         ):
             log.warning("idempotency_key_reused", key=c.tool_use_id, verdict_id=prior["id"], stored_action=prior["action"], action=action)
             raise IdempotencyConflictError(prior["id"])
+        if prior is not None and mode != "off":
+            _refuse_stale(prior, mode, c)  # never reuse another day's or the other mode's verdict
         prep_id = db.new_id("prep")
         if mode == "off":
             await _insert_prep(prep_id, c, mode, action, entity_type, entity_id, amount, args, state_hash, None, "allow", "mode")

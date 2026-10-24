@@ -9,6 +9,7 @@ These exist so other teams can add behavior without a contracts PR:
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -35,14 +36,18 @@ async def get_state(key: str, c: Caller = Depends(allow("red", "green", "blue", 
 
 @router.put("/state/{key}")
 async def put_state(key: str, value: dict[str, Any], c: Caller = Depends(allow("red", "green", "blue", operator=False))):
-    await db.execute(
-        "INSERT INTO agent_state (episode_id, agent, key, value) VALUES ($1,$2,$3,$4) "
-        "ON CONFLICT (episode_id, agent, key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()",
-        c.episode_id,
-        c.agent,
-        key,
-        value,
-    )
+    """Audited like every agent write (AGENTS.md invariant 5), in the same transaction. The audit row
+    carries the key and the value's JSON size, never the value itself (it can be large)."""
+    async with db.pool().acquire() as conn, conn.transaction():
+        await conn.execute(
+            "INSERT INTO agent_state (episode_id, agent, key, value) VALUES ($1,$2,$3,$4) "
+            "ON CONFLICT (episode_id, agent, key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()",
+            c.episode_id,
+            c.agent,
+            key,
+            value,
+        )
+        await audit.record(c, "state.put", {"key": key, "bytes": len(json.dumps(value))}, {"ok": True}, 200, conn=conn)
     return {"ok": True}
 
 
