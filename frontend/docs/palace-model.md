@@ -69,7 +69,7 @@ back-facing hits. Agents sample it bilinearly; before it is ready, or with the f
 
 The rotunda is roofed, so from above nobody on the floor is visible. In the arena stage:
 
-- a clipping plane slices every Palace material above `CUT_Y = 23.4` m (the outer columns end near 23.5 m); the plane
+- a clipping plane slices every Palace material above `CUT_Y = 11` m (the outer columns end near 23.5 m; the piers are left as stumps); the plane
   eases down from 140 m so the building appears to open from the top
 - materials whose names match `HIDE_IN_ARENA` (`dome_membrane`, `plaster_ceiling*`, `concrete_inner`,
   `column_tan_inner`, `drum_band`) fade out and are then hidden, which also removes their shadows

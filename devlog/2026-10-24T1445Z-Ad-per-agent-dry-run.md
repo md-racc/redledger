@@ -1,0 +1,1 @@
+- 2026-10-24T14:45Z · Ad · docs: README §11 rows for DRY_RUN_RED/GREEN/BLUE (code in #75); next: red live on prod; blocked: none

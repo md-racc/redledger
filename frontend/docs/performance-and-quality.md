@@ -4,14 +4,17 @@
 
 | level | pixel ratio | shadows | shadow refresh | post-processing |
 |---|---|---|---|---|
-| 3 (default on desktop) | 1 - 1.75 | 2048 | every 2nd frame | bloom, tone map, grade, vignette, grain, SMAA |
-| 2 (default on phones / coarse pointers) | 1 - 1.4 | 1024 | every 3rd frame | bloom + tone map |
+| 3 (default on desktop) | 1 - 1.5 | 2048 | every 2nd frame | bloom, tone map, grade, vignette, grain, SMAA |
+| 2 (default on phones / coarse pointers) | 1 - 1.25 | 1024 | every 3rd frame | bloom + tone map |
 | 1 | 1 - 1.1 | 1024 | every 6th frame | none (renderer's own ACES tone mapping) |
 | 0 | 1 | off | - | none |
 
 - `?q=0` … `?q=3` pins a level and turns the automatic step-down off (useful for comparing, and for slow machines).
-- Without `?q`, drei's `PerformanceMonitor` watches the frame rate and drops one level when it stays under 20 fps.
-  It only goes down, never up, so it cannot flap.
+- Without `?q`, `lib/arena/governor.ts` (tested) watches the frame rate: it ignores the first 6 s after load, any frame longer
+  than 0.5 s (a hidden pane, a window drag) and the loading stage; it steps down one level after 4 whole seconds under 24 fps,
+  and back up (at most twice) after 10 s at 52 fps or more, with a 20 s cooldown. If it has to step down again after stepping
+  up it stops trying. `document.documentElement.dataset.quality` shows the current level.
+- Why: the first rule (under 20 fps for ~1.5 s, one way only) turned a single hiccup into a permanently flatter scene.
 - The sun never moves, so the shadow map is refreshed every few frames rather than every frame; only the agents' shadows
   lag slightly.
 
@@ -46,7 +49,7 @@ per-agent (so each can flash independently); geometries are shared (`components/
 
 ## Known limits
 
-- Level changes are one-way within a page load.
+- A level can step back up only twice per page load.
 - The fallback palace is much simpler and its shadows are cheap; it is not tuned for looks.
 - Touch devices: in the arena the orbit controls take over touch gestures on the canvas, so scrolling back up is by the
   *Back to tour* button or the chapter rail, not a swipe.

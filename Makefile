@@ -10,7 +10,7 @@ SHELL := /bin/bash
 MODE ?= shadow
 DAYS ?= 10
 SEED ?= 42
-unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG LN GENS REVEAL_DAYS REVEAL_GENERATIONS
+unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG LN GENS REVEAL_DAYS REVEAL_GENERATIONS MAX_CREDITS GEN AGENTS RED GREEN BLUE RESET CONFIRM
 COMPOSE := docker compose
 DEV := -f docker-compose.yml -f docker-compose.dev.yml
 MOCK := -f docker-compose.yml -f docker-compose.mock.yml
@@ -20,7 +20,9 @@ API ?= http://localhost:8000
 # stale .env with only INTERNAL_TOKEN would send a token battlefield never sees (401). Quotes are
 # stripped because deploy/render-env.sh writes NAME='value'.
 env_get = $(shell grep -E '^$(1)=' .env 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d "'\"")
-TOKEN ?= $(call env_get,OPERATOR_TOKEN)
+# While `make local-stack` is up, its generated operator token (.local-stack/env) wins over .env.
+LOCAL_STACK_TOKEN = $(shell grep -E '^OPERATOR_TOKEN=' .local-stack/env 2>/dev/null | tail -n 1 | cut -d= -f2-)
+TOKEN ?= $(if $(wildcard .local-stack/pids/battlefield),$(LOCAL_STACK_TOKEN),$(call env_get,OPERATOR_TOKEN))
 TOKEN := $(if $(TOKEN),$(TOKEN),change-me)
 AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
 # `make evolve` defaults follow the lineage config (docs/EVOLUTION-DESIGN.md E-D8), not the episode
@@ -29,9 +31,11 @@ LN_MODE = $(if $(filter command line,$(origin MODE)),$(MODE),enforce)
 LN_DAYS = $(if $(filter command line,$(origin DAYS)),$(DAYS),6)
 
 .PHONY: help up up-dry mock-agents down logs ps db-reset db-shell seed episode step toggle attack escalations score record replay \
+        local-stack local-stack-status local-stack-stop \
         evolve lineage-status lineage-pause lineage-resume evolution-report lineage-export \
         prod-health prod-ps prod-logs prod-episode prod-step prod-pause prod-resume prod-toggle prod-attack prod-escalations \
         prod-resolve prod-score prod-wait prod-record prod-credits \
+        prod-evolve prod-lineage-status prod-lineage-pause prod-lineage-resume prod-lineage-wait prod-lineage-export prod-evolution-report \
         install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog devlog-show
 
 help: ## list targets
@@ -54,6 +58,23 @@ db-reset: ## wipe the database volume (schema re-applies on next start)
 	$(COMPOSE) down -v --remove-orphans
 db-shell: ## psql into the running db
 	$(COMPOSE) exec postgres psql -U redledger redledger
+
+# ---------- local stack without docker: pgserver Postgres 16 + battlefield + agents as processes ----------
+# State in .local-stack/ (self-ignoring). Mixed mode: real blue on top of mock red/green = BLUE=real.
+# Real agents run DRY_RUN=true unless you export DRY_RUN=false or DRY_RUN_<AGENT>=false; FACTORY_API_KEY,
+# DROID_MODEL_<AGENT> and CRS_* come from your own shell environment (never from a .env file).
+local-stack: export LS_AGENTS := $(value AGENTS)
+local-stack: export LS_RED := $(value RED)
+local-stack: export LS_GREEN := $(value GREEN)
+local-stack: export LS_BLUE := $(value BLUE)
+local-stack: ## start the stack without docker: make local-stack [AGENTS=mock|real] [RED=|GREEN=|BLUE=mock|real]
+	@AGENTS="$$LS_AGENTS" RED="$$LS_RED" GREEN="$$LS_GREEN" BLUE="$$LS_BLUE" battlefield/scripts/local_stack.sh up
+local-stack-status: ## health of the local stack's processes
+	@battlefield/scripts/local_stack.sh status
+local-stack-stop: export LS_RESET := $(value RESET)
+local-stack-stop: export LS_CONFIRM := $(value CONFIRM)
+local-stack-stop: ## stop the local stack (RESET=1 CONFIRM=yes also wipes its database)
+	@RESET="$$LS_RESET" CONFIRM="$$LS_CONFIRM" battlefield/scripts/local_stack.sh stop
 
 # ---------- episode control (curl against battlefield) ----------
 episode: ## create + start an episode: make episode MODE=enforce SEED=42 DAYS=10
@@ -116,6 +137,12 @@ prod-%: export PRODARG_SVC := $(call prodarg,SVC)
 prod-%: export PRODARG_ESC := $(call prodarg,ESC)
 prod-%: export PRODARG_DECISION := $(call prodarg,DECISION)
 prod-%: export PRODARG_NAME := $(call prodarg,NAME)
+prod-%: export PRODARG_LN := $(call prodarg,LN)
+prod-%: export PRODARG_GENS := $(call prodarg,GENS)
+prod-%: export PRODARG_REVEAL_DAYS := $(call prodarg,REVEAL_DAYS)
+prod-%: export PRODARG_REVEAL_GENERATIONS := $(call prodarg,REVEAL_GENERATIONS)
+prod-%: export PRODARG_MAX_CREDITS := $(call prodarg,MAX_CREDITS)
+prod-%: export PRODARG_GEN := $(call prodarg,GEN)
 prod-health: ## prod: battlefield /health (incl. agents), from inside the VM
 	@$(PROD) health
 prod-ps: ## prod: docker compose ps on the VM
@@ -146,6 +173,20 @@ prod-record: ## prod: EP events -> battlefield/fixtures/episodes/<NAME or EP>.js
 	@$(PROD) record "$$PRODARG_EP" "$$PRODARG_NAME"
 prod-credits: ## prod: factory_credits per agent/day for EP vs MAX_CREDITS_PER_EPISODE
 	@$(PROD) credits "$$PRODARG_EP"
+prod-evolve: ## prod: create + start a lineage: GENS=3 DAYS=5 MODE=enforce SEED=42 MAX_CREDITS=1000000 [REVEAL_DAYS= REVEAL_GENERATIONS=]
+	@$(PROD) evolve "$$PRODARG_GENS" "$$PRODARG_DAYS" "$$PRODARG_MODE" "$$PRODARG_SEED" "$$PRODARG_REVEAL_DAYS" "$$PRODARG_REVEAL_GENERATIONS" "$$PRODARG_MAX_CREDITS"
+prod-lineage-status: ## prod: LN generations, scores, turn credits, current generation/day
+	@$(PROD) lineage-status "$$PRODARG_LN"
+prod-lineage-pause: ## prod: pause LN (and its running generation)
+	@$(PROD) lineage-pause "$$PRODARG_LN"
+prod-lineage-resume: ## prod: resume LN at the same generation (also lifts a lineage credit-cap pause)
+	@$(PROD) lineage-resume "$$PRODARG_LN"
+prod-lineage-wait: ## prod: poll LN until finished/failed/paused (PROD_LINEAGE_WAIT_TIMEOUT, default 7200 s)
+	@$(PROD) lineage-wait "$$PRODARG_LN"
+prod-lineage-export: ## prod: LN log bundle -> runs/<LN>/ [GEN=<g>] (secret-scanned; ground truth: never commit)
+	@$(PROD) lineage-export "$$PRODARG_LN" "$$PRODARG_GEN"
+prod-evolution-report: ## prod: LN report -> runs/<LN>/report.json + report.md (partial while it runs)
+	@$(PROD) evolution-report "$$PRODARG_LN"
 
 # ---------- dev tooling ----------
 install: ## install python deps for all services + frontend

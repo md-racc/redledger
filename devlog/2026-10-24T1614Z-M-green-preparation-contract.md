@@ -1,0 +1,1 @@
+- 2026-10-24T16:14Z · M · green: stage dormant Option-P AP mappings and per-mode preparation decisions with mocked HTTP/key-parity tests; correct superseded mirror/identity guidance while retaining playbook APIs; #89 consumption merged during verification, so handler/cause follow-up is unblocked; next: Green SDK acceptance; live guard/static CANCEL unchanged

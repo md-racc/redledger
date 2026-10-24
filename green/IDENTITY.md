@@ -1,5 +1,17 @@
 # Green identity adapter checkpoint
 
+Current update (2026-10-24): #84 adds strict live identity (the shared default at
+Green's `autonomy="off"`), refusing unverified/ambiguous/conflicting invocations
+and writes without verified SDK identity. `LedgerClient.prepare` requires an
+SDK-reported `ToolUse`; its request does not consume an invocation write key.
+UUID4 fallback described below is historical best-effort behavior, not permission
+to execute live Green. Contracts #80 drop the Blue mirror entirely; Green prepares
+only against Battlefield. See [INTEGRATION.md](INTEGRATION.md) for current blockers.
+The permission adapter now applies canonical preparation decisions, but the pre-SDK
+hard guard still stands. Fixture correlation is not SDK acceptance.
+
+## Historical #34 evidence (preparation/replay proposal superseded by Option P)
+
 Shared baseline: merged main `78a3b25`, after contracts #33 and implementation #34.
 This updates the earlier identity status in `INTEGRATION.md` and `HANDOFF.md`;
 it does not replace their proposed preflight/replay semantics.

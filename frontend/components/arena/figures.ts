@@ -40,6 +40,8 @@ export interface FigureHandle {
   seed: number;
   pillarH: number;
   ringS: number;
+  /** 0..1, eased: how far this figure is dimmed because someone else is the focus of the shot (lib/arena/focus.ts) */
+  dim: number;
 }
 
 /** id → live figure. Filled by ArenaWorld on mount, read by the world loop and the picker. */
@@ -542,7 +544,7 @@ export function buildFigure(spec: AgentSpec): FigureHandle {
   hit.userData.agentId = spec.id;
   root.add(hit);
 
-  return { id: spec.id, team, root, body, ring, pillar, hit, glow, shards, card, ice, limbs: { armL, armR, legL, legR }, anim, phase: Math.random() * 6, seed: Math.random() * 100, pillarH: 24, ringS: 1 };
+  return { id: spec.id, team, root, body, ring, pillar, hit, glow, shards, card, ice, limbs: { armL, armR, legL, legR }, anim, phase: Math.random() * 6, seed: Math.random() * 100, pillarH: 24, ringS: 1, dim: 0 };
 }
 
 export function disposeFigure(h: FigureHandle) {
@@ -604,11 +606,12 @@ export function animateFigure(h: FigureHandle, a: SimAgent, f: FigureFrame) {
     h.card.rotation.y += dt * 1.4;
     h.card.position.y = 2.6 + Math.sin(t * 2 + h.seed) * 0.08;
     h.card.visible = a.status !== "caught";
-    (h.card.material as THREE.MeshBasicMaterial).opacity = a.status === "drained" ? 0.45 : 1;
+    (h.card.material as THREE.MeshBasicMaterial).opacity = (a.status === "drained" ? 0.45 : 1) * (1 - 0.62 * h.dim);
   }
 
   // emissive: base, +hover/select, +flash pulse, dimmed when drained/caught
-  const boost = 1 + (f.hovered ? 0.7 : 0) + (f.selected ? 1 : 0);
+  const dm = h.dim;
+  const boost = (1 + (f.hovered ? 0.7 : 0) + (f.selected ? 1 : 0)) * (1 - 0.8 * dm);
   const dim = caught ? 0.12 : a.status === "drained" ? 0.45 : a.status === "frozen" ? 0.25 : 1;
   const k = a.flash * 3.5;
   for (const g of h.glow) g.mat.emissiveIntensity = g.base * boost * dim + k;
@@ -619,11 +622,11 @@ export function animateFigure(h: FigureHandle, a: SimAgent, f: FigureFrame) {
   h.ringS += (tr - h.ringS) * Math.min(1, dt * 8);
   const pulse = 1 + Math.sin(t * 3 + h.seed) * 0.05;
   h.ring.scale.setScalar(h.ringS * pulse);
-  (h.ring.material as THREE.MeshBasicMaterial).opacity = Math.min(1, 0.55 + (f.hovered ? 0.3 : 0) + (f.selected ? 0.4 : 0) + a.flash * 0.5) * (caught ? 0.5 : 1);
+  (h.ring.material as THREE.MeshBasicMaterial).opacity = Math.min(1, 0.55 + (f.hovered ? 0.3 : 0) + (f.selected ? 0.4 : 0) + a.flash * 0.5) * (caught ? 0.5 : 1) * (1 - 0.72 * dm);
 
   const wantH = f.selected ? 30 : f.engaged ? 7 : 24;
   h.pillarH += (wantH - h.pillarH) * Math.min(1, dt * 2.5);
   h.pillar.scale.set(1.6, h.pillarH / AGENT_SCALE, 1.6);
   h.pillar.position.y = h.pillarH / AGENT_SCALE / 2;
-  (h.pillar.material as THREE.MeshBasicMaterial).opacity = (f.engaged && !f.selected && !f.hovered ? 0.3 : 0.55) + a.flash * 0.3;
+  (h.pillar.material as THREE.MeshBasicMaterial).opacity = ((f.engaged && !f.selected && !f.hovered ? 0.3 : 0.55) + a.flash * 0.3) * (1 - 0.92 * dm);
 }

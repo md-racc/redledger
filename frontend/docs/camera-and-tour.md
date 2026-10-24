@@ -2,10 +2,10 @@
 
 All camera work is in `components/arena/CameraRig.tsx`; chapter text and positions are in `lib/arena/timeline.ts`.
 
-## The intro flight (time-driven, ~12.5 s)
+## The intro flight (time-driven, 7.5 s; 5.8 s in the show)
 
 A `CatmullRomCurve3` (centripetal) through five waypoints, with a separate curve for where the camera looks. Progress is
-`smootherstep(introTime / 12.5)`, so it eases in and out. The lens also eases from 54° to 40°.
+`smootherstep(introTime / timeline.introLen)`, so it eases in and out. The lens also eases from 54° to 40°.
 
 Each key is `[camX, camY, camZ, lookX, lookY, lookZ]` in glb world space (lagoon toward -Z, north colonnade toward -X):
 
@@ -82,22 +82,28 @@ disabled (so the wheel still scrolls the page back up), no pan, polar angle 17°
 drifts slowly around the target (frame-rate independent). Selecting an agent moves the orbit target onto it and dollies in
 to 26 m; deselecting eases back out.
 
-At the same moment the rotunda is "opened": a clipping plane slices everything above 23.4 m and the dome shell, ceiling
-and inner piers fade out (`components/arena/cutaway.ts`), with a faint scan ring at the cut height. The orbit camera sits
-at about 60° elevation so the floor is visible over the near piers.
+At the same moment the rotunda is "opened": a clipping plane slices everything above 11 m (`CUT_Y`; the outer columns end
+near 23.5 m, so the piers are left as stumps that still read as architecture) and the dome shell, ceiling and inner piers
+fade out (`components/arena/cutaway.ts`), with a faint scan ring at the cut height. The orbit camera sits at about 60°
+elevation so the whole floor is visible over what is left of the piers.
+
+In a narrow or portrait window (the pane beside the chat, a phone) the rail's pose is pulled back to fit the three groups
+side by side, which would leave the ring tiny in the middle of the arena. On landing, the arena camera comes in until the
+36 m red ring fills the width (about 54 m across, never closer than 60 m away).
 
 ## Auto-cam: framing the interactions
 
 The rotunda is a fixed size, so the three rings can only grow so far (they now sit at r = 7 / 12.5 / 18 m inside the 23.85 m
-outer colonnade). To make each fraud attempt easy to read, the arena camera cuts in on it (`lib/arena/cinema.ts`, written by
+outer colonnade). The wide view shows the walk-up; the **moment itself** gets a quick cut-in (`lib/arena/cinema.ts`, written by
 `ArenaWorld` every frame from the sim, read by `orbitFocus` in `CameraRig.tsx`):
 
-1. when a fraudster leaves its slot toward a client, the orbit target glides to the centre of the action
-2. the camera closes to 32-46 m (enough to hold everyone involved), settles at a three-quarter angle at least 53 degrees up
-   (steeper when close, so it always stays above the rotunda's 23.4 m cut rim instead of clipping into the piers), and swings
-   slowly round the scene
+1. when the fraudster reaches the client and starts the pitch, the orbit target snaps to the centre of the action
+   (a fast ease, about 0.2 s)
+2. the camera closes to 20-32 m (more in a narrow window, which sees less sideways), at a low three-quarter angle that only
+   just clears the cut rim, with a longer lens (the field of view narrows by 7 degrees, so the background compresses), and
+   swings and pushes in a little while it plays
 3. when the guard sprints in (or the money starts to flow) the guard is added to the frame
-4. 1.4 s after the scene ends the camera eases back out to the full-arena view
+4. 0.9 s after the outcome the camera eases back out to the full-arena view
 
 It yields to the visitor: it backs off for 4.5 s after any drag, a selected agent (the dossier dolly) takes priority, and
 the HUD's **Auto-cam on/off** switch turns it off for good (`cinematic` in the store, on by default).

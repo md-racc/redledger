@@ -104,15 +104,15 @@ text says. Blocked only by P1/P2.
 
 | A# | Prize | Value | Proof already in the repo | Submission must say |
 |---|---|---|---|---|
-| A1 | **Hyphenate** — Autonomous Systems for Finance | $8k / $5k / $3k | "realistic data" → `battlefield/seed/company.py` (90 seeded days); "limited access, a clean record of its work, knowing when to ask" → `AGENTS.md` §3 invariants 1, 5, 11 plus the `escalate` verdict; "something new" → the red agent; "the moment" → a `gate.verdict` block on a live bank swap | Answer "would you hire it, for which seats" with the gate, the audit log, the escalation path — in that order |
-| A2 | **Factory** — Droid SDK | $2000 + credits | Three `agentkit.DroidAgent` subclasses doing the product's real work; `restrict_tools` + `Autonomy.OFF` on green; `agent.thinking`/`tool_call`/`tool_result` rendered live | A README section naming where Droid runs and which tools each session holds; lead with a live episode, not a feature tour |
-| A3 | **Microsoft** — Grand Prize + Customer Impact | Surface laptops + FDE sessions | CI, `.github/workflows/deploy.yml`, DRY_RUN, replayable fixtures, a real VM | Lead with the deploy pipeline and replay, not the agents |
+| A1 | **Hyphenate** — Autonomous Systems for Finance | $8k / $5k / $3k | "realistic data" → `battlefield/seed/company.py` (90 seeded days); "limited access, a clean record of its work, knowing when to ask" → `AGENTS.md` §3 invariants 1, 5, 11, the `audit_log`, and the preparation → gate → escalation path (green prepares each money move, blue decides, a human resolves escalations; `contracts/ledger-api.yaml` `/preparations`); "something new" → the red agent plus **evolution**: lineages of episodes where agents get debriefs and after-action reviews and rewrite their playbooks (`docs/EVOLUTION-DESIGN.md`; `make evolve` / `make evolution-report`; a keyless 3-generation run shows red evading in generation 2 and blue learning rules that catch it in generation 3); "the moment" → a `gate.verdict` block on a live bank swap | Answer "would you hire it, for which seats" with the gate, the audit log, the escalation path, then how it improves across generations — in that order |
+| A2 | **Factory** — Droid SDK | $2000 + credits | Three `agentkit.DroidAgent` subclasses; **red runs live on prod** (`gemini-3.8-flash`, ~7–9k credits per turn); `restrict_tools` with exact `<agent>-ledger___<tool>` ids, strict tool-use identity and `Autonomy.OFF` for green/blue, each turn on its own loop so the service stays responsive (#79, #84); `agent.thinking`/`tool_call`/`tool_result` rendered live. Green and blue are keyless on prod until their live paths are proven (#78) | A README section naming where Droid runs and which tools each session holds; lead with a live episode, not a feature tour; don't claim green/blue run live until #78 clears |
+| A3 | **Microsoft** — Grand Prize + Customer Impact | Surface laptops + FDE sessions | CI (per-service tests incl. Postgres, ownership and contracts guards), `.github/workflows/deploy.yml` with an approval gate, per-agent `DRY_RUN_RED/GREEN/BLUE` (red live, green/blue keyless), replayable fixtures, a real VM behind Cloudflare Access, `make prod-*` operations incl. recorded evolution runs | Lead with the deploy pipeline and replay, not the agents |
 | A4 | **Armadin** — Best Security Hack | AirPods | Criteria "Coming soon!" (P9) | Submit regardless |
 | A5 | **MLH Vultr** | M5Stack Tab5 | Already the deploy target (`README.md` §13; `VULTR_HOST`/`VULTR_SSH_KEY`) | One line |
-| A6 | **MLH Gemini** | Swag kit | `blue/gate/llm.py` ships Gemini as default provider | One line |
-| A7 | **MLH Best Use of Gen AI** | Assorted | Same code path | One line, same evidence |
+| A6 | **MLH Gemini** | Swag kit | Red's live Droid model on prod is `gemini-3.8-flash`; `blue/gate/llm.py` supports Gemini as one of three gate-LLM providers (`BLUE_GATE_LLM_PROVIDER`, default `gemini` in `.env.example`), but the gate LLM is not enabled on prod yet (blue is keyless there) | One line; cite red's model, not the gate |
+| A7 | **MLH Best Use of Gen AI** | Assorted | Live red Droid agent + evolution (`docs/EVOLUTION-DESIGN.md`) | One line, same evidence |
 | A8 | **Figma** | Gift cards + recruiter session | R's deck and design work | Blocked on P8 |
-| A9 | **MLH Tiger Data** | Stream Deck Mini | True once B1 merges | Written after B1 |
+| A9 | **MLH Tiger Data** | Stream Deck Mini | True (#98/#100): `events` and `audit_log` are TimescaleDB hypertables keyed `(id, ts)`, plus a `score_timeline` continuous aggregate (1-minute score buckets per episode, real-time); local compose defaults to `timescale/timescaledb:latest-pg16`; CI's `battlefield-timescale` job runs the full battlefield suite on the real image. Prod still runs plain `postgres:16-alpine` | The append-only event stream and audit log live in hypertables; score over time comes from a continuous aggregate; CI proves it on TimescaleDB |
 
 Not submitted, and why:
 
@@ -179,7 +179,9 @@ B1 before B2: B1 is an hour and unblocks A9; B2 is blocked on P3 and P4.
 ## §7 Phase C — if someone goes idle
 
 Blanket gate: the `README.md` §14 Saturday 14:00 checkpoint (full 3-day episode in `shadow`
-with real agents) must be green first. Each item ends the weekend either merged or marked
+with real agents) must be green first. **Status: BLOCKED** — only red runs live; green's live
+handler and blue's live audit are M's remaining steps (tracked in issue #78). CRS sandbox acceptance
+and Bright Data live readiness are tracked separately and are not proven by that checkpoint. Each item ends the weekend either merged or marked
 **DROPPED** — that is part of the §0 deletion condition.
 
 - **C1 Atlassian Forge — escalation inbox.** Prereq P5 + P6. Design: blue returns `escalate`

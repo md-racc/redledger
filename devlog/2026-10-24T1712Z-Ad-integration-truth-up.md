@@ -1,0 +1,1 @@
+- 2026-10-24T17:12Z · Ad · docs: AGENTS.md invariants 2/7 + §5 Droid rules and README match preparations/strict identity (D1/D7/D11); INTEGRATIONS.md Phase A evidence refreshed (evolution, live red, Gemini wording), Phase C still blocked (#78); integration design progress table; next: M's steps 6/7; blocked: none

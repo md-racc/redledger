@@ -15,7 +15,8 @@
 x-agent-env: &agent-env
   BATTLEFIELD_URL: http://battlefield:8000
   BLUE_URL: http://blue:8003
-  # Agent-scope token: agent routes (X-Agent) and battlefield -> agent calls. Never the operator token.
+  # Shared agent token (fallback). Each agent service below overrides AGENT_TOKEN with its own
+  # AGENT_TOKEN_<AGENT> when set (contracts/agent-service.md "Tokens"). Never the operator token.
   AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent}
   FACTORY_API_KEY: ${FACTORY_API_KEY:-}
   # Global default; each agent service below overrides it with DRY_RUN_<AGENT> when that is set
@@ -31,8 +32,11 @@ x-agent-env: &agent-env
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    # TimescaleDB (PG16 + extension) by default; plain postgres:16-alpine also works (battlefield then
+    # skips the hypertables and logs timescale_unavailable). Prod pins its own value in deploy/render-env.sh.
+    image: ${POSTGRES_IMAGE:-timescale/timescaledb:latest-pg16}
     environment:
+      TIMESCALEDB_TELEMETRY: "off"
       POSTGRES_USER: redledger
       POSTGRES_PASSWORD: redledger
       POSTGRES_DB: redledger
@@ -57,6 +61,10 @@ services:
       GREEN_URL: http://green:8002
       BLUE_URL: http://blue:8003
       AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent}
+      # per-agent tokens; blank = that agent falls back to AGENT_TOKEN (battlefield warns)
+      AGENT_TOKEN_RED: ${AGENT_TOKEN_RED:-}
+      AGENT_TOKEN_GREEN: ${AGENT_TOKEN_GREEN:-}
+      AGENT_TOKEN_BLUE: ${AGENT_TOKEN_BLUE:-}
       OPERATOR_TOKEN: ${OPERATOR_TOKEN:-change-me}
       MAX_CREDITS_PER_EPISODE: ${MAX_CREDITS_PER_EPISODE:-0}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
@@ -85,6 +93,7 @@ services:
       <<: *agent-env
       AGENT_NAME: red
       PORT: "8001"
+      AGENT_TOKEN: ${AGENT_TOKEN_RED:-${AGENT_TOKEN:-change-me-agent}}
       DRY_RUN: ${DRY_RUN_RED:-${DRY_RUN:-false}}
       DROID_MODEL: ${DROID_MODEL_RED:-}
       DROID_REASONING: ${DROID_REASONING_RED:-}
@@ -100,6 +109,7 @@ services:
       <<: *agent-env
       AGENT_NAME: green
       PORT: "8002"
+      AGENT_TOKEN: ${AGENT_TOKEN_GREEN:-${AGENT_TOKEN:-change-me-agent}}
       DRY_RUN: ${DRY_RUN_GREEN:-${DRY_RUN:-false}}
       DROID_MODEL: ${DROID_MODEL_GREEN:-}
       DROID_REASONING: ${DROID_REASONING_GREEN:-}
@@ -115,6 +125,7 @@ services:
       <<: *agent-env
       AGENT_NAME: blue
       PORT: "8003"
+      AGENT_TOKEN: ${AGENT_TOKEN_BLUE:-${AGENT_TOKEN:-change-me-agent}}
       DRY_RUN: ${DRY_RUN_BLUE:-${DRY_RUN:-false}}
       DROID_MODEL: ${DROID_MODEL_BLUE:-}
       DROID_REASONING: ${DROID_REASONING_BLUE:-}

@@ -12,6 +12,9 @@ export const cinema = {
   dist: 30,
   /** seconds left to keep the shot after the last scene ended */
   hold: 0,
+  /** 0..1: how far into the moment the scene is (the shot dollies in a little as it plays) */
+  push: 0,
 };
 
-export const HOLD_SECONDS = 1.4;
+/** the cut-in is quick: it ends a beat after the outcome */
+export const HOLD_SECONDS = 0.9;

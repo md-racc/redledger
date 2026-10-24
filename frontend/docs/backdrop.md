@@ -35,8 +35,11 @@ ledger pages orbiting the rotunda, and the ring portals on each spawn lawn.
 | level | backdrop |
 |---|---|
 | 3 | everything |
-| 2 | ledger crown and skyline (no searchlights, no motes) |
-| 1, 0 | none |
+| 2 | skyline, ledger crown and searchlights (no motes) |
+| 1 | skyline and ledger crown |
+| 0 | skyline |
+
+The skyline is a single instanced mesh and costs next to nothing, so it is never dropped: a slow machine still has a city.
 
 ## Editing
 

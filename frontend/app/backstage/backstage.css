@@ -1,0 +1,11 @@
+/* backstage is a raw view on purpose: monospace, white on black, no layout to speak of. Evidence, not a dashboard. */
+.raw { min-height: 100vh; padding: 14px 18px 60px; background: #000; color: #cfcfcf; font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace; }
+.raw pre { margin: 0; white-space: pre-wrap; word-break: break-all; font: inherit; }
+.raw section { margin-top: 18px; }
+.raw h2 { margin: 0 0 4px; padding-bottom: 2px; border-bottom: 1px solid #333; color: #fff; font: inherit; font-weight: 700; }
+.raw .ok { color: #5f5; } .raw .bad { color: #f55; } .raw .warn { color: #fc4; } .raw .dim { color: #777; }
+.raw .hl { background: #fff; color: #000; }
+.raw button, .raw select, .raw input { font: inherit; background: #111; color: #ddd; border: 1px solid #666; border-radius: 0; padding: 0 6px; }
+.raw button { cursor: pointer; } .raw button:hover { background: #ddd; color: #000; } .raw button:disabled { opacity: 0.4; cursor: default; }
+.raw summary { cursor: pointer; color: #999; }
+.raw div { overflow-wrap: anywhere; }

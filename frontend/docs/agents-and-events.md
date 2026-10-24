@@ -76,7 +76,7 @@ the r = 23.85 outer colonnade (the r = 16 inner piers fade out in the arena and 
 | `gate.verdict` `block` | the guard for `rules_fired[0]` pulses with `BLOCK` (`WOULD BLOCK` when `enforced=false`, i.e. shadow mode) |
 | `gate.verdict` `escalate` | amber pulse `REVIEW` |
 | `gate.verdict` `allow` | a client pulses green (at most one per 0.9 s) |
-| `escalation.opened` | the guard of the originating verdict pulses `ESCALATED` |
+| `escalation.opened` | the guard of the originating verdict pulses `NEEDS A DECISION` |
 | `flag.raised` | the `already_flagged_high` guard pulses `FLAG` |
 | `vendor.frozen` / `unfrozen` | the bound client turns icy / thaws |
 | `attack.outcome` `extracted`, `partial` | coins stream from the client to the fraudster; `+$amount_extracted` pops |
@@ -86,7 +86,10 @@ An outcome that arrives for an attack the arena never saw launch (a reconnect ca
 resolves it.
 
 Money, mode and escalations are not animated from events; they come from the reducer state in the HUD. The HUD also
-carries the approve / block buttons for an open escalation (`api.resolve`).
+carries the approve / block buttons for an open escalation (`api.resolve`). The card says it in plain words
+(`lib/arena/escalation.ts`, tested): the question ("Pay this invoice?"), what is about to happen, why the controller stopped it
+(one sentence per rule that fired, never a rule id), and what each button does, with the countdown. The backend's action id
+and its developer-facing reason are not shown.
 
 ## The sim (`lib/arena/sim.ts`)
 
@@ -111,6 +114,7 @@ window.redledger.converge()   // everyone leaves the perimeter and pathfinds int
 window.redledger.disperse()   // and back out
 ```
 
-The HUD's *Send agents in / Send them back* does the same. Before any episode runs, a demo driver
-(`DemoDriver` in `director.ts`) launches a random attack every 5.5-9.5 s (40 % extracted, 45 % blocked, 15 % flagged) so
-the arena is never static; it stands down as soon as a feed is running.
+The HUD's *Send agents in / Send them back* does the same. With `?demo=1`, an ambient demo driver
+(`DemoDriver` in `director.ts`) launches a random made-up attack every 5.5-9.5 s (40 % extracted, 45 % blocked, 15 % flagged)
+while no feed is running; it is off by default because those attacks never touch the scoreboard. Judge-picked attacks (the
+*Launch attack* console) are the real way to make something happen: see [show-mode.md](show-mode.md).

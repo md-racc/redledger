@@ -1,0 +1,1 @@
+- 2026-10-24T21:17Z · M · real-Ledger SDK acceptance harness + 8 authorized live sessions: happy path proven (commit/receipt binding, one event pair, audited 409 replay, gate max 56.6ms under live audit); interrupted capture blocked by 170s audit budget cap finding; guards unchanged

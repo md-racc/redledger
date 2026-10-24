@@ -8,6 +8,7 @@ import { CENTER, SLOT_RING } from "@/lib/arena/config";
 import { DemoDriver, Director } from "@/lib/arena/director";
 import { buildNavGrid, mulberry32 } from "@/lib/arena/nav";
 import { cinema, HOLD_SECONDS } from "@/lib/arena/cinema";
+import { focus } from "@/lib/arena/focus";
 import { addPop, agePops, anchors, pops } from "@/lib/arena/popBus";
 import { ROSTER, TEAM_META, TEAMS } from "@/lib/arena/roster";
 import { ArenaSim, GOOD_OUTCOMES, type FxTone } from "@/lib/arena/sim";
@@ -37,6 +38,7 @@ export function ArenaWorld({ subscribe, ground, feedActive, onSim }: Props) {
   const sim = useMemo(() => new ArenaSim(ROSTER, grid, 11), [grid]);
   const director = useMemo(() => new Director(sim), [sim]);
   const demo = useMemo(() => new DemoDriver(sim, mulberry32(99)), [sim]);
+  const ambient = useMemo(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("demo"), []);
   const figs = useMemo(() => ROSTER.map(buildFigure), []);
   const feedRef = useRef(feedActive);
   feedRef.current = feedActive;
@@ -54,7 +56,7 @@ export function ArenaWorld({ subscribe, ground, feedActive, onSim }: Props) {
   useEffect(() => subscribe((e) => director.handle(e)), [subscribe, director]);
 
   useEffect(() => {
-    useArena.getState().registerActions({ converge: () => sim.converge(), disperse: () => sim.disperse() });
+    useArena.getState().registerActions({ converge: () => sim.converge(), disperse: () => sim.disperse(), pulse: (id, tone, text) => sim.pulse(id, tone, text) });
   }, [sim]);
 
   // fx pools
@@ -80,6 +82,8 @@ export function ArenaWorld({ subscribe, ground, feedActive, onSim }: Props) {
 
   const tmp = useMemo(() => ({ m: new THREE.Matrix4(), v: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), lastPhase: "" }), []);
   const elapsed = useRef(0);
+  const spot = useRef<HTMLElement | null>(null);
+  const arenaRoot = useRef<HTMLElement | null>(null);
   const groupCenters = useMemo(() => {
     return TEAMS.map((team) => {
       const homes = ROSTER.filter((r) => r.team === team).map((r) => sim.agents.get(r.id)!.home);
@@ -94,7 +98,7 @@ export function ArenaWorld({ subscribe, ground, feedActive, onSim }: Props) {
     elapsed.current += dt;
     const t = elapsed.current;
     sim.update(dt);
-    if (!feedRef.current) demo.update(dt);
+    if (!feedRef.current && ambient) demo.update(dt); // random made-up attacks: only with ?demo=1 (they would sit next to a real scoreboard)
 
     const st = useArena.getState();
     const g = groundRef.current;
@@ -104,14 +108,67 @@ export function ArenaWorld({ subscribe, ground, feedActive, onSim }: Props) {
     if (Math.abs(cutaway.fade - wantFade) > 0.002) setFade(cutaway.fade + (wantFade - cutaway.fade) * (1 - Math.exp(-dt * 1.8)));
     if (Math.abs(cutaway.height - wantCut) > 0.05) setCutHeight(cutaway.height + (wantCut - cutaway.height) * (1 - Math.exp(-dt * (wantCut < cutaway.height ? 1.5 : 2.4))));
     const engaged = sim.phase === "engaged";
+
+    // focus: whoever is in an interaction stays lit, everyone else dims (and the spotlight picks them out on screen)
+    focus.ids.clear();
+    if (st.stage === "arena") {
+      if (st.selectedId) focus.ids.add(st.selectedId);
+      else {
+        for (const sc of sim.scenes) {
+          if (sc.stage !== "approach" && sc.stage !== "pitch" && sc.stage !== "resolve") continue;
+          focus.ids.add(sc.redId); focus.ids.add(sc.greenId);
+          if (sc.guardId && sc.stage === "resolve") focus.ids.add(sc.guardId);
+        }
+        // a guard that just acted, or a fraudster caught: not the green "allow" blips, which happen all the time
+        for (const a of sim.agents.values()) if (a.flash > 0.3 && a.spec.team !== "green") focus.ids.add(a.spec.id);
+        for (const id of focus.pinned) focus.ids.add(id);
+      }
+    }
+    const want = focus.ids.size > 0;
+    focus.level += ((want ? 1 : 0) - focus.level) * (1 - Math.exp(-dt * (want ? 5 : 1.4)));
+    if (want) {
+      let cx = 0, cz = 0, n = 0;
+      for (const id of focus.ids) { const a = sim.agents.get(id); if (a) { cx += a.x; cz += a.z; n++; } }
+      if (n) {
+        cx /= n; cz /= n;
+        let r = 0;
+        for (const id of focus.ids) { const a = sim.agents.get(id); if (a) r = Math.max(r, Math.hypot(a.x - cx, a.z - cz)); }
+        focus.x += (cx - focus.x) * (1 - Math.exp(-dt * 6));
+        focus.z += (cz - focus.z) * (1 - Math.exp(-dt * 6));
+        focus.y = (g ? g.heightAt(focus.x, focus.z) : 0) + 2;
+        focus.radius += (Math.max(6, r + 5) - focus.radius) * (1 - Math.exp(-dt * 4));
+      }
+    }
+    // the spotlight is a plain div: put it over the interaction in screen space
+    {
+      const el = spot.current ?? (spot.current = document.querySelector<HTMLElement>(".spot"));
+      if (el) {
+        tmp.v.set(focus.x, focus.y, focus.z).project(camera);
+        const px = (tmp.v.x * 0.5 + 0.5) * size.width, py = (-tmp.v.y * 0.5 + 0.5) * size.height;
+        const cam = camera as THREE.PerspectiveCamera;
+        const dist = Math.max(8, camera.position.distanceTo(tmp.a.set(focus.x, focus.y, focus.z)));
+        const pxPerM = (size.height / 2) / Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) / dist;
+        el.style.setProperty("--sx", `${px.toFixed(1)}px`);
+        el.style.setProperty("--sy", `${py.toFixed(1)}px`);
+        el.style.setProperty("--sr", `${Math.max(90, focus.radius * pxPerM).toFixed(1)}px`);
+        el.style.setProperty("--so", (focus.level * 0.92).toFixed(3));
+      }
+      const arenaEl = arenaRoot.current ?? (arenaRoot.current = document.querySelector<HTMLElement>(".arena"));
+      const on = focus.level > 0.35 ? "1" : "0";
+      if (arenaEl && arenaEl.dataset.focus !== on) arenaEl.dataset.focus = on;
+    }
+
     for (const a of sim.agents.values()) {
       const h = figures.get(a.spec.id);
       if (!h) continue;
+      const dimTo = want && !focus.ids.has(a.spec.id) ? 1 : 0;
+      h.dim += (dimTo - h.dim) * (1 - Math.exp(-dt * (dimTo ? 4 : 2)));
       const y = g ? g.heightAt(a.x, a.z) : 0;
       animateFigure(h, a, { y, dt, t, hovered: st.hoveredId === a.spec.id, selected: st.selectedId === a.spec.id, engaged });
     }
-    // auto-cam: tell the camera what to frame (the live fraud scene and everyone in it)
-    const live = sim.scenes.find((s) => s.stage === "approach" || s.stage === "pitch" || s.stage === "resolve");
+    // auto-cam: tell the camera what to frame. Not the walk-up (the wide view shows that): the moment itself, the pitch to the
+    // client and what happens to it, from close in
+    const live = sim.scenes.find((s) => s.stage === "pitch" || s.stage === "resolve");
     const sr = live && sim.agents.get(live.redId), sg = live && sim.agents.get(live.greenId);
     if (live && sr && sg) {
       const gd = live.stage === "resolve" && live.guardId ? sim.agents.get(live.guardId) : null;
@@ -121,7 +178,8 @@ export function ArenaWorld({ subscribe, ground, feedActive, onSim }: Props) {
       cinema.x = pts.reduce((n, p) => n + p.x, 0) / pts.length;
       cinema.z = pts.reduce((n, p) => n + p.z, 0) / pts.length;
       cinema.y = (g ? g.heightAt(cinema.x, cinema.z) : 0) + 2.5;
-      cinema.dist = Math.min(46, Math.max(32, span * 2 + 22));
+      cinema.dist = Math.min(32, Math.max(20, span * 1.3 + 13));
+      cinema.push = Math.min(1, (live.stage === "resolve" ? 1.5 : 0) / 3 + live.t / 4);
       cinema.active = true;
       cinema.hold = HOLD_SECONDS;
     } else if (cinema.active) {

@@ -1,0 +1,1 @@
+- 2026-10-24T17:27Z · M · green: stage a bounded opt-in Stage A acceptance harness and fake-only evidence regressions after canonical #93/#94 merged; next: independent harness verification and separately authorized SDK acceptance; no paid SDK/model calls, real Ledger/CRS access, guard lift or Phase C/Bright Data clearance

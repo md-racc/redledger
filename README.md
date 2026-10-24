@@ -25,7 +25,7 @@ own `AGENTS.md` written for the developer who owns it.
 |---|---|---|
 | **Ad** (repo owner) | `battlefield/`, `agentkit/`, `contracts/`, compose, Makefile, CI, deploy | The center spoke: Ledger API, gatekeeper, orchestrator, event bus, scoring, mock agents, frontend read API, hosting |
 | **Al** | `red/` | Attacker: scheme catalog, red tools, red Droid session |
-| **M** | `green/`, `blue/` | Finance-ops agent (gated AP workflow, Droid permission-handler mirror) and controller (gate rules + LLM, audit Droid session). Also tunes seed/legit-traffic realism via PRs to Ad |
+| **M** | `green/`, `blue/` | Finance-ops agent (gated AP workflow that prepares each action before executing it) and controller (gate rules + LLM, audit Droid session). Also tunes seed/legit-traffic realism via PRs to Ad |
 | **R** | `frontend/` + presentation | Everything a judge sees: dashboard, demo choreography, pitch deck. Consumes the event stream and `/api/fe` |
 
 Branch prefixes match directories (`GIT.md` §1). CI blocks a PR that touches files outside its
@@ -74,16 +74,17 @@ four people build in parallel against one contract.
 plain HTTP to each other (`http://battlefield:8000`, `http://blue:8003`); there is no reason
 to terminate TLS between containers on one host. HTTPS/WSS exists only at the public edge
 (browser → battlefield, browser → frontend), terminated by Caddy or Cloudflare. Agents
-authenticate to battlefield with `AGENT_TOKEN`; the operator and the frontend server use a
-separate `OPERATOR_TOKEN` (§13).
+authenticate to battlefield with their own per-agent token (`AGENT_TOKEN_RED/GREEN/BLUE`, #108/#109);
+the operator and the frontend server use a separate `OPERATOR_TOKEN` (§13).
 
 ### Why this shape
 
 - **One enforcement point.** Fraud is caught where money moves: the Ledger API. Blue's verdict
-  is consulted there. Green's Droid permission handler mirrors the same verdict for the
-  Factory-native demo, but the ledger is the source of truth.
+  is consulted there: when green prepares an action and again when the gated route consumes
+  that preparation. Green's Droid permission handler acts on the prepared decision; the ledger is
+  the source of truth.
 - **Agents are black boxes to each other.** Red, green, and blue share only the ledger. They
-  never call each other (one exception: green's permission handler → blue `/gate`). The
+  never call each other; blue `/gate` is called only by battlefield. The
   orchestrator sequences them. Each team owns one container end to end and honors two
   contracts: the Ledger API and the `/turn` endpoint.
 - **Ground truth is hidden.** Battlefield tags red-originated rows with `origin='red'`
@@ -100,10 +101,10 @@ separate `OPERATOR_TOKEN` (§13).
 |---------------|------------------------------------------|------|-------|---------------------------------|
 | `battlefield` | Python 3.11, FastAPI, asyncpg            | 8000 | Ad    | postgres, red, green, blue      |
 | `red`         | Python 3.11, Droid SDK, FastAPI          | 8001 | Al    | battlefield                     |
-| `green`       | Python 3.11, Droid SDK, FastAPI          | 8002 | M     | battlefield, blue (mirror gate) |
+| `green`       | Python 3.11, Droid SDK, FastAPI          | 8002 | M     | battlefield                     |
 | `blue`        | Python 3.11, Droid SDK + direct LLM API  | 8003 | M     | battlefield                     |
 | `frontend`    | Next.js 15, TypeScript, Tailwind         | 3000 | R     | battlefield                     |
-| `postgres`    | Postgres 16 (Timescale image optional)   | 5432 | Ad    | —                               |
+| `postgres`    | Postgres 16; local compose defaults to the TimescaleDB image (§12) | 5432 | Ad    | —                               |
 
 Shared Python package `agentkit/` (Ad; imported by red/green/blue): `LedgerClient`,
 `EventEmitter`, `DroidAgent` base, `make_agent_app`, and the pydantic models mirroring
@@ -174,8 +175,9 @@ Scoring (`battlefield/app/scoring/score.py`, emitted as `score.updated`):
 ## 5. Ledger API — `contracts/ledger-api.yaml` is canonical; live docs at `/docs`
 
 Base `http://battlefield:8000/api`. Every request: `Authorization: Bearer <token>`, where the
-token is `AGENT_TOKEN` for agents (requests with `X-Agent`) and `OPERATOR_TOKEN` for the
-operator / frontend server (no `X-Agent`); the wrong token for the role is a 401 (§13).
+token is the calling agent's own token for agents (requests with `X-Agent`; another agent's token
+is a 401) and `OPERATOR_TOKEN` for the operator / frontend server (no `X-Agent`); the wrong token for
+the role is a 401 (§13).
 Agent requests also carry `X-Agent`, `X-Episode`, `X-Day`, and on writes `X-Tool-Use-Id`
 (the idempotency key). Battlefield 403s any agent calling a route it isn't allowed.
 `GET /events` is operator-only: agents emit events, they never read them (`AGENTS.md` inv. 11).
@@ -184,7 +186,7 @@ Agent requests also carry `X-Agent`, `X-Episode`, `X-Day`, and on writes `X-Tool
 |---|---|---|
 | Reads | `GET /vendors /vendors/{id} /vendor_changes /employees /purchase_orders /invoices /invoices/{id} /payments /expenses /bank/transactions /gl/entries /reports/{id}`; `GET /flags` (green, blue); `GET /audit_log` (blue); `GET /attacks` (red) | agents + operator |
 | Red writes | `POST /attacks` (declare before executing), `PATCH /attacks/{id}`, `POST /vendors /vendor_changes /invoices /expenses /employees` | red |
-| Green writes (gated) | `POST /invoices/{id}/match\|approve\|reject\|pay`, `/vendor_changes/{id}/approve\|reject`, `/expenses/{id}/approve\|pay`, `POST /gl/entries` | green |
+| Green writes (gated) | `POST /preparations` (gate a pending action ahead of execution; returns `effective`), `GET /preparations/{key}`; `POST /invoices/{id}/match\|approve\|reject\|pay`, `/vendor_changes/{id}/approve\|reject`, `/expenses/{id}/approve\|pay`, `POST /gl/entries` (consume the matching preparation, else gate inline) | green |
 | Blue writes | `POST /flags`, `/vendors/{id}/freeze\|unfreeze`, `/reports` | blue |
 | Events (write) | `POST /events` (agents: `agent.*` and `x.*` only) | agents |
 | Events (read) | `GET /events?episode_id=&after_id=`, `POST /ws/ticket {episode_id?}` → `{ticket, expires_at}`, `WS /ws?episode_id=&ticket=&after_id=` (or `&token=<OPERATOR_TOKEN>` for curl) | operator only |
@@ -272,9 +274,12 @@ New with the token split:
 
 | Variable | Read by | Meaning |
 |---|---|---|
-| `AGENT_TOKEN` | battlefield, red, green, blue | Bearer for agent ↔ battlefield calls (any request with `X-Agent`) and green → blue `/gate`. Replaces `INTERNAL_TOKEN`, which still works as a fallback for both tokens |
-| `OPERATOR_TOKEN` | battlefield, frontend server, Makefile | Bearer for everything without `X-Agent`: control plane, `/fe/*`, `GET /events`, `/inputs`, `POST /ws/ticket`. Must differ from `AGENT_TOKEN` |
+| `AGENT_TOKEN_RED`, `AGENT_TOKEN_GREEN`, `AGENT_TOKEN_BLUE` | battlefield (all three); each agent container gets only its own, as `AGENT_TOKEN` | Per-agent tokens (#108/#109): a request with `X-Agent: <a>` must present that agent's token (another agent's → 401), and battlefield calls each agent with its own token. Blank → falls back to the shared `AGENT_TOKEN`, with a startup warning that per-agent separation is off |
+| `AGENT_TOKEN` | battlefield, red, green, blue | Shared fallback for any unset per-agent token (single-token mode; fine for local dev and `DRY_RUN`). Falls back to the legacy `INTERNAL_TOKEN` |
+| `OPERATOR_TOKEN` | battlefield, frontend server, Makefile | Bearer for everything without `X-Agent`: control plane, `/fe/*`, `GET /events`, `/inputs`, `POST /ws/ticket`. Must differ from every agent token (battlefield warns on any equal pair) |
+| `POSTGRES_IMAGE` | compose | Local default `timescale/timescaledb:latest-pg16` (#100); `postgres:16-alpine` still works. Prod pins `postgres:16-alpine` in `deploy/render-env.sh` |
 | `MAX_CREDITS_PER_EPISODE` | battlefield | Pause an episode once its summed `factory_credits` reach this (`error` event, `where: credit_guard`; resume by hand). `0` = off |
+| `DRY_RUN_RED`, `DRY_RUN_GREEN`, `DRY_RUN_BLUE` | compose → each agent's `DRY_RUN` | Per-agent override of `DRY_RUN`; blank = follow `DRY_RUN`. Lets one agent run live while the others stay keyless |
 | `BATTLEFIELD_URL` | frontend **server** (`/api/bf/*` proxy) | Where the proxy forwards. Compose sets `http://battlefield:8000`; `.env.example` value is for `npm run dev` on the host |
 
 Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBLIC_WS_URL` stays
@@ -282,9 +287,11 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 
 | Variable | Local dev (your own `.env`) | Prod (GitHub Environment `production` → VM `.env`) |
 |---|---|---|
-| `AGENT_TOKEN`, `OPERATOR_TOKEN` | any two different strings | `openssl rand -hex 32` each; secrets |
+| `AGENT_TOKEN`, `OPERATOR_TOKEN` | any two different strings (`make local-stack` generates them) | `openssl rand -hex 32` each; secrets |
+| `AGENT_TOKEN_RED/GREEN/BLUE` | blank (shared `AGENT_TOKEN`), or three distinct strings; `make local-stack` generates three | secrets, all three or none (`deploy/render-env.sh` refuses a partial or duplicate set); see `deploy/ENVIRONMENT.md` |
 | `FACTORY_API_KEY` | **your own key**, or empty with `DRY_RUN=true` | dedicated prod key; secret; exists nowhere else |
 | `DROID_MODEL_RED/GREEN/BLUE` | a cheap / low-multiplier model | pinned prod models; variables |
+| `DRY_RUN`, `DRY_RUN_RED/GREEN/BLUE` | `DRY_RUN=true` for keyless dev; overrides blank | variables; e.g. `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=true` = red live only |
 | `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
 | `BLUE_GATE_LLM_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
 | `CRS_USERNAME`, `CRS_PASSWORD` | CRS sandbox login credentials, or empty (Blue returns `unknown`) | secrets; passed only to Blue at runtime |
@@ -315,6 +322,7 @@ See `blue/CRS.md` for the profile API, neutral fallback, and live-demo readiness
 ```
 cp .env.example .env            # set AGENT_TOKEN and OPERATOR_TOKEN (two different strings); your own FACTORY_API_KEY + one LLM key when going live
 make mock-agents                # postgres + battlefield + stub red/green/blue — no model calls
+make local-stack [BLUE=real]    # no Docker: pgserver Postgres 16 + battlefield + agents as processes (#107); tokens generated; make local-stack-stop
 make episode MODE=enforce SEED=42 DAYS=4
 make up-dry                     # real agent containers in DRY_RUN with hot reload
 make up                         # live agents (Factory credits)
@@ -325,6 +333,24 @@ make lint test                  # what CI runs
 
 Frontend with zero backend: `cd frontend && NEXT_PUBLIC_MOCK=true npm run dev` replays
 `public/mocks/sample.jsonl` (recorded from the scaffold smoke run).
+
+No Docker? `make local-stack` (#107, details in `battlefield/AGENTS.md` → "Without Docker") runs
+Postgres 16 via pgserver, battlefield on :8000 and the agents on :8001–8003 as processes
+(`AGENTS=mock|real`, or per agent `RED=|GREEN=|BLUE=mock|real`; real agents default to
+`DRY_RUN=true` and take `FACTORY_API_KEY` only from your shell). `make episode`, `make evolve` and
+`make evolution-report` work against it; `make local-stack-status`, `make local-stack-stop`
+(`RESET=1 CONFIRM=yes` wipes its database).
+
+**Postgres / TimescaleDB.** Local compose defaults to `timescale/timescaledb:latest-pg16`
+(override with `POSTGRES_IMAGE`; plain `postgres:16` still works). At startup battlefield makes
+`events` and `audit_log` hypertables and creates a `score_timeline` continuous aggregate (#98/#100),
+bounded by lock/statement timeouts; it never blocks startup. Log lines:
+`timescale_unavailable` (plain Postgres: no extension, nothing done), `timescale_restart_required`
+(extension installed but not preloaded, e.g. a data dir created by a plain image: battlefield set
+`shared_preload_libraries`; restart Postgres once), `timescale_setup_failed` (a step failed or timed
+out; startup continues on plain tables), `timescale_score_timeline_failed` (only the continuous
+aggregate failed; hypertables stay). CI runs the battlefield suite on both images. Prod stays on
+`postgres:16-alpine` until a deliberate switch.
 
 ---
 
@@ -352,13 +378,15 @@ token by whether the request carries `X-Agent`:
 
 | Token | Held by | Authorizes |
 |---|---|---|
-| `AGENT_TOKEN` | battlefield, red, green, blue | every Ledger API request with `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes`; green → blue `/gate` mirror |
+| `AGENT_TOKEN_RED/GREEN/BLUE` | battlefield (all three); each agent only its own (as `AGENT_TOKEN`) | every Ledger API request with `X-Agent: <that agent>`; battlefield → that agent's `/turn` `/gate` `/audit` `/schemes` `/reflect`. Another agent's token → 401 (audited, never the token) |
+| `AGENT_TOKEN` (shared) | fallback | used for any agent whose per-agent token is unset (startup warning: separation off) |
 | `OPERATOR_TOKEN` | battlefield, frontend **server**, Makefile/curl, Ad | every request without `X-Agent`: control plane, `/fe/*`, `GET /events`, `/inputs`, `POST /ws/ticket`, `/ws?token=` |
 | WS ticket | browser, 60 s, single use | one `/ws` connection for one episode (or `*`) |
 | none | anyone | `battlefield/extensions/fe_*` routes deliberately marked public |
 
-`OPERATOR_TOKEN` + `X-Agent` → 401; `AGENT_TOKEN` without `X-Agent` → 401. If either token is
-unset it falls back to `INTERNAL_TOKEN`; battlefield logs a warning when the two are equal.
+`OPERATOR_TOKEN` + `X-Agent` → 401; any agent token without `X-Agent` → 401; agent A's token with
+`X-Agent: B` → 401. Unset tokens fall back (`AGENT_TOKEN_<A>` → `AGENT_TOKEN` → `INTERNAL_TOKEN`;
+`OPERATOR_TOKEN` → `INTERNAL_TOKEN`); battlefield warns when any two resolved tokens are equal.
 
 **Frontend proxy.** The browser holds no token. `lib/api.ts` calls same-origin `/api/bf/<path>`,
 a Next route handler that forwards to `${BATTLEFIELD_URL}/api/<path>` with
@@ -470,7 +498,9 @@ lives in `frontend/`, the server side is one extension file.
 | `roll` | GitHub Environment `production` (required reviewer: Ad) | runs only if repo variable `DEPLOY_ENABLED` is `true`. SSHes to the VM, `git reset` to `origin/main`, renders `/opt/redledger/.env` with `deploy/render-env.sh` from the environment's secrets/variables, then `docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && up -d` with `IMAGE_TAG=<sha>`, and probes battlefield from inside its container |
 
 `render-env.sh` writes atomically with mode 600, never prints values, and refuses to write if
-`AGENT_TOKEN` or `OPERATOR_TOKEN` is empty or the two are equal. `docker-compose.prod.yml` fails
+`AGENT_TOKEN` or `OPERATOR_TOKEN` is empty or the two are equal, or if the per-agent tokens are set
+partially or not pairwise distinct (all three unset → each falls back to the shared token, with a
+warning). `docker-compose.prod.yml` fails
 closed: compose won't start if either token is unset. Nobody edits the VM's `.env` by hand; the
 next deploy overwrites it. Rotation = change the secret in `production`, re-run the workflow.
 Until `DEPLOY_ENABLED=true`, merges build and push images and skip the roll.

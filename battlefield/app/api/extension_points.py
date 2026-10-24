@@ -12,12 +12,15 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import db
 from ..auth import Caller, allow, bearer, caller
+from . import audit
 
+log = structlog.get_logger(__name__)
 router = APIRouter()
 
 
@@ -65,14 +68,37 @@ class InputCreate(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+INPUTS_ACTION = "inputs.post"
+
+
+async def _audit_refusal(c: Caller, args: dict[str, Any], status: int, error: str) -> None:
+    """Best effort, like the no-turn audit: the refusal stands even if the audit write fails."""
+    try:
+        await audit.record(c, INPUTS_ACTION, args, {"error": error}, status)
+    except Exception:
+        log.exception("inputs_audit_failed", agent=c.agent, episode_id=c.episode_id)
+
+
 @router.post("/inputs", status_code=201)
 async def post_input(body: InputCreate, c: Caller = Depends(caller)):
+    """Agents may only leave messages inside the episode they are acting in (X-Episode), and every
+    agent call is audited like any other agent write. The operator may address any episode."""
+    args = {"episode_id": body.episode_id, "target": body.target, "payload": body.payload}
     if body.target not in ("red", "green", "blue"):
+        if c.is_agent:
+            await _audit_refusal(c, args, 422, "target must be red|green|blue")
         raise HTTPException(422, "target must be red|green|blue")
+    if c.is_agent and body.episode_id != c.episode_id:
+        await _audit_refusal(c, args, 403, "episode_id must match X-Episode")
+        raise HTTPException(403, "episode_id must match X-Episode")
     source = c.agent or body.source
-    row = await db.fetchrow(
-        "INSERT INTO inputs (episode_id, target, source, payload) VALUES ($1,$2,$3,$4) RETURNING id", body.episode_id, body.target, source, body.payload
-    )
+    sql = "INSERT INTO inputs (episode_id, target, source, payload) VALUES ($1,$2,$3,$4) RETURNING id"
+    if c.is_agent:  # the queued input and its audit row commit together: never an unaudited agent input
+        async with db.pool().acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(sql, body.episode_id, body.target, source, body.payload)
+            await audit.record(c, INPUTS_ACTION, args, {"id": row["id"]}, 201, conn=conn)
+    else:
+        row = await db.fetchrow(sql, body.episode_id, body.target, source, body.payload)
     return {"id": row["id"], "queued_for": f"{body.target}'s next turn"}
 
 

@@ -82,8 +82,16 @@ async def test_resume_after_restart_mid_day_does_not_inject_the_day_twice(monkey
     # red's turn had ended before the crash: skipped, no duplicate attack; green's was interrupted: re-run
     assert [t for t in turns if t[1] == 1] == [("green", 1)]
     assert await db.fetchval("SELECT COUNT(*) FROM attacks WHERE episode_id=$1 AND day_launched=1", eid) == 1
-    turn_ended = await db.fetch("SELECT payload->>'agent' AS agent FROM events WHERE episode_id=$1 AND type='turn.ended' AND day=1 ORDER BY id", eid)
-    assert [r["agent"] for r in turn_ended] == ["red", "green", "blue"]
+    turn_ended = await db.fetch(
+        "SELECT payload->>'agent' AS agent, payload->>'summary' AS summary FROM events WHERE episode_id=$1 AND type='turn.ended' AND day=1 ORDER BY id", eid
+    )
+    # green's interrupted start is closed as superseded before its re-run ends normally: pairs stay balanced
+    assert [(r["agent"], r["summary"] == runner.SUPERSEDED_ON_RESUME) for r in turn_ended] == [
+        ("red", False),
+        ("green", True),
+        ("green", False),
+        ("blue", False),
+    ]
     assert await _count(eid, "episode.started") == 1  # announced on day 0, not again on resume
     # later days are untouched by the guard: day 2 started and injected normally
     assert await _count(eid, "day.started", 2) == 1 and sum((await _legit_rows(eid, 2)).values()) > 0

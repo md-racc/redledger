@@ -1,0 +1,1 @@
+- 2026-10-24T16:46Z · Ad · battlefield: prod lineage ops (make prod-evolve/prod-lineage-status|pause|resume|wait|export/prod-evolution-report; token stays on the VM; MAX_CREDITS required); next: first live evolution once red reflects (#77); blocked: none
