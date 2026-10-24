@@ -1,6 +1,6 @@
 # Blue SDK readiness checkpoint — 2026-10-24
 
-Invocation/receipt integration refreshed against main `e71c973` (#63 runtime, #61 docs);
+Invocation/receipt integration refreshed against main `c28e58d` (#64 CRS, #63 runtime, #61 docs);
 controller and receipt/compatibility work landed in #19/#24. **Live audit remains disabled,
 with no environment bypass.** `/health` retains its shape: `ok=true` means the service responds;
 `droid_ok=false` truthfully reports the
@@ -21,7 +21,7 @@ UV_OFFLINE=1 UV_NO_SYNC=1 UV_NO_ENV_FILE=1 make lint test-blue TOKEN=test-operat
 ```
 
 Covered integration behavior:
-- All six current tools claim a matching verified shared invocation exactly once, before any
+- The six original tools and CRS audit-to-gate flow require verified shared identity before
   provider/read/write work. Only `permission`, `stream` and `mcp_meta` sources qualify.
   Private-only markers, local/explicit fallbacks, wrong tools and reused invocations are refused.
   Invocation metadata remains absent from model-visible signatures and is not accepted as args.
@@ -48,8 +48,8 @@ Neither `AuditAgent._droid_turn` nor readiness/health guards were changed: readi
 A separate list-only probe on CRS PR #64, with droid-sdk 0.5.0 / mcp 1.30.0, opened a real
 Session and matched all seven IDs below. No stream, agent tool, ledger write or CRS request
 ran. This settles the IDs for that tool set, not SDK invocation delivery or live audit safety.
-Repeat after incorporating #64; this branch's base alone has six tools. The CLI must already
-be authenticated. No `.env` is loaded and no credential values or raw SDK errors are printed:
+PR #64 is incorporated. The CLI must already be authenticated. No `.env` is loaded and no
+credential values or raw SDK errors are printed:
 
 ```sh
 cd blue

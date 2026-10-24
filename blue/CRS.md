@@ -2,7 +2,7 @@
 
 This replaces B2's unsupported EIN/vendor lookup with approved fictional employee checks.
 It is **not a completed live demo**. Blue's live audit still refuses to stream or write until
-its SDK tool IDs, owner-loop safety, and invocation binding are verified. That safeguard is
+its owner-loop safety and authenticated invocation binding are verified. That safeguard is
 unchanged. DRY_RUN never calls CRS, even with credentials present.
 
 ## Data flow and safety
@@ -36,10 +36,11 @@ even in the sandbox, so arbitrary names, EINs, SSNs, addresses, and modified req
 
 ## Prerequisite PRs and remaining live setup
 
-- Merge the companion `battlefield/crs-runtime` and `docs/crs-runbook` PRs before this
-  implementation: they provide credential plumbing, the documented extension CI carve-out,
-  and corrected root environment/runbook guidance. Draft publication is not completion.
-  A human must still supply `CRS_USERNAME` / `CRS_PASSWORD` locally or as production secrets.
+- The companion documentation PR #61 and runtime/CI PR #63 merged on 2026-10-24.
+  This branch incorporates them: credential plumbing and the documented extension CI
+  carve-out are available. Their merge is not live acceptance.
+  A human supplies `CRS_USERNAME` / `CRS_PASSWORD` locally or as production environment secrets;
+  setting GitHub secrets does not export them into a developer's local process.
   Do not send secrets here or put them in a browser variable. The legacy `CRS_API_KEY` is not
   a username/password substitute.
 - Apply the normal additive extension schema, `contracts/ext/blue/01_crs_profiles.sql`.
@@ -59,3 +60,21 @@ even in the sandbox, so arbitrary names, EINs, SSNs, addresses, and modified req
 
 Tests mock all CRS I/O. Docker/Postgres episode smoke and authenticated sandbox verification
 remain separate acceptance steps; mocked audit-to-gate tests are not evidence of a live demo.
+
+## M-owned acceptance and Ad handoff
+
+The droid-sdk 0.5.0 / mcp 1.30.0 registry matched seven schemas and rejected metadata arguments.
+Readiness stayed false: the shared bridge blocked its owner-loop heartbeat and used a local,
+unverified invocation. A separate real, list-only Session matched all seven IDs without streaming.
+
+| Remaining check | Owner |
+|---|---|
+| Bind Blue receipts to verified shared invocation IDs and avoid duplicate narration | M, Blue-only follow-up; retain the live guard |
+| Nonblocking shared SDK bridge, cancellation and owner-loop safety, concurrent gate budget | Ad (`agentkit/`); do not fork the shared lifecycle inside Blue |
+| Authenticated SDK-to-write receipts using the observed seven IDs | M, after the shared bridge is safe |
+| Apply schema, prepare valid-HR employees with distinct accounts, bind P01/P12/P16 (P4) | Ad/operator prepares; M binds through the operator extension, never core-table writes |
+| Clean/mismatch/step-up episodes, a later CRS-caused expense hold, and `billable:false` logs | M/operator with an authorized environment; unknown and step-up remain neutral |
+
+See `blue/SDK-READINESS.md` for the pinned IDs, list-only command, receipt tests and Ad handoff.
+CRS PR #64 and its prerequisites have merged, but live acceptance remains incomplete.
+Bright Data C3 also requires the real-agent three-day shadow checkpoint in `INTEGRATIONS.md`.
