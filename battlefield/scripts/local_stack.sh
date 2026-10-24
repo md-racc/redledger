@@ -19,9 +19,9 @@ PIDS="$DIR/pids"
 PGDATA="$DIR/pgdata"
 ENVF="$DIR/env"
 PORTS=(8000 8001 8002 8003)
-declare -A AGENT_PORT=([red]=8001 [green]=8002 [blue]=8003)
 HEALTH_WAIT="${LOCAL_STACK_HEALTH_WAIT:-120}"
 
+# Portable to macOS's stock bash 3.2 and BSD userland: no associative arrays, no ${x^^}, no setsid.
 die() { echo "local-stack: $*" >&2; exit 1; }
 say() { echo "local-stack: $*" >&2; }
 
@@ -43,10 +43,16 @@ pg_pid() {  # the running postmaster's pid, read from postmaster.pid (never star
 
 pid_alive() { [[ -n "${1:-}" ]] && kill -0 "$1" 2>/dev/null; }
 
+upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
+
+agent_port() {  # red|green|blue -> port
+  case "$1" in red) echo 8001 ;; green) echo 8002 ;; blue) echo 8003 ;; *) die "unknown agent '$1'" ;; esac
+}
+
 start_proc() {  # name, workdir, then the command (env is inherited from the caller's exports)
-  # setsid may fork, so `$!` would be a pid that is already gone. Instead the new session's leader
-  # records its own pid ($$ = the process group id) and then execs the command, keeping that pid, so
-  # stop can signal the whole group (uv run and the uvicorn it spawns).
+  # Each service runs in its own session/process group so stop can signal the whole group (uv run and
+  # the uvicorn it spawns). setsid(1) isn't on macOS, so a tiny python3 shim calls os.setsid(), writes
+  # its own pid (= the new process group id) to the pidfile, then execs the command, keeping that pid.
   local name="$1" wd="$2"; shift 2
   rm -f "$PIDS/$name"
   # Tokens travel only as environment, never argv; the log line still redacts any KEY=value whose
@@ -54,7 +60,11 @@ start_proc() {  # name, workdir, then the command (env is inherited from the cal
   printf '=== local-stack start %s: %s\n' "$(date -u +%FT%TZ)" "$(printf '%s ' "$@" | sed -E 's/([A-Za-z_]*TOKEN[A-Za-z_]*)=[^ ]*/\1=<redacted>/g')" >>"$LOGS/$name.log"
   # The redirections sit on the backgrounded subshell itself, so no shell left between us and the
   # service ever holds the caller's stdout/stderr (`make local-stack | tee` must see EOF).
-  (cd "$wd" || exit 1; exec setsid bash -c 'echo "$$" >"$0"; exec "$@"' "$PIDS/$name" "$@") </dev/null >>"$LOGS/$name.log" 2>&1 &
+  (cd "$wd" || exit 1; exec python3 -c 'import os, sys
+os.setsid()
+with open(sys.argv[1], "w") as f:
+    f.write(str(os.getpid()))
+os.execvp(sys.argv[2], sys.argv[2:])' "$PIDS/$name" "$@") </dev/null >>"$LOGS/$name.log" 2>&1 &
   local t=0
   until [[ -s "$PIDS/$name" ]]; do ((t++ >= 50)) && die "$name did not start"; sleep 0.1; done
 }
@@ -69,10 +79,11 @@ wait_health() {  # name, url
 }
 
 mode_of() {  # red|green|blue -> mock|real
-  local a="$1" v
-  v="$(eval "printf '%s' \"\${${a^^}:-}\"")"
+  local a="$1" up v
+  up="$(upper "$a")"
+  v="$(eval "printf '%s' \"\${${up}:-}\"")"
   v="${v:-${AGENTS:-mock}}"
-  [[ "$v" == mock || "$v" == real ]] || die "${a^^}/AGENTS must be mock or real (got '$v')"
+  [[ "$v" == mock || "$v" == real ]] || die "${up}/AGENTS must be mock or real (got '$v')"
   printf '%s' "$v"
 }
 
@@ -129,20 +140,21 @@ PY
     sleep 1
   done
 
-  local a m port dry own
+  local a up m port dry own
   for a in blue red green; do
-    m="$(mode_of "$a")"; port="${AGENT_PORT[$a]}"
-    dry="$(eval "printf '%s' \"\${DRY_RUN_${a^^}:-\${DRY_RUN:-true}}\"")"
+    up="$(upper "$a")"
+    m="$(mode_of "$a")"; port="$(agent_port "$a")"
+    dry="$(eval "printf '%s' \"\${DRY_RUN_${up}:-\${DRY_RUN:-true}}\"")"
     if [[ "$m" == real ]]; then say "starting $a (real, DRY_RUN=$dry) on :$port"; else say "starting $a (mock) on :$port"; fi
     # each agent process holds only its own token, as AGENT_TOKEN
-    own="$(eval "printf '%s' \"\${AGENT_TOKEN_${a^^}}\"")"
+    own="$(eval "printf '%s' \"\${AGENT_TOKEN_${up}}\"")"
     if [[ "$m" == mock ]]; then
       AGENT_NAME="$a" AGENT_TOKEN="$own" \
         start_proc "$a" "$ROOT/battlefield" uv run --quiet uvicorn mock_agents.server:app --host 127.0.0.1 --port "$port"
     else
       AGENT_NAME="$a" PORT="$port" DRY_RUN="$dry" PYTHONPATH="." \
-        DROID_MODEL="$(eval "printf '%s' \"\${DROID_MODEL_${a^^}:-}\"")" \
-        DROID_REASONING="$(eval "printf '%s' \"\${DROID_REASONING_${a^^}:-}\"")" \
+        DROID_MODEL="$(eval "printf '%s' \"\${DROID_MODEL_${up}:-}\"")" \
+        DROID_REASONING="$(eval "printf '%s' \"\${DROID_REASONING_${up}:-}\"")" \
         AGENT_TOKEN="$own" start_proc "$a" "$ROOT/$a" uv run --quiet uvicorn server:app --host 127.0.0.1 --port "$port"
     fi
     wait_health "$a" "$A:$port/health"
@@ -160,7 +172,7 @@ cmd_status() {
   local name pid url ok=0
   for name in battlefield red green blue; do
     pid="$(cat "$PIDS/$name" 2>/dev/null || true)"
-    if [[ "$name" == battlefield ]]; then url="http://127.0.0.1:8000/api/health"; else url="http://127.0.0.1:${AGENT_PORT[$name]}/health"; fi
+    if [[ "$name" == battlefield ]]; then url="http://127.0.0.1:8000/api/health"; else url="http://127.0.0.1:$(agent_port "$name")/health"; fi
     if pid_alive "$pid" && body="$(curl -fsS --max-time 5 -H "Authorization: Bearer $OPERATOR_TOKEN" "$url" 2>/dev/null)"; then
       printf '  %-11s ok    pid %-7s %s\n' "$name" "$pid" "$(printf '%s' "$body" | python3 -c 'import json,sys
 d=json.load(sys.stdin)

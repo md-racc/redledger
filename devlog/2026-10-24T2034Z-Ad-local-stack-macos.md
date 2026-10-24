@@ -1,0 +1,1 @@
+- 2026-10-24T20:34Z · Ad · battlefield: make local-stack portable to stock macOS (bash 3.2, no setsid) for M's #102; verified under a built bash 3.2.57; next: per-agent token prod rollout; blocked: none
