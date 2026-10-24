@@ -1,8 +1,9 @@
 # Green integration status for Ad
 
-Baseline: merged main `68ef4eb`. Live Green stays disabled before SDK execution;
-DRY_RUN clerk dispatch is available. No constant `mirror` key or local identity workaround.
-Ready to integrate immediately after reviewed shared support merges; no merge date is promised.
+Baseline: merged main `899c133`. Ad released the DRY_RUN-only hold; Green #12,
+#13 (`d71698c`) and #14 (`0c26a2b`) are merged. Live Green stays disabled before
+SDK execution. No constant `mirror` key or local identity workaround.
+Ad requested a small live follow-up after reviewed shared support merges.
 
 - Shipped in `9736639`: first executable `restrict_tools` IDs use observed
   `<server>___<tool>` names, and async MCP functions run on private worker loops.
@@ -21,8 +22,14 @@ Ready to integrate immediately after reviewed shared support merges; no merge da
   Propagate Green's `clerk_scope` state safely with shared turn context across worker
   execution; never use global last-state guesses. This is an integration requirement,
   not an experimentally measured SDK finding.
-- The emitter-shutdown P1 fix belongs to `battlefield/agentkit-hardening` per review;
-  it is not merged at this baseline and has no promised ETA. Do not repair it locally.
+- Shipped in `51ebf1a` (#20): emitter shutdown drains remaining batches within a
+  bounded flush budget; tool offload has bounded execution. The old 50-event
+  shutdown defect is resolved in shared code, not a remaining Green blocker.
+  These changes do not add invocation-ID parity or propagate clerk ContextVars.
+
+Ad owns the remaining shared identity work in `battlefield/agentkit-tool-identity`
+and the preparation/replay-only contract proposal. A branch or proposal is not a
+merged dependency. No live-release date or SDK evidence is claimed.
 
 Manual acceptance after shared support merges: verify true invocation-ID parity across
 permission/tool/events/header, first-session restrictions and clerk-state continuity;
