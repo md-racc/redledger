@@ -52,11 +52,22 @@ async def recover_after_restart() -> None:
     for r in rows:
         await bus.emit(r["id"], r["current_day"], "error", {"where": "orchestrator", "message": RESTART_MESSAGE})
         await bus.emit(r["id"], r["current_day"], "episode.paused", {})
+    lineages = await db.fetch("UPDATE lineages SET status='paused' WHERE status='running' RETURNING id, current_generation")
+    for ln in lineages:  # the lineage loop lives in memory too: paused, resumed by a human (POST /lineages/{id}/resume)
+        ep = await db.fetchrow("SELECT id, current_day FROM episodes WHERE lineage_id=$1 AND generation=$2", ln["id"], ln["current_generation"])
+        if ep is not None:
+            await bus.emit(ep["id"], ep["current_day"], "lineage.paused", {"lineage_id": ln["id"], "generation": ln["current_generation"]})
     replays = await db.fetch("UPDATE episodes SET status='failed', finished_at=now() WHERE status='running' AND id LIKE 'replay\\_%' RETURNING id, current_day")
     for r in replays:
         await bus.emit(r["id"], r["current_day"], "error", {"where": "replay", "message": REPLAY_RESTART_MESSAGE})
-    if expired or rows or replays:
-        log.warning("recovered_after_restart", escalations_expired=expired, episodes_paused=[r["id"] for r in rows], replays_failed=[r["id"] for r in replays])
+    if expired or rows or replays or lineages:
+        log.warning(
+            "recovered_after_restart",
+            escalations_expired=expired,
+            episodes_paused=[r["id"] for r in rows],
+            replays_failed=[r["id"] for r in replays],
+            lineages_paused=[ln["id"] for ln in lineages],
+        )
 
 
 app = FastAPI(title="Red Ledger — battlefield", version="0.1.0", lifespan=lifespan)

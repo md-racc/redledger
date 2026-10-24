@@ -42,6 +42,19 @@ async def audit(episode_id: str, day: int, inputs: list[dict[str, Any]] | None =
         return {"ok": False, "summary": f"blue unreachable: {type(e).__name__}"}
 
 
+async def reflect(agent: str, body: dict[str, Any]) -> dict[str, Any]:
+    """POST {agent}/reflect (contracts/agent-service.md). Any failure → ok false: the playbook is kept."""
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(settings.turn_timeout_sec + 5, connect=10)) as client:
+            r = await client.post(f"{URLS[agent]}/reflect", json=body, headers=_headers())
+            if r.status_code >= 400:
+                return {"ok": False, "rationale": f"{agent} returned {r.status_code}: {r.text[:200]}"}
+            return r.json()
+    except Exception as e:
+        log.warning("agent_reflect_failed", agent=agent, episode_id=body.get("episode_id"), error=str(e))
+        return {"ok": False, "rationale": f"{agent} unreachable: {type(e).__name__}"}
+
+
 async def schemes() -> list[dict[str, Any]]:
     try:
         async with httpx.AsyncClient(timeout=10) as client:

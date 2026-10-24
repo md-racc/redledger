@@ -1,0 +1,300 @@
+{
+  "entries": [
+    {
+      "agent": "blue",
+      "day": null,
+      "diff": {
+        "added": {},
+        "changed": {},
+        "removed": {}
+      },
+      "episode_id": null,
+      "generation": 0,
+      "kind": "playbook",
+      "parent_version": null,
+      "rationale": "",
+      "source": "seed",
+      "version": 0
+    },
+    {
+      "agent": "green",
+      "day": null,
+      "diff": {
+        "added": {},
+        "changed": {},
+        "removed": {}
+      },
+      "episode_id": null,
+      "generation": 0,
+      "kind": "playbook",
+      "parent_version": null,
+      "rationale": "",
+      "source": "seed",
+      "version": 0
+    },
+    {
+      "agent": "red",
+      "day": null,
+      "diff": {
+        "added": {},
+        "changed": {},
+        "removed": {}
+      },
+      "episode_id": null,
+      "generation": 0,
+      "kind": "playbook",
+      "parent_version": null,
+      "rationale": "",
+      "source": "seed",
+      "version": 0
+    },
+    {
+      "agent": "red",
+      "day": 1,
+      "diff": {
+        "added": {
+          "avoid": []
+        },
+        "changed": {},
+        "removed": {}
+      },
+      "episode_id": "ep_rpt_g1",
+      "generation": 1,
+      "kind": "playbook",
+      "parent_version": 0,
+      "rationale": "watching",
+      "source": "turn",
+      "version": 1
+    },
+    {
+      "demo": false,
+      "episode_id": "ep_rpt_g1",
+      "generation": 1,
+      "kind": "generation",
+      "score": {
+        "attacks_caught": 1,
+        "attacks_launched": 2,
+        "detection_latency_days": 0.0,
+        "dollars_blocked": 2000.0,
+        "dollars_extracted": 3000.0,
+        "false_positive_cost": 70.0,
+        "legit_blocked": 1,
+        "legit_processed": 0
+      },
+      "seed": 43,
+      "status": "finished"
+    },
+    {
+      "agent": "blue",
+      "day": null,
+      "diff": {
+        "added": {
+          "learned": [
+            "ghost_vendor"
+          ],
+          "near_band": 0.95
+        },
+        "changed": {},
+        "removed": {}
+      },
+      "episode_id": null,
+      "generation": 1,
+      "kind": "playbook",
+      "parent_version": 0,
+      "rationale": "ghost_vendor got past me",
+      "source": "reflect",
+      "version": 1
+    },
+    {
+      "agent": "red",
+      "day": null,
+      "diff": {
+        "added": {
+          "favour": {
+            "ghost_vendor": 2
+          }
+        },
+        "changed": {
+          "avoid": {
+            "from": [],
+            "to": [
+              "duplicate_invoice"
+            ]
+          }
+        },
+        "removed": {}
+      },
+      "episode_id": null,
+      "generation": 1,
+      "kind": "playbook",
+      "parent_version": 1,
+      "rationale": "duplicate_invoice blocked",
+      "source": "reflect",
+      "version": 2
+    },
+    {
+      "demo": false,
+      "episode_id": "ep_rpt_g2",
+      "generation": 2,
+      "kind": "generation",
+      "score": {
+        "attacks_caught": 1,
+        "attacks_launched": 2,
+        "detection_latency_days": 0.0,
+        "dollars_blocked": 3000.0,
+        "dollars_extracted": 4000.0,
+        "false_positive_cost": 0.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "seed": 44,
+      "status": "finished"
+    },
+    {
+      "agent": "red",
+      "day": null,
+      "diff": {
+        "added": {
+          "favour.evolved:split_v2": 1
+        },
+        "changed": {
+          "avoid": {
+            "from": [
+              "duplicate_invoice"
+            ],
+            "to": [
+              "duplicate_invoice",
+              "ghost_vendor"
+            ]
+          }
+        },
+        "removed": {
+          "favour.ghost_vendor": 2
+        }
+      },
+      "episode_id": null,
+      "generation": 2,
+      "kind": "playbook",
+      "parent_version": 2,
+      "rationale": "ghost_vendor caught",
+      "source": "reflect",
+      "version": 3
+    },
+    {
+      "demo": true,
+      "episode_id": "ep_rpt_g3",
+      "generation": 3,
+      "kind": "generation",
+      "score": {
+        "attacks_caught": 0,
+        "attacks_launched": 0,
+        "detection_latency_days": null,
+        "dollars_blocked": 0.0,
+        "dollars_extracted": 0.0,
+        "false_positive_cost": 0.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "seed": 50,
+      "status": "finished"
+    }
+  ],
+  "generations": [
+    {
+      "debriefs": {
+        "blue": {
+          "aar": 1,
+          "daily": 2
+        },
+        "green": {
+          "aar": 1,
+          "daily": 2
+        },
+        "red": {
+          "aar": 1,
+          "daily": 2
+        }
+      },
+      "demo": false,
+      "episode_id": "ep_rpt_g1",
+      "generation": 1,
+      "score": {
+        "attacks_caught": 1,
+        "attacks_launched": 2,
+        "detection_latency_days": 0.0,
+        "dollars_blocked": 2000.0,
+        "dollars_extracted": 3000.0,
+        "false_positive_cost": 70.0,
+        "legit_blocked": 1,
+        "legit_processed": 0
+      },
+      "seed": 43,
+      "status": "finished"
+    },
+    {
+      "debriefs": {
+        "blue": {
+          "aar": 1,
+          "daily": 2
+        },
+        "green": {
+          "aar": 1,
+          "daily": 2
+        },
+        "red": {
+          "aar": 1,
+          "daily": 2
+        }
+      },
+      "demo": false,
+      "episode_id": "ep_rpt_g2",
+      "generation": 2,
+      "score": {
+        "attacks_caught": 1,
+        "attacks_launched": 2,
+        "detection_latency_days": 0.0,
+        "dollars_blocked": 3000.0,
+        "dollars_extracted": 4000.0,
+        "false_positive_cost": 0.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "seed": 44,
+      "status": "finished"
+    },
+    {
+      "debriefs": {
+        "blue": {
+          "aar": 0,
+          "daily": 0
+        },
+        "green": {
+          "aar": 0,
+          "daily": 0
+        },
+        "red": {
+          "aar": 0,
+          "daily": 1
+        }
+      },
+      "demo": true,
+      "episode_id": "ep_rpt_g3",
+      "generation": 3,
+      "score": {
+        "attacks_caught": 0,
+        "attacks_launched": 0,
+        "detection_latency_days": null,
+        "dollars_blocked": 0.0,
+        "dollars_extracted": 0.0,
+        "false_positive_cost": 0.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "seed": 50,
+      "status": "finished"
+    }
+  ],
+  "lineage_id": "ln_rpt_sample",
+  "partial": false,
+  "status": "finished"
+}

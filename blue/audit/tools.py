@@ -15,7 +15,8 @@ from typing import Any
 from agentkit import ctx
 from agentkit.ledger_client import LedgerError
 
-from .evidence import benford, model_view
+from .crs import CHECK_TIMEOUT, crs_client
+from .evidence import add_crs_findings, benford, model_view
 from .models import AuditSession, ConfirmedEffect, Finding
 from .snapshot import valid_id
 
@@ -37,39 +38,56 @@ def _json(value: Any) -> str:
 
 
 def blue_tool(name: str, description: str) -> Callable:
-    """Do not use the shared decorator: it does not propagate invocation IDs to writes."""
+    """Bind verified shared identity to private receipts; only deterministic calls narrate here."""
 
     def decorate(fn):
         @functools.wraps(fn)
         async def wrapped(*args, **kwargs):
             session = current()
-            invocation = INVOCATION.get()
+            shared = ctx.invocation()
+            invocation = INVOCATION.get() if session.dry_run and shared is None else None
+            if shared is not None:
+                # A copied private marker (or a local/explicit shared fallback) is not SDK identity.
+                # Claim before any provider work, including snapshot tools and future integrations.
+                if shared.verified and shared.tool_use_id and shared.take(name):
+                    invocation = shared.tool_use_id
+                else:
+                    shared.record(False, f"{name}: not confirmed"[:300])
             if not invocation:
                 return _json({"ok": False, "error": "Verified tool invocation metadata is unavailable; no action taken."})
-            async with session.tool_lock:
-                emitter = ctx.emitter()
-                # Only safe scalar IDs enter narration; never forward user-supplied prose.
-                safe_args = {}
-                for key, value in kwargs.items():
-                    if key == "finding_ids" and isinstance(value, list):
-                        safe_args[key] = [v for v in value[:20] if valid_id(v)]
-                    elif valid_id(value):
-                        safe_args[key] = value
-                if emitter:
-                    emitter.tool_call(name, safe_args, invocation)
-                ok = False
-                try:
-                    output = await fn(*args, **kwargs)
-                    ok = bool(output.get("ok", True))
-                    return _json(output)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    session.gaps.append(f"{name}: verification unavailable")
-                    return _json({"ok": False, "error": "Verification unavailable; no unsupported action authorized."})
-                finally:
+            token = INVOCATION.set(invocation)
+            ok = False
+            try:
+                async with session.tool_lock:
+                    # Shared offload owns its outer pair. Do not duplicate it or record source prose.
+                    emitter = None if shared is not None else ctx.emitter()
+                    safe_args = {}
+                    for key, value in kwargs.items():
+                        if key == "finding_ids" and isinstance(value, list):
+                            safe_args[key] = [v for v in value[:20] if valid_id(v)]
+                        elif valid_id(value):
+                            safe_args[key] = value
                     if emitter:
-                        emitter.tool_result(invocation, ok, f"{name}: {'completed' if ok else 'not confirmed'}")
+                        emitter.tool_call(name, safe_args, invocation)
+                    try:
+                        output = await fn(*args, **kwargs)
+                        result = _json(output)
+                        ok = bool(output.get("ok", True))
+                        return result
+                    finally:
+                        if emitter:
+                            emitter.tool_result(invocation, ok, f"{name}: {'completed' if ok else 'not confirmed'}")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                session.gaps.append(f"{name}: verification unavailable")
+                return _json({"ok": False, "error": "Verification unavailable; no unsupported action authorized."})
+            finally:
+                try:
+                    if shared is not None:
+                        shared.record(ok, f"{name}: {'completed' if ok else 'not confirmed'}"[:300])
+                finally:
+                    INVOCATION.reset(token)
 
         wrapped._rl_tool = (name, description)
         # Shared MCP tools return JSON text, while the private implementations return dictionaries.
@@ -85,7 +103,7 @@ async def dispatch(name: str, **kwargs: Any) -> dict[str, Any]:
     session = current()
     if not session.dry_run:
         raise ValueError("Live invocations require verified SDK metadata, not generated IDs.")
-    functions = {fn._rl_tool[0]: fn for fn in (day_activity, vendor_dedupe, benford_check, raise_flag, freeze_vendor, post_report)}
+    functions = {fn._rl_tool[0]: fn for fn in (day_activity, vendor_dedupe, benford_check, crs_identity_check, raise_flag, freeze_vendor, post_report)}
     token = INVOCATION.set(uuid.uuid4().hex)
     try:
         return json.loads(await functions[name](**kwargs))
@@ -169,6 +187,44 @@ async def benford_check() -> dict[str, Any]:
     return benford(snapshot)
 
 
+@blue_tool("crs_identity_check", "Check new employees against operator-bound CRS fictional profiles. Unknown and step-up never authorize a hold.")
+async def crs_identity_check() -> dict[str, Any]:
+    session = current()
+    snapshot = session.snapshot
+    assert snapshot is not None
+    if "crs" not in snapshot.datasets:
+        snapshot.datasets["crs"] = []
+        client = crs_client()
+        attempted = 0
+        for employee in snapshot.datasets.get("employees", []):
+            if employee["status"] != "active" or not 0 <= snapshot.day - employee["start_day"] < 7:
+                continue
+            result = {"id": employee["id"], "status": "unknown"}
+            # Leave time for a bounded profile read, provider check and final report.
+            if not session.dry_run and client.configured and attempted < 10 and session.deadline - time.monotonic() >= CHECK_TIMEOUT + 2 + REPORT_RESERVE:
+                attempted += 1
+                try:
+                    async with asyncio.timeout(2):
+                        profile = await ctx.ledger()._get(f"/x/blue/crs/employees/{employee['id']}")
+                    if isinstance(profile, dict) and isinstance(profile.get("persona_id"), str):
+                        result["status"] = (await client.verify(profile["persona_id"], employee.get("name"), dry_run=False)).status
+                except Exception:
+                    pass  # Optional evidence stays unknown; never expose provider or ledger errors.
+            snapshot.datasets["crs"].append(result)
+        add_crs_findings(snapshot)
+        for finding in snapshot.findings:
+            if any(
+                flag.get("entity_type") == finding.entity_type
+                and flag.get("entity_id") == finding.entity_id
+                and flag.get("severity") == finding.severity
+                and str(flag.get("reason", "")).startswith(f"[blue:{finding.id}] ")
+                for flag in snapshot.datasets.get("flags", [])
+            ):
+                session.suppressed.add(finding.id)
+    rows = snapshot.datasets["crs"]
+    return {status: sum(row["status"] == status for row in rows) for status in ("verified", "mismatch", "review", "unknown")}
+
+
 @blue_tool("raise_flag", "Raise a service-defined, corroborated snapshot finding by finding_id. No arbitrary entity, severity or reason.")
 async def raise_flag(finding_id: str) -> dict[str, Any]:
     session = current()
@@ -246,7 +302,8 @@ def report_markdown() -> str:
         f"# Day {session.day} controller report\n\n"
         f"## Reviewed\n{len(snapshot.datasets.get('invoices', []))} invoices, "
         f"{len(snapshot.datasets.get('vendors', []))} vendors, {len(snapshot.datasets.get('payments', []))} payments today; "
-        "employees, POs, changes, flags and allowlisted Green activity. Public APIs are unpaginated; upstream completeness is unproven.\n\n"
+        "employees, POs, changes, flags and allowlisted Green activity. Public APIs are unpaginated; upstream completeness is unproven. "
+        f"CRS unknown/step-up: {sum(r['status'] in {'unknown', 'review'} for r in snapshot.datasets.get('crs', []))}.\n\n"
         f"## Flagged\n{outcome.flags_raised} confirmed new flags; {len(session.suppressed)} finding receipts/existing flags recorded; "
         f"{outcome.vendors_frozen} confirmed freezes. Controls: {', '.join(codes) or 'none'}.\n\n"
         f"## Needs a human tomorrow\nCoverage gaps: {', '.join(gaps) or 'none observed locally'}. "
