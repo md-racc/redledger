@@ -27,6 +27,8 @@ class AgentSettings(BaseSettings):
 
     turn_timeout_sec: int = Field(180, alias="TURN_TIMEOUT_SEC")
     gate_timeout_sec: int = Field(8, alias="GATE_TIMEOUT_SEC")
+    # battlefield's hold on an escalated gated call; agents only use it to sanity-check the tool cap
+    escalation_timeout_sec: int = Field(90, alias="ESCALATION_TIMEOUT_SEC")
     http_timeout_sec: float = Field(15.0, alias="HTTP_TIMEOUT_SEC")
     log_level: str = Field("info", alias="LOG_LEVEL")
 
