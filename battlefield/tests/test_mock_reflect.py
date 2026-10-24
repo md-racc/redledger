@@ -47,8 +47,16 @@ def test_a_caught_scheme_climbs_its_evasion_ladder() -> None:
     assert mock.red_params(pb, "ghost_vendor") == {"amount": 950.0} and mock.red_params(pb, "threshold_split") == {"parts": 5}
     top, _ = mock.red_adapt(pb, [atk("a4", "ghost_vendor", "blocked"), atk("a5", "ghost_vendor", "blocked")])
     assert top["dropped"] == ["ghost_vendor"]  # two catches at the top of the ladder, never paid
-    kept, _ = mock.red_adapt(pb, [atk("a6", "ghost_vendor", "extracted"), atk("a7", "ghost_vendor", "blocked"), atk("a8", "ghost_vendor", "blocked")])
-    assert kept["dropped"] == [] and mock.red_params(kept, "ghost_vendor") == {"amount": 950.0}  # it paid once: keep trying
+    kept, _ = mock.red_adapt(pb, [atk("a6", "ghost_vendor", "blocked"), atk("a7", "ghost_vendor", "extracted"), atk("a8", "ghost_vendor", "blocked")])
+    assert kept["dropped"] == [] and mock.red_params(kept, "ghost_vendor") == {"amount": 950.0}  # the win reset the streak
+
+
+def test_an_old_win_does_not_keep_a_learned_against_scheme_alive() -> None:
+    pb, _ = mock.red_adapt({}, [atk("a1", "ghost_vendor", "blocked"), atk("a2", "ghost_vendor", "blocked"), atk("a3", "ghost_vendor", "extracted")])
+    assert pb["hot"]["ghost_vendor"] == 1 and pb["dropped"] == []  # at the top of its ladder, and it just paid
+    pb, why = mock.red_adapt(pb, [atk("a4", "ghost_vendor", "blocked"), atk("a5", "ghost_vendor", "blocked")])
+    assert pb["dropped"] == ["ghost_vendor"] and pb["won"] == {"ghost_vendor": 1} and pb["hot"]["ghost_vendor"] == 0
+    assert "ghost_vendor" not in {mock.red_choose(pb, d) for d in range(8)} and "favouring none" in why
 
 
 def test_empty_playbook_is_the_plain_rotation() -> None:
@@ -180,3 +188,35 @@ async def test_gate_applies_learned_rules_from_the_playbook(monkeypatch: pytest.
 async def test_gate_without_a_lineage_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     j = await _gate(monkeypatch, _gate_req())  # no playbook_version: never reads a playbook
     assert (j["verdict"], j["rules_fired"]) == ("allow", [])
+
+
+class RedLedger(FakeLedger):
+    def __init__(self, pb: dict | None) -> None:
+        super().__init__(pb)
+        self.attacks: list[Any] = []
+
+    async def declare_attack(self, a: Any) -> dict:
+        self.attacks.append(a)
+        return {"id": "atk_1"}
+
+    async def create_vendor(self, body: dict) -> dict:
+        return {"id": "ven_1", "name": body["name"]}
+
+    async def submit_invoice(self, body: dict) -> dict:
+        return {"id": "inv_1"}
+
+
+class _Em:
+    def thinking(self, text: str) -> None:
+        pass
+
+
+async def test_red_records_its_ladder_step_on_the_attack() -> None:
+    caught, _ = mock.red_adapt({}, [atk("a1", "ghost_vendor", "blocked")])
+    ledger = RedLedger({"version": 2, "content": caught})
+    req = mock.TurnRequest(episode_id="ep_1", day=1, controller_mode="enforce", options={"scheme_id": "ghost_vendor"})
+    await mock.red_turn(req, ledger, _Em())
+    assert ledger.attacks[0].params == {"amount": 2400.0, "step": 1} and ledger.attacks[0].target_amount == 2400.0
+    plain = RedLedger(None)  # plain episode: step 0, the original attack
+    await mock.red_turn(req, plain, _Em())
+    assert plain.attacks[0].params == {"amount": 4920.0, "step": 0}

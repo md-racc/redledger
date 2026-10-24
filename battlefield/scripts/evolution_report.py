@@ -48,6 +48,11 @@ HARD = [
 ]
 SOFT = [r"[0-9a-fA-F]{32,}", r"[A-Za-z0-9+/_-]{40,}={0,2}"]
 ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# Soft hits that are plainly identifiers, not secrets: a uuid4 in hex form (tool-use / idempotency keys),
+# or anything carrying a short id prefix (ep_, ln_, inv_, atk_, toolu_, ...). Base64 hits also follow
+# deploy/prod.sh: random strings have >= 4 digits and a letter, and URL paths are skipped.
+UUID4_HEX = re.compile(r"[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}")
+ID_PREFIX = re.compile(r"[A-Za-z]{2,8}_$")
 
 
 def scan(text: str, patterns: list[str]) -> list[str]:
@@ -58,6 +63,23 @@ def scan(text: str, patterns: list[str]) -> list[str]:
             s = m.group(0)
             if p.startswith("(^|") and s and not s[0].isalnum():
                 s = s[1:]  # the left-boundary character the pattern matched
+            hits.append(f"{s[:4]}…({len(s)} chars)")
+    return hits
+
+
+def soft_scan(text: str) -> list[str]:
+    """Like scan(text, SOFT), minus hits that are identifiers (see UUID4_HEX / ID_PREFIX)."""
+    hits = []
+    for p in SOFT:
+        for m in re.finditer(p, text):
+            s = m.group(0)
+            before = text[max(0, m.start() - 9) : m.start()]
+            if ID_PREFIX.search(before) or re.match(r"[A-Za-z]{2,8}_", s):
+                continue  # ep_<hex>, toolu_<base64>, ...
+            if p == SOFT[0] and len(s) == 32 and UUID4_HEX.fullmatch(s.lower()):
+                continue  # uuid4().hex: a generated key, not a secret
+            if p == SOFT[1] and (sum(c.isdigit() for c in s) < 4 or not any(c.isalpha() for c in s) or s.startswith("/")):
+                continue
             hits.append(f"{s[:4]}…({len(s)} chars)")
     return hits
 
@@ -199,7 +221,7 @@ def _write_checked(dest: Path, files: dict[str, str]) -> None:
         print("Looks like a key or token; nothing written.", file=sys.stderr)
         sys.exit(3)
     for name, text in files.items():
-        if h := scan(text, SOFT):
+        if h := soft_scan(text):
             print(f"WARNING {name}: long hex/base64 strings ({len(h)}); check before sharing", file=sys.stderr)
     dest.parent.mkdir(parents=True, exist_ok=True)
     ignore = dest.parent / ".gitignore"  # runs/ ignores itself: bundles hold ground truth and are never committed

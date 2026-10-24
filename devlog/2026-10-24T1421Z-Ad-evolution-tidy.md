@@ -1,0 +1,1 @@
+- 2026-10-24T14:21Z · Ad · battlefield: mock red records its ladder step on attacks and drops schemes caught twice since their last win; export scan stops warning on ids; demo generations never retire report rules; next: E5 docs; blocked: none

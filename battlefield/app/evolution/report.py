@@ -11,8 +11,10 @@ Definitions the report relies on:
     `day_launched`, lists it (any verdict; a bank swap's vendor is legit and may be judged earlier);
   - `recall` of a rule = attacks it fired on / attacks launched in that generation;
   - `missed` = attacks whose outcome is `extracted` (money left and nothing stopped it);
-  - learned rules = rule ids prefixed `learned:`; new / retired = ids first / last seen in a
-    generation (retired: seen before, absent from the latest generation in which any rule fired).
+  - learned rules = rule ids prefixed `learned:`; new = ids first seen after the first generation in
+    which any rule fired; retired = ids seen in an earlier headless generation but absent from the
+    latest headless generation in which any rule fired. Demo generations are shorter and red picks
+    differently there, so they never retire a rule (they still count for learned / new).
 """
 
 from __future__ import annotations
@@ -220,7 +222,8 @@ def _rule_lifecycle(gens: list[dict[str, Any]]) -> dict[str, Any]:
         for r in g["blue_rules"]:
             seen.setdefault(r["rule_id"], []).append(g["generation"])
     first_gen = gens[0]["generation"] if gens else None
-    last_gen = gens[-1]["generation"] if gens else None
+    headless = [g for g in gens if not g["demo"]]
+    last_headless = headless[-1]["generation"] if headless else None
     out: dict[str, Any] = {"learned_rules": [], "new_rules": [], "retired_rules": []}
     for rule in sorted(seen):
         g = seen[rule]
@@ -228,8 +231,9 @@ def _rule_lifecycle(gens: list[dict[str, Any]]) -> dict[str, Any]:
             out["learned_rules"].append({"rule_id": rule, "first_generation": min(g)})
         if min(g) != first_gen:
             out["new_rules"].append({"rule_id": rule, "first_generation": min(g)})
-        if len(gens) > 1 and max(g) != last_gen:
-            out["retired_rules"].append({"rule_id": rule, "last_generation": max(g)})
+        in_headless = [x for x in g if x in {h["generation"] for h in headless}]
+        if len(headless) > 1 and in_headless and max(in_headless) != last_headless:
+            out["retired_rules"].append({"rule_id": rule, "last_generation": max(in_headless)})
     return out
 
 

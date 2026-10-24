@@ -135,10 +135,12 @@ def _new_attacks(pb: dict, items: list[dict]) -> tuple[list[str], list[dict]]:
 
 
 def red_adapt(pb: dict, items: list[dict]) -> tuple[dict, str]:
-    """A caught scheme climbs its evasion ladder; at the top, two more catches without a win drop it.
-    Schemes that extracted keep their step and are favoured. Returns (content, rationale)."""
+    """A caught scheme climbs its evasion ladder; at the top, two catches in a row (since its last win)
+    drop it, so an old win doesn't keep red feeding a scheme blue has since learned. `hot` = wins since
+    the scheme's last catch; only those favour it. `won` keeps the all-time count for the record.
+    Returns (content, rationale)."""
     seen, fresh = _new_attacks(pb, items)
-    caught, won = dict(pb.get("caught", {})), dict(pb.get("won", {}))
+    caught, won, hot = dict(pb.get("caught", {})), dict(pb.get("won", {})), dict(pb.get("hot", {}))
     level, at_top = dict(pb.get("level", {})), dict(pb.get("caught_at_top", {}))
     moved = []
     for it in fresh:
@@ -147,6 +149,7 @@ def red_adapt(pb: dict, items: list[dict]) -> tuple[dict, str]:
             continue
         if out in CAUGHT:
             caught[sid] = caught.get(sid, 0) + 1
+            hot[sid] = 0
             if level.get(sid, 0) + 1 < len(LADDER[sid]):
                 level[sid] = level.get(sid, 0) + 1
                 moved.append(f"{sid}→{LADDER[sid][level[sid]]}")
@@ -154,11 +157,13 @@ def red_adapt(pb: dict, items: list[dict]) -> tuple[dict, str]:
                 at_top[sid] = at_top.get(sid, 0) + 1
         elif out in WON:
             won[sid] = won.get(sid, 0) + 1
-    dropped = sorted(sid for sid in SCHEME_IDS if at_top.get(sid, 0) >= 2 and not won.get(sid))
+            hot[sid] = hot.get(sid, 0) + 1
+            at_top[sid] = 0  # a win resets the streak of catches at the top
+    dropped = sorted(sid for sid in SCHEME_IDS if at_top.get(sid, 0) >= 2)
     if len(dropped) == len(SCHEME_IDS):  # never give up entirely: keep the least-caught scheme
         dropped.remove(min(SCHEME_IDS, key=lambda sid: (caught.get(sid, 0), SCHEME_IDS.index(sid))))
-    content = {**pb, "seen": seen, "caught": caught, "won": won, "level": level, "caught_at_top": at_top, "dropped": dropped}
-    favoured = [sid for sid in SCHEME_IDS if won.get(sid)]
+    content = {**pb, "seen": seen, "caught": caught, "won": won, "hot": hot, "level": level, "caught_at_top": at_top, "dropped": dropped}
+    favoured = [sid for sid in SCHEME_IDS if hot.get(sid)]
     return content, f"evading {moved or 'none'}; dropped {dropped or 'none'}; favouring {favoured or 'none'} ({len(fresh)} new attack results)"
 
 
@@ -169,9 +174,9 @@ def red_params(pb: dict, scheme_id: str) -> dict:
 
 
 def red_choose(pb: dict, day: int) -> str:
-    """Deterministic: each live scheme weighted 1 + times it extracted. An empty playbook is the plain rotation."""
-    won = pb.get("won", {})
-    weighted = [sid for sid in SCHEME_IDS if sid not in pb.get("dropped", []) for _ in range(1 + won.get(sid, 0))]
+    """Deterministic: each live scheme weighted 1 + wins since its last catch. An empty playbook is the plain rotation."""
+    hot = pb.get("hot", {})
+    weighted = [sid for sid in SCHEME_IDS if sid not in pb.get("dropped", []) for _ in range(1 + hot.get(sid, 0))]
     return weighted[day % len(weighted)]
 
 
@@ -215,10 +220,14 @@ async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> 
     scheme_id = req.options.get("scheme_id") or red_choose(pb, req.day)
     scheme = next(x for x in SCHEMES if x["id"] == scheme_id)
     params = {**red_params(pb, scheme_id), **req.options.get("params", {})}  # a forced attack's params win
+    step = min(int(pb.get("level", {}).get(scheme_id, 0)), len(LADDER.get(scheme_id, [{}])) - 1)
+    declared = {**params, "step": step}  # recorded on the attack row: which rung of the ladder red used
     em.thinking(f"Day {req.day}. Reviewing the books for an opening. Going with: {scheme['display_name']}.")
     if scheme_id == "ghost_vendor":
         amount = float(params.get("amount", 4920.0))
-        atk = await ledger.declare_attack(AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], target_amount=amount))
+        atk = await ledger.declare_attack(
+            AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], params=declared, target_amount=amount)
+        )
         v = await ledger.create_vendor(
             {"name": "Acme Office Supply LLC", "ein": "47-1234567", "bank_account": "9988776655", "bank_routing": "021000021", "category": "office"}
         )
@@ -237,7 +246,9 @@ async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> 
             return "no paid invoices to duplicate"
         src = paid[-1]
         amount = round(float(src["amount"]) + float(params.get("offset", 0.03)), 2)
-        atk = await ledger.declare_attack(AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], target_amount=amount))
+        atk = await ledger.declare_attack(
+            AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], params=declared, target_amount=amount)
+        )
         await ledger.submit_invoice({"vendor_id": src["vendor_id"], "amount": amount, "invoice_number": src["invoice_number"] + "A", "po_id": src.get("po_id")})
         return f"duplicated {src['invoice_number']} for ${amount:,.2f} (attack {atk['id']})"
     if scheme_id == "bank_swap":
@@ -247,7 +258,9 @@ async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> 
             return "no large pending invoice to hijack"
         target = pending[0]
         atk = await ledger.declare_attack(
-            AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], target_amount=float(target["amount"]))
+            AttackCreate(
+                scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], params=declared, target_amount=float(target["amount"])
+            )
         )
         await ledger.request_vendor_change(
             {
@@ -261,7 +274,9 @@ async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> 
     if scheme_id == "threshold_split":
         parts = int(params.get("parts", 3))
         total = 14400.0
-        atk = await ledger.declare_attack(AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], target_amount=total))
+        atk = await ledger.declare_attack(
+            AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], params=declared, target_amount=total)
+        )
         v = await ledger.create_vendor(
             {"name": "Bayline Facilities Group", "bank_account": "5566778899", "bank_routing": "021000021", "category": "facilities"}
         )
