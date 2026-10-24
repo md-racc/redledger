@@ -18,7 +18,7 @@ READ_TIMEOUT = 10.0
 ID = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")
 ALLOWED = {
     "vendors": {"id", "status", "created_day", "bank_account", "bank_routing", "name"},
-    "employees": {"id", "status", "start_day", "hr_record", "bank_account"},
+    "employees": {"id", "status", "start_day", "hr_record", "bank_account", "name"},
     "invoices": {"id", "vendor_id", "po_id", "amount", "invoice_number", "received_day", "due_day", "status"},
     "purchase_orders": {"id", "vendor_id", "amount", "status"},
     "payments": {"id", "invoice_id", "expense_id", "amount", "paid_day"},

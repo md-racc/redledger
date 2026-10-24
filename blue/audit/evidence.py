@@ -311,6 +311,36 @@ def model_view(snapshot: Snapshot) -> dict[str, Any]:
     }
 
 
+def add_crs_findings(snapshot: Snapshot) -> None:
+    """Provider results are normalized locally; unknown and step-up are not allegations."""
+    findings = [
+        _finding(
+            snapshot,
+            "crs_employee_identity_mismatch",
+            "employee",
+            row["id"],
+            None,
+            "high",
+            [Evidence(family="identity", fact="CRS reports an employee identity inconsistency; independent HR review is required.", substantive=True)],
+        )
+        for row in snapshot.datasets.get("crs", [])
+        if row["status"] == "mismatch"
+    ]
+    snapshot.total_findings += len(findings)
+    snapshot.findings = sorted(snapshot.findings + findings, key=lambda f: ({"high": 0, "medium": 1, "low": 2}[f.severity], f.code, f.entity_id))[:MAX_FINDINGS]
+    snapshot.coverage = [c for c in snapshot.coverage if c.dataset != "findings"]
+    if snapshot.total_findings > MAX_FINDINGS:
+        snapshot.coverage.append(
+            Coverage(
+                dataset="findings",
+                status="truncated",
+                processed=MAX_FINDINGS,
+                omitted=snapshot.total_findings - MAX_FINDINGS,
+                detail="Additional findings need human review.",
+            )
+        )
+
+
 def benford(snapshot: Snapshot) -> dict[str, Any]:
     digits = Counter()
     for inv in snapshot.datasets.get("invoices", []):
