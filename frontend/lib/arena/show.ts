@@ -37,7 +37,7 @@ export const SHOW_BEATS: Beat[] = [
     { from: 12, to: 22, text: "Blue isn't sure, so it asks a person.", sub: "You decide: approve it and the money goes out; block it and it stays." },
   ] },
   { id: "compare", label: "Compare", at: 65, end: 75, captions: [{ from: 0.4, to: 10, text: "Same seed. Same fraud. Different ending." }] },
-  { id: "evolve", label: "Evolve", at: 75, end: 88, captions: [{ from: 0.4, to: 13, text: "Then they learn.", sub: "Each agent rewrites its playbook between generations." }] },
+  { id: "evolve", label: "Evolve", at: 75, end: 88, captions: [{ from: 0.4, to: 13, text: "Then they learn.", sub: "Between generations each agent gets a debrief and updates its playbook." }] },
   { id: "yours", label: "Your turn", at: 88, end: SHOW_SECONDS, captions: [{ from: 0, to: 2, text: "Your turn.", sub: "Launch an attack. Flip the controller. Click any agent." }] },
 ];
 

@@ -1,0 +1,1 @@
+- 2026-10-24T23:33Z · Ad · contracts: a gate verdict replays only on the same day and enforcement (else 409 stale verdict); next: battlefield enforcement; blocked: none

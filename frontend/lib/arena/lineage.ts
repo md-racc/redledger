@@ -96,4 +96,6 @@ function focusOf(agent: EvoAgent, pb: PlaybookVersion): string[] {
 }
 
 export const evolvedIn = (report: LineageReport, g: number): { scheme_id: string; parent: string }[] => report.red.evolved_schemes.filter((s) => s.first_generation === g);
+/** controls blue retired after generation `g` (a learned control that hit a legitimate item) */
+export const retiredIn = (report: LineageReport, g: number): string[] => report.blue.retired_rules.filter((r) => r.last_generation === g).map((r) => r.rule_id);
 export const learnedIn = (report: LineageReport, g: number): string[] => report.blue.learned_rules.filter((r) => r.first_generation === g).map((r) => r.rule_id);

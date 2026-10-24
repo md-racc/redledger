@@ -1,0 +1,1 @@
+- 2026-10-24T22:31Z · Ad · docs: INTEGRATIONS A2/A4/A6 refreshed (red live on gpt-5.4-mini, no live Gemini, Armadin hook) and README §6 'Where Droid runs'; next: live lineage re-run; blocked: green/blue Droid turns disabled in code pending M (#78)

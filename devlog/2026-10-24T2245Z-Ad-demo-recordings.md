@@ -1,0 +1,1 @@
+- 2026-10-24T22:45Z · Ad · docs: commit the live-red controller off/on demo pair (seed 42, 10 days: $10,285 vs $1,824 extracted) to docs/recordings as the stage fallback; next: live lineage ln_f52a3df83c8d; blocked: none

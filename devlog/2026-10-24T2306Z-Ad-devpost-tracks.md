@@ -1,0 +1,1 @@
+- 2026-10-24T23:06Z · Ad · docs: per-track Devpost/pitch docs for R in docs/devpost/ (Hyphenate, Factory, technical/Microsoft, Armadin, CRS) with live-vs-keyless claims ledgers; next: R rewords pitch-script lines that only match the mock agents (#117), #137 fixes; blocked: none

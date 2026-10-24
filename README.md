@@ -7,8 +7,32 @@ and audits the books. Every action is logged, every verdict is explained, and a 
 tracks dollars extracted vs. blocked and the cost of false positives.
 
 Cal Hacks 13.0. Primary tracks: Hyphenate (Autonomous Systems for Finance), Factory (Droid SDK).
-Secondary: Armadin, CRS, Tiger Data, Vultr, Figma, MLH Gemini. Sponsor integration status,
-ownership and build order: `INTEGRATIONS.md` (temporary, deletes itself when the work is done).
+Secondary: Most Technically Advanced, Microsoft, Armadin, Tiger Data, Vultr; CRS if its live demo
+lands. Per-track write-ups (what's live vs. keyless, with evidence): `docs/devpost/`. Sponsor
+integration status, ownership and build order: `INTEGRATIONS.md` (temporary, deletes itself when
+the work is done).
+
+### At a glance
+
+- **What happens each simulated day.** Red, an AI agent on Factory's Droid SDK, reads the books
+  like an insider and runs a fraud scheme: ghost vendor, bank-account swap, duplicate invoice,
+  threshold split or ghost employee. Green does accounts payable. Before green moves money, it
+  prepares the action and battlefield asks blue, the controller: allow, block, or escalate to a
+  human. Battlefield is the only service that touches the database, and it enforces the verdict.
+  Agents never see which rows are fraud.
+- **Results on prod** (red live on `gpt-5.4-mini`; green and blue running their full logic
+  keyless):
+  - Same company, same seed, 10 days: controller off, **$10,285** extracted; controller on
+    (`enforce`), **$1,824** extracted at $100 false-positive cost. Recordings and details:
+    [`docs/recordings/`](docs/recordings/README.md).
+  - A 5-generation evolution run (8 days each, `enforce`): red found that invoices split under the
+    approval threshold get paid, and shifted to them. That was 1 of its 7 attacks in generation 1
+    and 7 of 8 in generation 5. Extraction rose from $19k to $98k, and no blue rule caught it. The
+    sandbox surfaced a real control gap, which is the point of building one.
+- **Run it with no keys.** `make local-stack AGENTS=mock` (no Docker) or `make mock-agents`, then
+  `make episode MODE=enforce SEED=42 DAYS=4` or `make evolve GENS=3 DAYS=5` (§12, §15). Frontend
+  alone: `cd frontend && NEXT_PUBLIC_MOCK=true npm run dev`.
+- **License:** MIT (`LICENSE`).
 
 Repo owner: start with `deploy/OWNER-CHECKLIST.md`. Everyone else: your directory's `AGENTS.md`.
 
@@ -210,6 +234,38 @@ Every agent: `GET /health`, `POST /turn {episode_id, day, controller_mode, optio
 the agentkit default keeps the playbook) and, in lineage episodes, receive `options.lineage` and
 `options.debrief` (blue: `lineage` / `debrief` on `/audit`). All three must run under
 `DRY_RUN=true` with no model calls.
+
+### Where Droid runs
+
+One Droid `Session` per turn, opened by `agentkit.DroidAgent._droid_turn`
+(`agentkit/agentkit/droid_agent.py`). `/reflect` opens no Session for any agent: red folds the
+review deterministically (`red/evolution.py`), green uses `green/playbook.py`, blue
+`blue/gate/learned.py`. Blue's `/gate` is rules plus an optional direct LLM call
+(`blue/gate/llm.py`, `BLUE_GATE_LLM_PROVIDER` = `gemini | anthropic | openai`), not Droid; it is
+not enabled on prod.
+
+| Service | `DroidAgent` subclass | Autonomy | Permission handler | Restricted tool IDs | Prod |
+|---|---|---|---|---|---|
+| red `/turn` | `RedAgent` (`red/agent.py`) | `high` | base default: `PROCEED_ONCE` | `red-ledger___` + `list_schemes`, `inspect_books`, `run_scheme`, `create_vendor`, `submit_invoice`, `request_vendor_bank_change`, `submit_expense`, `add_employee`. Not hardcoded: built from the `@ledger_tool` names in `red/tools.py`, then confirmed by `session.list_tools()` on the first Session | **live**, `gpt-5.4-mini`, reasoning `low` (repo vars `DROID_MODEL_RED` / `DROID_REASONING_RED`) |
+| green `/turn` | `GreenAgent` (`green/agent.py`) | `off`, strict identity | one call per request: `POST /preparations` keyed by the SDK `tool_use_id` (`green/preparation.py`); `PROCEED_ONCE` on `allow`, else `CANCEL` with a reason; batched requests, unverified ids and handler errors fail closed | hardcoded `AP_TOOL_IDS`: `green-ledger___` + `ap_queue`, `approve_expense`, `approve_invoice`, `approve_vendor_change`, `match_invoice`, `pay_expense`, `pay_invoice`, `reject_invoice`, `reject_vendor_change` (Finding, #94) | keyless (`DRY_RUN_GREEN`); `_droid_turn` raises before any Session opens until live acceptance (#78, #102) |
+| blue `/audit` (and `/turn`) | `AuditAgent` (`blue/audit/agent.py`) | `off`, strict identity | `PROCEED_ONCE` | hardcoded `AUDIT_TOOL_IDS`: `blue-ledger___` + `benford_check`, `crs_identity_check`, `day_activity`, `freeze_vendor`, `post_report`, `raise_flag`, `vendor_dedupe` | keyless (`DRY_RUN_BLUE`); `_droid_turn` raises before any stream or write until live acceptance (#78, #102) |
+
+- `system_prompt` is a plain string read from each service's `prompts/` file and passed as
+  `SessionConfig(system_prompt=...)`; `disable_builtin_skills=True` and
+  `restrict_tools=<ids above>` on every Session (`droid_agent.py`).
+- Timeouts: `session.stream(..., timeout=TURN_TIMEOUT_SEC - 10)`, tool calls must finish
+  within `TURN_TIMEOUT_SEC - 20` s (min 5) of turn start, the whole turn runs on its own loop under a
+  `TURN_TIMEOUT_SEC` ceiling;
+  blue's audit budget is `min(170, TURN_TIMEOUT_SEC - 10)` s.
+- The Droid `tool_use_id` is the call's ledger idempotency key: `X-Tool-Use-Id` on its first write,
+  `<id>:<n>` on the n-th (`agentkit/agentkit/ledger_client.py`). Strict agents refuse a write
+  without an SDK-reported id.
+- Per-turn `factory_credits` is logged at INFO (`turn_usage`) and returned in `usage`; battlefield
+  pauses an episode at `MAX_CREDITS_PER_EPISODE` (`battlefield/app/orchestrator/runner.py`, 0 =
+  off) and a lineage at `config.max_credits`; `make prod-evolve` refuses to start without
+  `MAX_CREDITS=`.
+- Per-agent `DRY_RUN_RED/GREEN/BLUE` (`deploy/render-env.sh`, `.github/workflows/deploy.yml`)
+  is how prod runs red live while green and blue stay keyless.
 
 ---
 

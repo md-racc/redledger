@@ -4,7 +4,7 @@
 // free play. Pulses the agents a note is about in the arena. Owner: Dev R.
 import { useEffect, useRef, useState } from "react";
 import { money } from "@/lib/arena/headlines";
-import { evolvedIn, learnedIn, loadLineageReport, notesAfter, type EvoAgent, type GenReport, type LineageReport } from "@/lib/arena/lineage";
+import { evolvedIn, learnedIn, loadLineageReport, notesAfter, retiredIn, type EvoAgent, type GenReport, type LineageReport } from "@/lib/arena/lineage";
 import { subscribeShowClock } from "@/lib/arena/showClock";
 import { useArena } from "@/lib/arena/store";
 
@@ -68,7 +68,7 @@ export function EvolutionCard({ open, driven, preferLive, onClose }: { open: boo
           {gens.map((g, i) => <Generation key={g.generation} g={g} report={report} k={reveal(i)} max={maxMoney(gens)} />)}
         </div>
       )}
-      {open && report && <footer>Between generations every agent reads an after-action review and writes its next playbook. Nobody sees another agent&apos;s playbook, only its behaviour.</footer>}
+      {open && report && <footer>Between generations each agent gets a debrief and updates its playbook: red re-weights what paid, blue switches on the controls it has pre-written. Nobody sees another agent&apos;s playbook, only its behaviour.</footer>}
     </section>
   );
 }
@@ -80,6 +80,7 @@ function Generation({ g, report, k, max }: { g: GenReport; report: LineageReport
   const mix = Object.entries(g.red_mix);
   const evolved = evolvedIn(report, g.generation);
   const learned = learnedIn(report, g.generation);
+  const retired = retiredIn(report, g.generation);
   const versions = (a: EvoAgent) => Math.max(0, ...(report.playbooks[a] ?? []).filter((v) => v.generation <= g.generation).map((v) => v.version));
   return (
     <article className="evo-col" style={{ opacity: 0.18 + 0.82 * clamp01(k * 4), transform: `translateY(${(1 - clamp01(k * 4)) * 14}px)` }}>
@@ -98,9 +99,9 @@ function Generation({ g, report, k, max }: { g: GenReport; report: LineageReport
           <ul className="evo-chips">
             {mix.map(([id, m]) => {
               const won = (m.outcomes.extracted ?? 0) + (m.outcomes.partial ?? 0) > 0;
-              return <li key={id} className={won ? "win" : "lose"}>{id.startsWith("evolved:") && <i>NEW</i>}{pretty(id)}<em>{won ? `stole ${money(m.amount_extracted)}` : "stopped"}</em></li>;
+              return <li key={id} className={won ? "win" : "lose"}>{id.startsWith("evolved:") && <i>NEW</i>}{pretty(id)}<em>{m.launched}× · {won ? `stole ${money(m.amount_extracted)}` : "stopped"}</em></li>;
             })}
-            {g.blue_rules.map((r) => <li key={r.rule_id} className="rule">{r.rule_id.startsWith("learned:") && <i>LEARNED</i>}{pretty(r.rule_id)}<em>{r.on_red ? "caught" : "fired"}</em></li>)}
+            {g.blue_rules.map((r) => <li key={r.rule_id} className="rule">{r.rule_id.startsWith("learned:") && <i>LEARNED</i>}{pretty(r.rule_id)}<em>{r.on_red ? "caught" : "fired"} {r.fired}×{r.precision != null ? ` · precision ${r.precision.toFixed(2)}` : ""}{r.recall != null ? ` · recall ${r.recall.toFixed(2)}` : ""}</em></li>)}
           </ul>
           <div className="evo-notes" style={{ opacity: clamp01((k - 0.45) * 4) }}>
             {notes.length === 0 && <p className="evo-quiet">No playbook changes.</p>}
@@ -112,7 +113,8 @@ function Generation({ g, report, k, max }: { g: GenReport; report: LineageReport
               </p>
             ))}
             {evolved.map((e) => <p key={e.scheme_id} className="note tone-red"><b>new scheme</b><span>{pretty(e.scheme_id)}, evolved from {pretty(e.parent)}</span></p>)}
-            {learned.length > 0 && <p className="note tone-blue"><b>new rule</b><span>{learned.map(pretty).join(", ")}</span></p>}
+            {learned.length > 0 && <p className="note tone-blue"><b>controls switched on</b><span>{learned.map(pretty).join(", ")}</span></p>}
+            {retired.length > 0 && <p className="note tone-blue"><b>controls retired</b><span>{retired.map(pretty).join(", ")}</span></p>}
           </div>
         </>
       )}

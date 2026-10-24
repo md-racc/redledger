@@ -320,6 +320,12 @@ async function route(req, res) {
   if (seg[0] === "episodes" && seg[1]) {
     const ep = episodes.get(seg[1]);
     if (!ep) return json(res, 404, { detail: "episode not found" });
+    // contracts #123: one active run per battlefield. Starting, resuming or stepping another episode while one is running is a 409
+    // that names the active one (replays never count).
+    if (m === "POST" && ["start", "resume", "step"].includes(seg[2])) {
+      const other = [...episodes.values()].find((x) => x.id !== ep.id && !x.id.startsWith("replay_") && (x.status === "running" || x.stepping));
+      if (other) return json(res, 409, { error: "another run is active", episode_id: other.id, lineage_id: null });
+    }
     if (m === "GET" && !seg[2]) return json(res, 200, pub(ep));
     if (m === "GET" && seg[2] === "score") return json(res, 200, ep.score);
     if (m === "POST" && seg[2] === "start") {
@@ -337,8 +343,9 @@ async function route(req, res) {
       if (ep.status === "created") { ep.status = "paused"; emit(ep, "episode.started", 0, "battlefield", { controller_mode: ep.controller_mode, days: ep.days, seed: ep.seed }); }
       if (ep.current_day >= ep.days) return json(res, 200, { done: true });
       await ep.dayLock;
+      ep.stepping = true;
       ep.dayLock = runDay(ep);
-      return json(res, 200, await ep.dayLock);
+      try { return json(res, 200, await ep.dayLock); } finally { ep.stepping = false; }
     }
     if (m === "PATCH" && seg[2] === "controller") {
       const b = await readBody(req);

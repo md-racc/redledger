@@ -1,0 +1,1 @@
+- 2026-10-24T23:22Z · Ad · docs: judge-facing At a glance block at the top of README (live off/on + lineage results, keyless run, links to docs/devpost); next: submission release tag; blocked: none

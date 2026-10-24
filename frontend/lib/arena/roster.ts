@@ -11,8 +11,8 @@ import type { AgentSpec, Team } from "./types";
 export const TEAMS: Team[] = ["red", "blue", "green"];
 
 export const TEAM_META: Record<Team, { label: string; singular: string; role: string; hex: string; glow: string; tagline: string }> = {
-  red: { label: "Fraudsters", singular: "Fraudster", role: "Red team", hex: "#ff2e49", glow: "#ff5a6e", tagline: "Eight schemes, one goal: money out the door." },
-  blue: { label: "Guards", singular: "Guard", role: "Controller", hex: "#3d86ff", glow: "#7fb0ff", tagline: "Ten gate rules between the clerk and the ledger." },
+  red: { label: "Fraudsters", singular: "Fraudster", role: "Red team", hex: "#ff2e49", glow: "#ff5a6e", tagline: "Eight on the wall, five schemes built: money out the door." },
+  blue: { label: "Guards", singular: "Guard", role: "Controller", hex: "#3d86ff", glow: "#7fb0ff", tagline: "Ten guards between the clerk and the ledger." },
   green: { label: "Clients", singular: "Client", role: "Finance ops", hex: "#27d99a", glow: "#7dffcf", tagline: "The vendors and staff Coastal Supply Co. pays." },
 };
 

@@ -54,7 +54,7 @@ components:
     XAgent:     { name: X-Agent, in: header, required: true, schema: { type: string, enum: [red, green, blue] } }
     XEpisode:   { name: X-Episode, in: header, required: true, schema: { type: string } }
     XDay:       { name: X-Day, in: header, required: true, schema: { type: integer } }
-    XToolUseId: { name: X-Tool-Use-Id, in: header, required: true, schema: { type: string }, description: "idempotency key (Droid tool_use_id; n-th write of one tool call is <tool_use_id>:<n>). On gated green routes a key already judged for a different action/entity/amount gets 409 {error: 'idempotency key reused for a different action'} and is never replayed." }
+    XToolUseId: { name: X-Tool-Use-Id, in: header, required: true, schema: { type: string }, description: "idempotency key (Droid tool_use_id; n-th write of one tool call is <tool_use_id>:<n>). On gated green routes a key already judged for a different action/entity/amount gets 409 {error: 'idempotency key reused for a different action'} and is never replayed; the same action on a later day or after a shadow/enforce mode change gets 409 {error: 'stale verdict'} and is never replayed." }
     id:         { name: id, in: path, required: true, schema: { type: string } }
   schemas:
     Money: { type: number, format: double }
@@ -710,7 +710,7 @@ paths:
       security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/AttackCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Attack' } } } } }
-    get: { x-agents: [red], security: [ { agentBearer: [] }, { operatorBearer: [] } ], description: red sees only its own declared attacks; frontend sees all, responses: { '200': { description: list } } }
+    get: { x-agents: [red], security: [ { agentBearer: [] }, { operatorBearer: [] } ], description: "red sees only its own declared attacks; frontend sees all. Information policy (AGENTS.md invariant 4, agent-service.md debriefs): for an agent caller, outcome, amount_extracted, detected_day and resolved_day are omitted from a row until that attack has been revealed (revealed_day set, lineage debriefs only), so outside a lineage red never reads them; declared fields (id, scheme_id, display_name, story, params, target_amount, day_launched, notes, created_at) and revealed_day are always returned. Operator callers get full rows.", responses: { '200': { description: list } } }
   /attacks/{id}:
     patch: { x-agents: [red], security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
              requestBody: { content: { application/json: { schema: { type: object, properties: { notes: { type: string } } } } } }, responses: { '200': { description: ok } } }
