@@ -7,7 +7,8 @@ and audits the books. Every action is logged, every verdict is explained, and a 
 tracks dollars extracted vs. blocked and the cost of false positives.
 
 Cal Hacks 13.0. Primary tracks: Hyphenate (Autonomous Systems for Finance), Factory (Droid SDK).
-Secondary: Armadin, CRS, Tiger Data, Vultr/Cloudflare, Figma, GoDaddy, MLH Gemini.
+Secondary: Armadin, CRS, Tiger Data, Vultr, Figma, MLH Gemini. Sponsor integration status,
+ownership and build order: `INTEGRATIONS.md` (temporary, deletes itself when the work is done).
 
 Repo owner: start with `deploy/OWNER-CHECKLIST.md`. Everyone else: your directory's `AGENTS.md`.
 

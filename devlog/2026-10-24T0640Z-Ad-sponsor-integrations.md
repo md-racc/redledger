@@ -1,0 +1,1 @@
+- 2026-10-24T06:40Z · Ad · sponsor-integrations: INTEGRATIONS.md runbook landed — Phase A justifies 7 already-true prizes, Phase B orders Tiger Data then CRS build, Phase C gated; next: B1 Tiger Data (~1h); blocked: CRS/Atlassian prereqs (keys, demo site)
