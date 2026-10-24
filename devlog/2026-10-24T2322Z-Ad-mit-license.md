@@ -1,0 +1,1 @@
+- 2026-10-24T23:22Z · Ad · chore: add MIT LICENSE (repo is public); next: none; blocked: none
