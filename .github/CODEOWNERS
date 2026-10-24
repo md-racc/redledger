@@ -1,20 +1,24 @@
-# Replace handles with real GitHub usernames before first PR. Owner: Dev Ad.
-# Reviews are required from the owner of any path a PR touches.
-*                       @AD_HANDLE
-/contracts/             @AD_HANDLE
-/agentkit/              @AD_HANDLE
-/battlefield/           @AD_HANDLE
-/red/                   @AL_HANDLE
-/green/                 @M_HANDLE
-/blue/                  @M_HANDLE
-/frontend/              @R_HANDLE
-# extension carve-outs: owned by the prefix, not by Ad
-/battlefield/extensions/red_*    @AL_HANDLE
-/battlefield/extensions/green_*  @M_HANDLE
-/battlefield/extensions/blue_*   @M_HANDLE
-/battlefield/extensions/fe_*     @R_HANDLE
-/contracts/ext/red/     @AL_HANDLE
-/contracts/ext/green/   @M_HANDLE
-/contracts/ext/blue/    @M_HANDLE
-/contracts/ext/fe/      @R_HANDLE
+# Reviews are required from a code owner of any path a PR touches. Owner: Dev Ad.
+# Ad = @md-racc, Al = @Alex-Epstein, M = @moterodiaz, R = @RaagaSundar.
+# Ad's paths list the other three as backup owners: GitHub never lets a PR author approve their
+# own PR, and with admins included in branch protection Ad's PRs would otherwise be unmergeable.
+# Any one listed owner's approval satisfies the rule; contracts/ PRs still need every affected
+# owner by policy (GIT.md §5).
+*                       @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
+/contracts/             @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
+/agentkit/              @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
+/battlefield/           @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
+/red/                   @Alex-Epstein @md-racc
+/green/                 @moterodiaz @md-racc
+/blue/                  @moterodiaz @md-racc
+/frontend/              @RaagaSundar @md-racc
+# team paths and extension carve-outs: owned by the prefix; Ad is the backup owner (same reason)
+/battlefield/extensions/red_*    @Alex-Epstein @md-racc
+/battlefield/extensions/green_*  @moterodiaz @md-racc
+/battlefield/extensions/blue_*   @moterodiaz @md-racc
+/battlefield/extensions/fe_*     @RaagaSundar @md-racc
+/contracts/ext/red/     @Alex-Epstein @md-racc
+/contracts/ext/green/   @moterodiaz @md-racc
+/contracts/ext/blue/    @moterodiaz @md-racc
+/contracts/ext/fe/      @RaagaSundar @md-racc
 /DEVLOG.md
