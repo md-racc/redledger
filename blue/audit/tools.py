@@ -16,7 +16,7 @@ from agentkit import ctx
 from agentkit.ledger_client import LedgerError
 from agentkit.tools import ledger_tool
 
-from .crs import CHECK_TIMEOUT, crs_client
+from .crs import CHECK_TIMEOUT, crs_client, crs_live
 from .evidence import add_crs_findings, benford, model_view
 from .models import AuditSession, ConfirmedEffect, Finding
 from .snapshot import valid_id
@@ -231,7 +231,12 @@ async def crs_identity_check() -> dict[str, Any]:
                 continue
             result = {"id": employee["id"], "status": "unknown"}
             # Leave time for a bounded profile read, provider check and final report.
-            if not session.dry_run and client.configured and attempted < 10 and session.deadline - time.monotonic() >= CHECK_TIMEOUT + 2 + REPORT_RESERVE:
+            if (
+                (not session.dry_run or crs_live())
+                and client.configured
+                and attempted < 10
+                and session.deadline - time.monotonic() >= CHECK_TIMEOUT + 2 + REPORT_RESERVE
+            ):
                 attempted += 1
                 try:
                     async with asyncio.timeout(2):
