@@ -211,7 +211,7 @@ class Preparation(BaseModel):
     amount: float | None = None  # None for gl.post and vendor_changes.*
     effective: Literal["allow", "block", "pending"]  # what execution under this key will do
     enforced: bool = False
-    decided_by: Literal["mode", "gate", "human", "timeout"]
+    decided_by: Literal["mode", "gate", "human", "timeout"] | None = None  # None exactly while effective == "pending"
     verdict_id: str | None = None  # None in off
     verdict: VerdictKind | None = None
     cause: VerdictCause | None = None
