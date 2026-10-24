@@ -9,3 +9,4 @@ them from here.
 ---
 
 - 2026-10-23T00:00Z · Ad · repo scaffolded: contracts, agentkit, battlefield (ledger API, gate, orchestrator, scoring, mock agents), skeletons for red/green/blue/frontend; next: hosting decision + first live episode on mock agents; blocked: none
+- 2026-10-24T01:45Z · Ad · docs: AGENTS.md §3 invariant 11 — agents never read /events, /fe, operator routes, or each other's internals; blue reads audit_log for green/blue only; next: code-level filtering as a contracts PR; blocked: none

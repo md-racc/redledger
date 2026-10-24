@@ -65,6 +65,24 @@ one `DEVLOG.md` line per PR.
    empty or dummy value. Keys arrive via the shared vault, not Slack.
 10. **Timeouts everywhere.** Every HTTP call has a timeout. Every Droid `stream()` has `timeout=`.
     A hung agent must fail a turn, not the episode.
+11. **Agents read the books, never the scoreboard or each other.** Battlefield does not yet
+    enforce all of this in code, so it is a rule every agent team and reviewer holds to:
+    - No agent code or Droid tool calls `GET /api/events` or `WS /api/ws`. That stream carries
+      `attack.launched`/`attack.outcome`, red-tagged `ledger.mutation`s, and every agent's
+      narration and gate reasoning. Agents *emit* events; only the frontend/operator reads them.
+    - No agent calls `/api/fe/*`, `/api/attacks/all`, `/api/episodes/*/score`, or any route
+      without `X-Agent`. A bearer call without `X-Agent` is an operator call and sees `origin`.
+      Go through `agentkit.LedgerClient` only; no raw `httpx` to battlefield.
+    - **Blue** reads `GET /api/audit_log` only with `agent=green` (or `agent=blue`). Red's rows
+      list exactly which vendors/invoices/expenses are fraud; reading them is reading ground
+      truth. Never give the blue Droid session an unfiltered audit-log tool.
+    - **Red** learns only from the books and its own calls' results. It does not read blue's
+      reports (`/api/reports`), flags, verdict reasons, or green's narration.
+    - **Green** reads `/api/flags` (by contract) and nothing of red's or blue's internals.
+    - No system prompt mentions `origin`, `attack_id`, scoring, or the other agents' existence
+      beyond what the role implies.
+    A reviewer checks every agent's tool list against this invariant. Code-level enforcement
+    (filtering `/events` and `audit_log` for `X-Agent` callers) is a pending contracts change.
 
 ## 4. Tech conventions
 
