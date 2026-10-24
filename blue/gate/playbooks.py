@@ -26,6 +26,7 @@ class Playbooks:
     def __init__(self, settings: AgentSettings):
         self.settings = settings
         self.entries: OrderedDict[tuple[str, int], dict] = OrderedDict()
+        self.latest: dict[str, dict] = {}
         self.refreshes: dict[tuple[str, int], Refresh] = {}
 
     async def hits(self, req: GateRequest) -> list[rules.RuleHit]:
@@ -51,6 +52,7 @@ class Playbooks:
                             if not isinstance(book.get("content"), dict):
                                 raise ValueError("playbook content unavailable")
                             self.entries[key] = deepcopy(book["content"])
+                            self.latest[req.episode_id] = deepcopy(book["content"])
                             while len(self.entries) > 128:
                                 self.entries.popitem(last=False)
                         self.entries.move_to_end(key)
@@ -61,6 +63,9 @@ class Playbooks:
                     self.refreshes.pop(key)
             return learned.evaluate(req, content)
         except Exception:
+            stale_content = self.latest.get(req.episode_id)
+            if stale_content is not None:
+                return learned.evaluate(req, stale_content)
             return [
                 rules.RuleHit(
                     "learned:verification_unavailable", 0, "Requested playbook version is unavailable; independent verification is required.", "unavailable"

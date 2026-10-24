@@ -134,11 +134,30 @@ async def test_cache_is_episode_and_exact_version_scoped_and_bounded(gate_reques
     await cache.hits(req)
     assert len(calls) == 2
     req.playbook_version = 3
-    assert (await cache.hits(req))[0].effect == "unavailable"
+    assert await cache.hits(req) == []
     for i in range(130):
         req.episode_id, req.playbook_version = f"ep{i}", 2
         await cache.hits(req)
     assert len(cache.entries) == 128
+
+
+async def test_failed_refresh_uses_last_good_episode_snapshot(gate_request, monkeypatch):
+    _, state = fake_books(monkeypatch)
+    cache = playbooks.Playbooks(AgentSettings(_env_file=None))
+    req = gate_request(amount=400, playbook_version=1)
+    req.context["vendor"]["created_day"] = 4
+    assert [hit.id for hit in await cache.hits(req)] == ["learned:young_vendor_any_amount"]
+
+    state["version"] = req.playbook_version = 2
+    assert [hit.id for hit in await cache.hits(req)] == ["learned:young_vendor_any_amount"]
+
+
+async def test_failed_first_refresh_returns_verification_unavailable(gate_request, monkeypatch):
+    _, state = fake_books(monkeypatch)
+    state["version"] = 2
+    cache = playbooks.Playbooks(AgentSettings(_env_file=None))
+    req = gate_request(playbook_version=1)
+    assert [hit.id for hit in await cache.hits(req)] == ["learned:verification_unavailable"]
 
 
 async def test_timeout_is_bounded_and_cancellation_propagates(gate_request, monkeypatch):
