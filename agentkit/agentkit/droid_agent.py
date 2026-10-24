@@ -96,7 +96,7 @@ class DroidAgent(ABC):
         t0 = time.monotonic()
         async with (
             LedgerClient(self.s, episode_id=req.episode_id, day=req.day) as ledger,
-            EventEmitter(self.s, episode_id=req.episode_id, day=req.day) as emitter,
+            EventEmitter(self.s, episode_id=req.episode_id, day=req.day, flush_budget_sec=self._flush_budget_sec()) as emitter,
         ):
             tokens = ctx.bind(ledger, emitter, req)
             try:
@@ -134,6 +134,12 @@ class DroidAgent(ABC):
 
         wrapped = [tool(n, d, self._offload(fn)) for (n, d, fn) in self.tools()]
         return create_sdk_mcp_server(name=f"{self.name}-ledger", tools=wrapped, version="0.1.0")
+
+    def _flush_budget_sec(self) -> float:
+        """Cap on the end-of-turn event flush. The stream may use up to TURN_TIMEOUT_SEC - 10 and
+        battlefield waits TURN_TIMEOUT_SEC + 5 for the HTTP reply, so the flush gets at most 5 s of the
+        remaining 15 s (session teardown needs the rest)."""
+        return min(self.s.http_timeout_sec, 5.0)
 
     def _tool_timeout_sec(self) -> float:
         """Wall-clock cap on one tool call, measured from when the SDK invokes it.

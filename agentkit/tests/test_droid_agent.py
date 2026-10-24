@@ -129,3 +129,23 @@ async def test_offload_outer_wait_catches_a_wedged_thread(monkeypatch):
             ctx.unbind(tokens)
     assert time.monotonic() - t0 < 0.5
     assert json.loads(out)["timeout"] is True
+
+
+async def test_run_turn_caps_the_final_flush_inside_battlefields_turn_wait(monkeypatch):
+    import agentkit.droid_agent as da
+
+    seen: dict = {}
+    real = da.EventEmitter
+
+    def spy(*a, **kw):
+        seen.update(kw)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(da, "EventEmitter", spy)
+    s = AgentSettings(AGENT_NAME="red", BATTLEFIELD_URL="http://bf", INTERNAL_TOKEN="t", DRY_RUN=True)
+    resp = await _Agent(s).run_turn(TURN)
+    assert resp.ok
+    budget = seen["flush_budget_sec"]
+    assert budget == min(s.http_timeout_sec, 5.0)
+    # stream timeout + final flush fits battlefield's TURN_TIMEOUT_SEC + 5 HTTP wait
+    assert (s.turn_timeout_sec - 10) + budget <= s.turn_timeout_sec + 5
