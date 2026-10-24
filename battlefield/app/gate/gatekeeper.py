@@ -87,7 +87,7 @@ async def escalation_timeout_sec(episode_id: str) -> float:
     ln = await _lineage(episode_id)
     headless = (ln["config"] or {}).get("headless") if ln and ln["status"] in ("running", "paused") else None
     if headless:  # escalation_policy is always "block" (contract enum): timeout = block, as today
-        return float(headless.get("escalation_timeout_sec", 5))
+        return min(float(headless.get("escalation_timeout_sec", 5)), float(settings.escalation_timeout_sec))
     return float(settings.escalation_timeout_sec)
 
 

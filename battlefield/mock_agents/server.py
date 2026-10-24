@@ -12,6 +12,7 @@ import hmac
 import os
 import time
 
+import httpx
 from fastapi import FastAPI, Header, HTTPException
 
 from agentkit import AgentSettings, AttackCreate, EventEmitter, GateBlocked, LedgerClient, LedgerError
@@ -290,8 +291,11 @@ async def blue_playbook(req: GateRequest) -> dict:
         return {}
     cached = _learned.get(req.episode_id)
     if cached is None or cached[0] != req.playbook_version:
-        async with LedgerClient(s, episode_id=req.episode_id, day=req.day) as ledger:  # a read: allowed outside turns
-            pb = await ledger.get_playbook() or {}
+        try:
+            async with LedgerClient(s, episode_id=req.episode_id, day=req.day) as ledger:  # a read: allowed outside turns
+                pb = await ledger.get_playbook() or {}
+        except (LedgerError, httpx.HTTPError):  # never fail the gate over a playbook read: keep what we had
+            return cached[1] if cached else {}
         cached = _learned[req.episode_id] = (req.playbook_version, pb.get("content") or {})
     return cached[1]
 
