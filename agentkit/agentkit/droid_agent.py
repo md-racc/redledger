@@ -26,8 +26,11 @@ The Droid SDK is imported lazily so DRY_RUN and tests work without it installed.
 from __future__ import annotations
 
 import asyncio
+import functools
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import structlog
@@ -39,6 +42,20 @@ from .models import TurnRequest, TurnResponse, Usage
 from .tools import ToolFn, ctx
 
 log = structlog.get_logger(__name__)
+
+_TOOL_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="droid-tool")
+
+
+class _ThreadSafeEmitter:
+    """Lets a tool running on a worker thread narrate through the turn's EventEmitter, whose queue
+    belongs to the turn's event loop."""
+
+    def __init__(self, inner: EventEmitter, loop: asyncio.AbstractEventLoop):
+        self._inner, self._loop = inner, loop
+
+    def __getattr__(self, name: str) -> Callable[..., None]:
+        method = getattr(self._inner, name)
+        return lambda *a, **kw: self._loop.call_soon_threadsafe(functools.partial(method, *a, **kw))
 
 
 class DroidAgent(ABC):
@@ -111,8 +128,31 @@ class DroidAgent(ABC):
     def _mcp_server(self) -> Any:
         from droid_sdk.mcp import create_sdk_mcp_server, tool
 
-        wrapped = [tool(n, d, fn) for (n, d, fn) in self.tools()]
+        wrapped = [tool(n, d, self._offload(fn)) for (n, d, fn) in self.tools()]
         return create_sdk_mcp_server(name=f"{self.name}-ledger", tools=wrapped, version="0.1.0")
+
+    def _offload(self, fn: ToolFn) -> Callable[..., str]:
+        """droid-sdk 0.5.0 stalls the whole run (RunTimeoutError) if an in-process tool yields to the
+        event loop, even for `await asyncio.sleep(0.3)`; only tools that return without awaiting work.
+        So each tool call runs to completion on a private loop in a worker thread, with its own
+        LedgerClient for the same turn, and its narration is posted back to the turn's emitter."""
+
+        @functools.wraps(fn)
+        def sync_tool(*args: Any, **kwargs: Any) -> str:
+            turn, emitter = ctx.turn(), ctx.emitter()
+            proxy = _ThreadSafeEmitter(emitter, asyncio.get_running_loop()) if emitter else None
+
+            async def run() -> str:
+                async with LedgerClient(self.s, episode_id=turn.episode_id, day=turn.day) as ledger:
+                    tokens = ctx.bind(ledger, proxy, turn)  # type: ignore[arg-type]
+                    try:
+                        return await fn(*args, **kwargs)
+                    finally:
+                        ctx.unbind(tokens)
+
+            return _TOOL_POOL.submit(asyncio.run, run()).result(timeout=self.s.turn_timeout_sec)
+
+        return sync_tool
 
     async def _droid_turn(self, req: TurnRequest, emitter: EventEmitter) -> tuple[str, Usage | None]:
         from droid_sdk import (
@@ -131,12 +171,17 @@ class DroidAgent(ABC):
             disable_builtin_skills=True,
             system_prompt=self.system_prompt,
             mcp_servers=[server],
-            # restrict_tools is applied after we learn the exact IDs on first run (see _restrict)
-            restrict_tools=self._tool_ids,
+            # Only our ledger tools: without this the agent also gets Droid's ~30 built-ins (Read, Grep,
+            # Execute, …) and spends the turn reading its own source. In-process MCP tool IDs are
+            # "<server>___<tool>" (observed with droid-sdk 0.5.0; list_tools reports source=None).
+            restrict_tools=self._tool_ids or [f"{self.name}-ledger___{n}" for (n, _, _) in self.tools()],
         )
         prompt = await self.build_prompt(req)
+        from droid_sdk import ReasoningEffort
+
         async with Session(
             model=self.s.droid_model,
+            reasoning_effort=ReasoningEffort(self.s.droid_reasoning) if self.s.droid_reasoning else None,
             config=config,
             interactions=InteractionHandlers(on_permission=self.on_permission),
             api_key=self.s.factory_api_key,
@@ -171,7 +216,7 @@ class DroidAgent(ABC):
         try:
             tools = await session.list_tools()
             mine = {n for (n, _, _) in self.tools()}
-            ids = [t.id for t in tools if getattr(t, "source", "") == "mcp" and any(t.id.endswith(n) for n in mine)]
+            ids = [t.id for t in tools if t.id.startswith(f"{self.name}-ledger___") and any(t.id.endswith(n) for n in mine)]
             if ids:
                 self._tool_ids = ids
                 log.info("tool_ids_learned", agent=self.name, ids=ids)
