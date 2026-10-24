@@ -10,7 +10,7 @@ SHELL := /bin/bash
 MODE ?= shadow
 DAYS ?= 10
 SEED ?= 42
-unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG LN GENS REVEAL_DAYS
+unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG LN GENS REVEAL_DAYS REVEAL_GENERATIONS
 COMPOSE := docker compose
 DEV := -f docker-compose.yml -f docker-compose.dev.yml
 MOCK := -f docker-compose.yml -f docker-compose.mock.yml
@@ -29,7 +29,7 @@ LN_MODE = $(if $(filter command line,$(origin MODE)),$(MODE),enforce)
 LN_DAYS = $(if $(filter command line,$(origin DAYS)),$(DAYS),6)
 
 .PHONY: help up up-dry mock-agents down logs ps db-reset db-shell seed episode step toggle attack escalations score record replay \
-        evolve lineage-status lineage-pause lineage-resume \
+        evolve lineage-status lineage-pause lineage-resume evolution-report lineage-export \
         prod-health prod-ps prod-logs prod-episode prod-step prod-pause prod-resume prod-toggle prod-attack prod-escalations \
         prod-resolve prod-score prod-wait prod-record prod-credits \
         install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog devlog-show
@@ -77,9 +77,9 @@ replay: ## stream a fixture to connected UIs: make replay FILE=ep_abc SPEED=4
 	curl -s $(AUTH) -X POST $(API)/api/replays/$(FILE)/play -d '{"speed":$(or $(SPEED),4)}'; echo
 
 # ---------- lineages: headless generations (docs/EVOLUTION-DESIGN.md) ----------
-evolve: ## create + start a headless lineage: make evolve GENS=3 DAYS=6 MODE=enforce SEED=42 REVEAL_DAYS=3
-	@curl -s $(AUTH) -X POST $(API)/api/lineages -d '{"base_seed":$(SEED),"config":{"generations":$(or $(GENS),3),"days":$(LN_DAYS),"controller_mode":"$(LN_MODE)","reveal_days":$(or $(REVEAL_DAYS),3)}}' | tee /tmp/rl_ln.json; echo
-	@LN=$$(python3 -c 'import json;print(json.load(open("/tmp/rl_ln.json"))["id"])'); echo "lineage $$LN"; \
+evolve: ## create + start a headless lineage: make evolve GENS=3 DAYS=6 MODE=enforce SEED=42 REVEAL_DAYS=3 REVEAL_GENERATIONS=2
+	@LN=$$(curl -s $(AUTH) -X POST $(API)/api/lineages -d '{"base_seed":$(SEED),"config":{"generations":$(or $(GENS),3),"days":$(LN_DAYS),"controller_mode":"$(LN_MODE)","reveal_days":$(or $(REVEAL_DAYS),3),"reveal_generations":$(or $(REVEAL_GENERATIONS),2)}}' \
+	   | tee /dev/stderr | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])') || exit 1; echo; echo "lineage $$LN"; \
 	 curl -s $(AUTH) -X POST $(API)/api/lineages/$$LN/start; echo; echo "export LN=$$LN"
 lineage-status: ## generations, scores and playbook versions of $(LN)
 	curl -s $(AUTH) $(API)/api/lineages/$(LN); echo
@@ -87,6 +87,10 @@ lineage-pause: ## pause $(LN) (its running generation pauses too)
 	curl -s $(AUTH) -X POST $(API)/api/lineages/$(LN)/pause; echo
 lineage-resume: ## resume $(LN) at the same generation
 	curl -s $(AUTH) -X POST $(API)/api/lineages/$(LN)/resume; echo
+evolution-report: ## runs/$(LN)/report.json + report.md (secret-scanned; partial while $(LN) runs)
+	@API='$(API)' TOKEN='$(TOKEN)' python3 battlefield/scripts/evolution_report.py report '$(LN)'
+lineage-export: ## log bundle runs/$(LN)/{lineage.json,playbooks/,gen-<g>/...} (contains origin: never commit)
+	@API='$(API)' TOKEN='$(TOKEN)' python3 battlefield/scripts/evolution_report.py export '$(LN)'
 
 # ---------- prod operator (runs ON the VM over ssh; OPERATOR_TOKEN never leaves the VM) ----------
 # Thin wrappers over deploy/prod.sh; guide: deploy/PROD-OPS.md. Host/key/timeouts: PROD_* env vars
