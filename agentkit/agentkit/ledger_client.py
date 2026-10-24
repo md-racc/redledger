@@ -4,6 +4,11 @@ This is the ONLY way an agent touches the books. Every call sets X-Agent / X-Epi
 for writes, X-Tool-Use-Id (the idempotency key). A blocked gated call raises `GateBlocked` with
 the verdict reason so the agent (or its prompt) can react.
 
+X-Tool-Use-Id, in order of precedence: the `tool_use_id=` you pass; else, inside a tool call, the
+current invocation's key (the Droid tool_use_id for the call's first write, `<id>:<n>` for the n-th;
+see agentkit.invocation); else a fresh UUID4. An explicit key that the current invocation already
+sent raises agentkit.invocation.IdempotencyKeyReused before the request goes out.
+
 Usage inside a turn:
 
     async with LedgerClient(settings, episode_id=ep, day=d) as ledger:
@@ -19,6 +24,7 @@ from typing import Any
 import httpx
 
 from .config import AgentSettings
+from .invocation import current_invocation
 from .models import AttackCreate
 
 
@@ -78,7 +84,14 @@ class LedgerClient:
         return self._handle(r)
 
     async def _write(self, method: str, path: str, body: dict[str, Any] | list[Any] | None, tool_use_id: str | None) -> Any:
-        headers = {"X-Tool-Use-Id": tool_use_id or self.new_tool_use_id()}
+        inv = current_invocation()
+        if tool_use_id:
+            if inv is not None:
+                inv.reserve(tool_use_id)
+            key = tool_use_id
+        else:
+            key = inv.next_key() if inv is not None else self.new_tool_use_id()
+        headers = {"X-Tool-Use-Id": key}
         r = await self.c.request(method, path, json=body, headers=headers)
         return self._handle(r)
 

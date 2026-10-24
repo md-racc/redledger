@@ -32,6 +32,18 @@ log = structlog.get_logger(__name__)
 _escalation_waiters: dict[str, asyncio.Future] = {}
 
 
+IDEMPOTENCY_CONFLICT = "idempotency key reused for a different action"
+
+
+class IdempotencyConflictError(Exception):
+    """The X-Tool-Use-Id already has a verdict for a different action/entity/amount. Replaying that
+    verdict would let one approval authorize another action, so the request is refused (409)."""
+
+    def __init__(self, verdict_id: str):
+        super().__init__(IDEMPOTENCY_CONFLICT)
+        self.verdict_id = verdict_id
+
+
 class GateBlockedError(Exception):
     def __init__(self, reason: str, verdict_id: str, escalation_id: str | None = None):
         super().__init__(reason)
@@ -69,9 +81,13 @@ async def check(
     if mode == "off":
         return Decision(allowed=True)
 
-    # idempotent on key: if we already judged this tool_use_id, reuse
+    # idempotent on key: if we already judged this tool_use_id for this same action, reuse the verdict;
+    # the same key on a different action is refused, never replayed
     existing = await db.fetchrow("SELECT * FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", c.episode_id, c.tool_use_id)
     if existing:
+        if not same_action(existing, action, entity_type, entity_id, amount, args or {}):
+            log.warning("idempotency_key_reused", key=c.tool_use_id, verdict_id=existing["id"], stored_action=existing["action"], action=action)
+            raise IdempotencyConflictError(existing["id"])
         return await _apply(existing["id"], existing["verdict"], existing["reason"], mode, c, action, entity_type, entity_id, amount, replay=True)
 
     t0 = time.monotonic()
@@ -119,6 +135,23 @@ async def check(
         agent="blue",
     )
     return await _apply(vid, verdict, reason, mode, c, action, entity_type, entity_id, amount)
+
+
+def same_action(existing: Any, action: str, entity_type: str | None, entity_id: str | None, amount: float | None, args: dict[str, Any]) -> bool:
+    """Is a stored verdict about the same action as this request? Action and entity must match and the
+    amount must not differ by a cent or more. A GL entry has no id until it is posted (each attempt
+    mints one), so for those the posted fields (args) stand in for the entity."""
+    if existing["action"] != action or existing["entity_type"] != entity_type:
+        return False
+    if entity_type == "gl_entry":
+        if dict(existing["args"] or {}) != dict(args):
+            return False
+    elif existing["entity_id"] != entity_id:
+        return False
+    stored = existing["amount"]
+    if (stored is None) != (amount is None):
+        return False
+    return stored is None or abs(float(stored) - float(amount)) < 0.01  # type: ignore[arg-type]
 
 
 async def _ask_blue(
