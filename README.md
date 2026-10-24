@@ -354,6 +354,8 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 | `CRS_LIVE` | acceptance-only switch letting the DRY_RUN blue audit call the CRS sandbox (approved personas only) | default off; shell export, never committed |
 | `CRS_API_KEY` | legacy placeholder, unused by the CRS identity client | legacy compatibility only |
 | `MAX_CREDITS_PER_EPISODE` | `0` (off) | e.g. `40`; variable |
+| `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | blank (origin Access check off) | variables; both set = Cloudflare Access enforced at the origin; both blank = public read-only mode, which requires `ADMIN_KEY` |
+| `ADMIN_KEY` | blank (everyone is admin in dev/mock) | secret, ≥ 32 chars, distinct from every token; signs the frontend admin cookie (`/admin`), so only admins can start runs, launch attacks or resolve escalations. Unset in production = nobody is admin; rotating it logs admins out |
 | `DOMAIN`, `CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` | n/a / `.env.example` defaults | variables (`CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` default from `DOMAIN`) |
 | `GITHUB_REPO` | n/a | not settable (GitHub reserves `GITHUB_`); `deploy.yml` passes `github.repository` |
 | `DATABASE_URL`, `POSTGRES_*` | compose default | compose default (Postgres not exposed) |

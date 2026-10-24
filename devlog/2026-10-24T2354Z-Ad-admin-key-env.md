@@ -1,1 +1,1 @@
-- 2026-10-24T23:54Z · Ad · battlefield: ADMIN_KEY wired through .env.example, compose, deploy and render-env; a DOMAIN deploy now needs either full Cloudflare Access or a strong ADMIN_KEY (public read-only mode); next: frontend viewers/admins PR; blocked: Ad sets the ADMIN_KEY secret
+- 2026-10-24T23:54Z · Ad · docs: README §11 rows for ADMIN_KEY and the CF_ACCESS public read-only mode (#152); next: frontend viewers/admins; blocked: none
