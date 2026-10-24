@@ -17,24 +17,31 @@ money-moving action and audits the books. Five containers (`battlefield`, `red`,
 
 ## 2. Ownership and boundaries
 
+Ad is the integration authority: Ad controls prod, and Ad's orchestrator merges every PR after CI,
+the PR steward, and (for core areas) an independent verifier pass (`GIT.md` §4). Ownership decides
+who writes an area and who gets notified, not who approves. Owner review is welcome, never blocking.
+
 | Directory         | Owner | Others may edit?                                         |
 |-------------------|-------|----------------------------------------------------------|
-| `battlefield/`    | Ad    | PR with Ad as reviewer (R may add `/api/fe` reads; M may tune seed/traffic) |
-| `agentkit/`       | Ad    | PR + one agent-team reviewer                             |
-| `contracts/`      | Ad    | `contracts/` PR + **all** affected owners; CHANGELOG entry required |
-| `red/`            | Al    | no                                                       |
-| `green/`          | M     | no                                                       |
-| `blue/`           | M     | no                                                       |
-| `frontend/`       | R     | no                                                       |
-| compose, Makefile, `.env.example`, `.github/` | Ad | PR                          |
-| `DEVLOG.md`       | all   | append-only, one line per PR (see `GIT.md` §6)           |
+| `battlefield/`    | Ad    | PR; verifier required (R may add `/api/fe` reads; M may tune seed/traffic) |
+| `agentkit/`       | Ad    | PR; verifier required                                    |
+| `contracts/`      | Ad    | `contracts/` PR, CHANGELOG entry, tag **all** affected owners; verifier required |
+| `red/`            | Al    | no (integration may, tagging Al)                         |
+| `green/`          | M     | no (integration may, tagging M)                          |
+| `blue/`           | M     | no (integration may, tagging M)                          |
+| `frontend/`       | R     | no (integration may, tagging R)                          |
+| compose, Makefile, `.env.example`, `.github/`, `deploy/` | Ad | PR; verifier required |
+| `devlog/`         | all   | one new fragment per PR, never edit another's (see `GIT.md` §6) |
+| `DEVLOG.md`       | all   | frozen history; nobody appends (see `GIT.md` §6)         |
 
 A coding agent working in one directory must not modify files in another owner's directory. If
-the task genuinely requires it, stop and say so; the human decides.
+the task genuinely requires it, stop and say so; the human decides. The one exception is
+integration (Ad): it may edit another area when integration needs it, on that area's prefix, with
+the owner tagged; the owner reviews after the fact and follow-ups go through the owner's own PR.
 
 Branching, commits, PRs, and the coding-agent git rules are in `GIT.md`. Short version: branch
-`<area>/<topic>`, stay in your area (CI enforces it), small PRs, squash-merge, never force-push,
-one `DEVLOG.md` line per PR.
+`<area>/<topic>`, stay in your area (CI enforces it), small PRs, never force-push, one
+`devlog/` fragment per PR, never merge your own PR (integration squash-merges).
 
 ## 3. Non-negotiable invariants
 
@@ -172,9 +179,10 @@ Before pushing: `make test` in your directory and `make lint`. CI runs both per 
 
 ## 7. Definition of done for a PR
 
-- One `DEVLOG.md` line appended.
+- Exactly one `devlog/` fragment added (`make devlog WHO=… MSG="…"`).
+- CI green and the PR left for integration to merge; the author never merges.
 - Runs under `DRY_RUN=true` / `NEXT_PUBLIC_MOCK=true`.
-- Does not change `contracts/` without a CHANGELOG entry and reviewer from each affected owner.
+- Does not change `contracts/` without a CHANGELOG entry and every affected owner tagged.
 - Emits the events the README says it should.
 - Has at least one test touching the new code path (unit for rules/schemes, integration via
   `httpx` against the FastAPI app for routes).
@@ -240,7 +248,7 @@ invariant 11 (no peeking), and reports pass/fail with specifics.
 Implementers grading their own work is not verification.
 
 **Boundaries propagate.** A subagent you spawn from a `red/` task inherits the `red/`
-boundary: `red/**`, `battlefield/extensions/red_*.py`, `contracts/ext/red/**`, `DEVLOG.md`.
+boundary: `red/**`, `battlefield/extensions/red_*.py`, `contracts/ext/red/**`, `devlog/*.md`.
 If a subagent reports it needs a change elsewhere, that is a contracts change: collect the
 proposed diff, stop, hand it to the human. Do not spawn a subagent into another team's
 directory "just to fix one thing".
@@ -257,8 +265,26 @@ the only environments a subagent runs against. The VM is Ad's.
 
 **Reporting.** Subagents return a short summary: files changed, tests run and results, open
 questions, anything that smelled like a contract gap. Not file dumps, not transcripts. You
-append exactly one `DEVLOG.md` line per PR, written from those summaries, naming the dev you
-work for (Ad / Al / M / R), not the agent.
+add exactly one `devlog/` fragment per PR (`make devlog`), written from those summaries, naming
+the dev you work for (Ad / Al / M / R), not the agent.
+
+**Integration loop (Ad's orchestrator only).** Teammates' orchestrators stop at "PR open, CI
+green"; Ad's runs the merge loop (`GIT.md` §4):
+1. A read-only **PR steward** subagent polls open PRs and assesses each: CI triage, branch-prefix
+   scope, exactly one devlog fragment, secrets scan, §3 invariants (incl. 11, no peeking), merge
+   order / stacking. It reports READY / BLOCKED with the head SHA it assessed. It never writes.
+2. Anything touching `battlefield/`, `agentkit/`, `contracts/`, `deploy/`, compose, or more than
+   one area gets an independent **verifier** (fresh subagent, never the implementer):
+   `make lint test-<area>`, a `make mock-agents` smoke where relevant, diff vs the contract.
+3. The orchestrator merges READY PRs with
+   `gh pr merge <n> --squash --match-head-commit <assessed sha>`; a newer head means reassess.
+   Contracts PRs: FYI in the PR and the team channel at merge.
+4. After a merge, resync stacked or conflicting PRs with a plain merge of `origin/main` into the
+   PR branch (never force-push, never rewrite, conflict resolution only); tell the author to pull.
+5. Devlog fragments are new files, so they never need a resync.
+
+The merge/approve denials in the committed `.claude/settings.json` stay; only Ad's machine
+overrides the merge denial, locally and uncommitted. Teammates' agents never merge or approve.
 
 **Findings.** If any subagent empirically settles one of the open questions in
 `contracts/CHANGELOG.md` (Droid autonomy behavior, tool ID format, CLI install line), record
@@ -280,6 +306,6 @@ Contract excerpt you depend on: <paste the exact routes / payloads / schema line
 Requirement: must work under DRY_RUN=true (agents) or NEXT_PUBLIC_MOCK=true (frontend).
 Done means: `make lint test-<area>` passes in your worktree; commit on your branch with message
 `<area>: <imperative summary>`; do NOT push; reply with: files changed, tests run, open questions.
-Never: force-push, reset --hard, delete tests, edit DEVLOG.md, edit .env, touch another directory.
+Never: force-push, reset --hard, delete tests, edit DEVLOG.md or others' devlog/ fragments, edit .env, touch another directory.
 Task: <one concrete deliverable>
 ```

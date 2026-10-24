@@ -1,5 +1,7 @@
-# Replace handles with real GitHub usernames before first PR. Owner: Dev Ad.
-# Reviews are required from the owner of any path a PR touches.
+# Routing/notification only: GitHub auto-requests the owner of any path a PR touches. Owner: Dev Ad.
+# Not a merge gate: `main` requires 0 approvals and code-owner review is off; integration (Ad)
+# merges (GIT.md §4). Owner review is welcome and fast-tracked, never blocking.
+# Replace handles with real GitHub usernames before first PR.
 *                       @AD_HANDLE
 /contracts/             @AD_HANDLE
 /agentkit/              @AD_HANDLE
