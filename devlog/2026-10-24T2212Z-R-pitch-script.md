@@ -1,0 +1,1 @@
+- 2026-10-24T22:12Z · R · frontend: add the spoken pitch script for the four-laptop demo (docs only: frontend/docs/pitch-script.md + index row); next: rehearse it against the real battlefield and update the honest-status lines in the close to match what is live; blocked: none
