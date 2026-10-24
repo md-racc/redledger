@@ -217,6 +217,19 @@ class LedgerClient:
         return await self._get("/audit_log", agent=agent, day=day)
 
     # ---------- extension points (all agents) ----------
+    EXTENSION_AREAS = frozenset({"red", "green", "blue", "fe"})
+
+    async def get_extension(self, area: str, path: str, **params: Any) -> Any:
+        """GET a team extension route, `/api/x/<area>/<path>` (README §16), with this client's headers and
+        timeouts. The public way for an agent to read its own area's extension tables instead of `_get`.
+        Reads only: extension writes stay explicit methods so they carry the invocation's key."""
+        if area not in self.EXTENSION_AREAS:
+            raise ValueError(f"unknown extension area {area!r}")
+        rel = path.lstrip("/")
+        if not rel or ".." in rel.split("/") or "?" in rel or "#" in rel:
+            raise ValueError(f"bad extension path {path!r}")
+        return await self._get(f"/x/{area}/{rel}", **params)
+
     async def get_state(self, key: str) -> dict:
         """Per-agent JSON memory across turns (agent_state table). Returns {} if unset."""
         return await self._get(f"/state/{key}")
