@@ -1,0 +1,1 @@
+- 2026-10-24T03:34Z · M · blue: current review 3 preserve gate control boundaries and benign counterexamples; 94 Blue tests; next: dependent checkpoint; blocked: live Blue SDK binding unverified
