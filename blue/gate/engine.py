@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
+from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException
@@ -22,39 +23,96 @@ MAX_PENDING = 256
 _llm = LLMGate.from_env()
 
 
+def _posted_fields(value: Any) -> tuple[Any, ...]:
+    if isinstance(value, dict):
+        return ("object", tuple(sorted((key, _posted_fields(item)) for key, item in value.items())))
+    if isinstance(value, list):
+        return ("array", tuple(_posted_fields(item) for item in value))
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        number = Decimal(str(value))
+        return ("number", number if number.is_finite() else str(number))
+    return (type(value).__name__, value)
+
+
+@dataclass(frozen=True)
+class ActionBinding:
+    action: str
+    entity_type: str | None
+    entity_id: str | None
+    amount: Decimal | None
+    posted_fields: tuple[Any, ...] | None
+
+    @classmethod
+    def from_request(cls, req: GateRequest) -> ActionBinding:
+        return cls(
+            req.action,
+            req.entity_type,
+            None if req.action == "gl.post" else req.entity_id,
+            None if req.amount is None else Decimal(str(req.amount)),
+            _posted_fields(req.args) if req.action == "gl.post" else None,
+        )
+
+    def require_match(self, other: ActionBinding) -> None:
+        same_amount = self.amount == other.amount
+        if self.amount is not None and other.amount is not None:
+            # Match the ledger's sub-cent tolerance without binary-float cent-boundary drift.
+            same_amount = (
+                abs(self.amount - other.amount) < Decimal("0.01")
+                if self.amount.is_finite() and other.amount.is_finite()
+                else str(self.amount) == str(other.amount)
+            )
+        if (self.action, self.entity_type, self.entity_id, self.posted_fields) != (
+            other.action,
+            other.entity_type,
+            other.entity_id,
+            other.posted_fields,
+        ) or not same_amount:
+            raise HTTPException(409, "idempotency key reused for a different action")
+
+
+@dataclass
+class VerdictGeneration:
+    last: float
+    cache: VerdictCache
+    bindings: dict[str, ActionBinding] = field(default_factory=dict)
+
+
 class RetainedVerdicts:
     """Shard before VerdictCache's destructive capacity clear; retire only expired shards."""
 
     def __init__(self) -> None:
-        self.generations: list[tuple[float, VerdictCache]] = []
+        self.generations: list[VerdictGeneration] = []
 
     def prune(self) -> None:
         now = time.monotonic()
-        self.generations = [(last, cache) for last, cache in self.generations if now - last <= TTL]
+        self.generations = [generation for generation in self.generations if now - generation.last <= TTL]
 
-    def get(self, key: str) -> GateResponse | None:
+    def get(self, key: str, binding: ActionBinding) -> GateResponse | None:
         self.prune()
-        for _, cache in reversed(self.generations):
-            value = cache.get(key)
+        for generation in reversed(self.generations):
+            value = generation.cache.get(key)
             if value is not None:
+                generation.bindings[key].require_match(binding)
                 return value.model_copy(deep=True)
+            generation.bindings.pop(key, None)
         return None
 
     def size(self) -> int:
         self.prune()
-        return sum(len(cache._d) for _, cache in self.generations)
+        return sum(len(generation.cache._d) for generation in self.generations)
 
-    def put(self, key: str, value: GateResponse) -> None:
+    def put(self, key: str, value: GateResponse, binding: ActionBinding) -> None:
         self.prune()
-        if not self.generations or len(self.generations[-1][1]._d) >= 5000:
-            self.generations.append((time.monotonic(), VerdictCache(ttl_sec=TTL)))
-        _, cache = self.generations[-1]
-        cache.put(key, value.model_copy(deep=True))
-        self.generations[-1] = (time.monotonic(), cache)
+        if not self.generations or len(self.generations[-1].cache._d) >= 5000:
+            self.generations.append(VerdictGeneration(time.monotonic(), VerdictCache(ttl_sec=TTL)))
+        generation = self.generations[-1]
+        generation.cache.put(key, value.model_copy(deep=True))
+        generation.bindings[key] = binding
+        generation.last = time.monotonic()
 
 
 _cache = RetainedVerdicts()
-_pending: dict[str, asyncio.Task[GateResponse]] = {}
+_pending: dict[str, tuple[ActionBinding, asyncio.Task[GateResponse]]] = {}
 
 
 def namespace(req: GateRequest) -> str:
@@ -68,7 +126,7 @@ def _reason(hits: list[RuleHit], verdict: str) -> str:
     return f"{prefix} — {'; '.join(h.detail for h in hits)}"
 
 
-async def _compute(req: GateRequest, key: str, dry_run: bool = False) -> GateResponse:
+async def _compute(req: GateRequest, key: str, binding: ActionBinding, dry_run: bool = False) -> GateResponse:
     started = time.monotonic()
     try:
         hits = evaluate(req)
@@ -85,7 +143,7 @@ async def _compute(req: GateRequest, key: str, dry_run: bool = False) -> GateRes
             rules_fired=[hit.id for hit in hits],
             latency_ms=int((time.monotonic() - started) * 1000),
         )
-        _cache.put(key, response)
+        _cache.put(key, response, binding)
         return response
     finally:
         _pending.pop(key, None)
@@ -93,16 +151,20 @@ async def _compute(req: GateRequest, key: str, dry_run: bool = False) -> GateRes
 
 async def decide(req: GateRequest, *, dry_run: bool = False) -> GateResponse:
     key = namespace(req)
-    cached = _cache.get(key)
+    binding = ActionBinding.from_request(req)
+    cached = _cache.get(key, binding)
     if cached is not None:
         return cached
-    task = _pending.get(key)
-    if task is None:
+    pending = _pending.get(key)
+    if pending is None:
         # Reject new admission, never evict a verdict promised for 120 seconds.
         if len(_pending) >= MAX_PENDING or _cache.size() + len(_pending) >= MAX_ENTRIES:
             raise HTTPException(503, "gate capacity unavailable; retry later with the same key")
-        task = asyncio.create_task(_compute(req.model_copy(deep=True), key, dry_run))
-        _pending[key] = task
+        task = asyncio.create_task(_compute(req.model_copy(deep=True), key, binding, dry_run))
+        _pending[key] = (binding, task)
+    else:
+        original, task = pending
+        original.require_match(binding)
     # Disconnecting one caller must not cancel shared work or invalidate its receipt.
     return (await asyncio.shield(task)).model_copy(deep=True)
 
