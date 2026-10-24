@@ -1,0 +1,1 @@
+- 2026-10-24T07:26Z · Ad · battlefield: agentkit POST /reflect on every agent (shares the turn lock, DRY_RUN → dry_run_reflect, failures/timeouts keep the playbook), LedgerClient get/put_playbook + playbook_history, E1 model tests; next: E2a debriefs + E3 lineage runner; blocked: none

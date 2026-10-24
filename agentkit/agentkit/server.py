@@ -5,7 +5,7 @@
     from red.agent import RedAgent
     app = make_agent_app(RedAgent)
 
-Gives every agent /health and /turn with auth, timeouts, and logging handled identically.
+Gives every agent /health, /turn and /reflect with auth, timeouts, and logging handled identically.
 Red adds /schemes and blue adds /gate and /audit by passing `extra_routes`.
 """
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -21,7 +22,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 
 from .config import AgentSettings
 from .droid_agent import DroidAgent
-from .models import HealthResponse, TurnRequest, TurnResponse
+from .models import HealthResponse, ReflectRequest, ReflectResponse, TurnRequest, TurnResponse
 
 log = structlog.get_logger(__name__)
 
@@ -55,6 +56,26 @@ def make_agent_app(
             log.info("turn_start", agent=s.agent_name, episode_id=req.episode_id, day=req.day)
             resp = await agent.run_turn(req)
             log.info("turn_end", agent=s.agent_name, day=req.day, ok=resp.ok, duration=round(resp.duration_sec, 1))
+            return resp
+
+    @app.post("/reflect", response_model=ReflectResponse, dependencies=[Depends(auth)])
+    async def reflect(req: ReflectRequest) -> ReflectResponse:
+        if turn_lock.locked():  # one turn or reflection at a time, same as /turn
+            raise HTTPException(409, "turn already in progress")
+        async with turn_lock:
+            t0 = time.monotonic()
+            log.info("reflect_start", agent=s.agent_name, lineage_id=req.lineage_id, generation=req.generation, episode_id=req.episode_id)
+            resp = await agent.run_reflect(req)
+            log.info(
+                "reflect_end",
+                agent=s.agent_name,
+                lineage_id=req.lineage_id,
+                generation=req.generation,
+                ok=resp.ok,
+                changed=resp.playbook is not None,
+                factory_credits=resp.usage.factory_credits if resp.usage else None,
+                duration=round(time.monotonic() - t0, 1),
+            )
             return resp
 
     if extra_routes:
