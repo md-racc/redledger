@@ -1,0 +1,1 @@
+- 2026-10-24T04:06Z · Ad · battlefield: prod.sh takes PROD_HOST from env or ~/.config/redledger/prod_host instead of hardcoding the VM IP in the public repo; next: first live deploy; blocked: Factory key + models in production env

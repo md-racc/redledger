@@ -1,0 +1,1 @@
+- 2026-10-24T03:55Z · Ad · contracts: agent-facing GET /audit_log never returns red's rows or attacks.* actions (agent=red → [], operator unchanged); events.md legit_injected gains vendor_changes/new_vendors from battlefield/fp-bait; next: battlefield/agent-audit-view implements the filter; blocked: none

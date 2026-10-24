@@ -131,12 +131,18 @@ async def list_audit(
     agent: str | None = None, day: int | None = None, episode_id: str | None = None, limit: int = Query(500, le=5000), c: Caller = Depends(allow("blue"))
 ):
     ep = _ep(c, episode_id)
+    # Only red's legwork writes audit rows for entities that look like sim traffic, so to an agent a
+    # red row is provenance (AGENTS.md §3.4). Agents see green/blue rows only (an allowlist, plus no
+    # attacks.* actions as a backstop). `agent=red` is just an empty result, not a 403, so the filter
+    # itself isn't advertised. The operator sees everything. LIMIT applies after the filter.
     rows = await db.fetch(
-        "SELECT * FROM audit_log WHERE episode_id=$1 AND ($2::text IS NULL OR agent=$2) AND ($3::int IS NULL OR day=$3) ORDER BY id DESC LIMIT $4",
+        "SELECT * FROM audit_log WHERE episode_id=$1 AND ($2::text IS NULL OR agent=$2) AND ($3::int IS NULL OR day=$3)"
+        " AND (NOT $5::bool OR (agent IN ('green', 'blue') AND action NOT LIKE 'attacks.%')) ORDER BY id DESC LIMIT $4",
         ep,
         agent,
         day,
         limit,
+        c.is_agent,
     )
     return db.rows_to_list(rows)
 

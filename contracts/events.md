@@ -21,7 +21,7 @@ from the ordered stream of these; it never queries ledger tables.
 | `episode.ended` | battlefield | `{final_score: Score}` |
 | `episode.paused` / `episode.resumed` | battlefield | `{}` |
 | `controller.changed` | battlefield | `{from, to}` |
-| `day.started` | battlefield | `{day, legit_injected: {invoices, purchase_orders, expenses, bank_lines}}` |
+| `day.started` | battlefield | `{day, legit_injected: {invoices, purchase_orders, expenses, bank_lines, vendor_changes, new_vendors}}` — `vendor_changes`/`new_vendors` count legit bank-detail changes and new vendors (false-positive bait) |
 | `day.ended` | battlefield | `{day}` |
 | `turn.started` | battlefield | `{agent}` |
 | `turn.ended` | battlefield | `{agent, ok, summary?, duration_sec, factory_credits?}` |

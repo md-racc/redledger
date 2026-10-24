@@ -1,0 +1,1 @@
+- 2026-10-24T03:58Z · Ad · battlefield: agent-facing GET /audit_log returns only green/blue rows and no attacks.* actions (agent=red → []), operator unchanged; 6 DB tests; next: merge after contracts/agent-audit-view; blocked: none
