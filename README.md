@@ -275,6 +275,7 @@ New with the token split:
 | `AGENT_TOKEN` | battlefield, red, green, blue | Bearer for agent ↔ battlefield calls (any request with `X-Agent`) and green → blue `/gate`. Replaces `INTERNAL_TOKEN`, which still works as a fallback for both tokens |
 | `OPERATOR_TOKEN` | battlefield, frontend server, Makefile | Bearer for everything without `X-Agent`: control plane, `/fe/*`, `GET /events`, `/inputs`, `POST /ws/ticket`. Must differ from `AGENT_TOKEN` |
 | `MAX_CREDITS_PER_EPISODE` | battlefield | Pause an episode once its summed `factory_credits` reach this (`error` event, `where: credit_guard`; resume by hand). `0` = off |
+| `DRY_RUN_RED`, `DRY_RUN_GREEN`, `DRY_RUN_BLUE` | compose → each agent's `DRY_RUN` | Per-agent override of `DRY_RUN`; blank = follow `DRY_RUN`. Lets one agent run live while the others stay keyless |
 | `BATTLEFIELD_URL` | frontend **server** (`/api/bf/*` proxy) | Where the proxy forwards. Compose sets `http://battlefield:8000`; `.env.example` value is for `npm run dev` on the host |
 
 Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBLIC_WS_URL` stays
@@ -285,6 +286,7 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 | `AGENT_TOKEN`, `OPERATOR_TOKEN` | any two different strings | `openssl rand -hex 32` each; secrets |
 | `FACTORY_API_KEY` | **your own key**, or empty with `DRY_RUN=true` | dedicated prod key; secret; exists nowhere else |
 | `DROID_MODEL_RED/GREEN/BLUE` | a cheap / low-multiplier model | pinned prod models; variables |
+| `DRY_RUN`, `DRY_RUN_RED/GREEN/BLUE` | `DRY_RUN=true` for keyless dev; overrides blank | variables; e.g. `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=true` = red live only |
 | `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
 | `BLUE_GATE_LLM_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
 | `CRS_USERNAME`, `CRS_PASSWORD` | CRS sandbox login credentials, or empty (Blue returns `unknown`) | secrets; passed only to Blue at runtime |

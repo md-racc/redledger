@@ -24,15 +24,27 @@ from .readiness import live_readiness
 
 PROMPT = (Path(__file__).parent.parent / "prompts" / "audit.md").read_text()
 MAX_RECORDED_DAYS = 512
+# Observed by the #68 list-only Session (droid-sdk 0.5.0 / mcp 1.30.0).
+AUDIT_TOOL_IDS = (
+    "blue-ledger___benford_check",
+    "blue-ledger___crs_identity_check",
+    "blue-ledger___day_activity",
+    "blue-ledger___freeze_vendor",
+    "blue-ledger___post_report",
+    "blue-ledger___raise_flag",
+    "blue-ledger___vendor_dedupe",
+)
 
 
 class AuditAgent(DroidAgent):
     name = "blue"
-    autonomy = "low"
+    autonomy = "off"
+    identity = "strict"
     system_prompt = PROMPT
 
     def __init__(self, settings: AgentSettings):
         super().__init__(settings)
+        self._tool_ids = list(AUDIT_TOOL_IDS)
         self.audit_lock = TurnLock()
         self.completed: dict[tuple[str, int], tuple[TurnResponse, AuditOutcome]] = {}
         self.receipts: dict[tuple[str, int], list[ConfirmedEffect]] = {}
@@ -45,6 +57,15 @@ class AuditAgent(DroidAgent):
 
     async def dry_run_reflect(self, req: ReflectRequest) -> ReflectResponse:
         return learned.reflect(req)
+
+    def _expected_tool_ids(self) -> list[str]:
+        # Pin the observed allowlist, not names regenerated from a changed tool registry.
+        return list(AUDIT_TOOL_IDS)
+
+    async def on_permission(self, request: Any) -> Any:
+        from droid_sdk import ToolConfirmationOutcome  # lazy: keyless DRY_RUN needs no SDK
+
+        return request.respond(ToolConfirmationOutcome.PROCEED_ONCE)
 
     async def health(self) -> dict[str, Any]:
         # Service liveness is independent of live SDK readiness. Never probe on this route.
