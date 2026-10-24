@@ -3,7 +3,10 @@
 import asyncio
 import inspect
 import json
+import sys
 from contextlib import asynccontextmanager
+from enum import Enum
+from types import SimpleNamespace
 from uuid import UUID
 
 import httpx
@@ -20,6 +23,16 @@ from .audit_helpers import FakeLedger, bound_session, invoice, turn, vendor
 
 SDK_ID = "toolu_sdk_style_blue_0123456789"
 PRIVATE = "copied-private-marker"
+
+
+class PermissionOutcome(Enum):
+    PROCEED_ONCE = "proceed_once"
+
+
+@pytest.fixture(autouse=True)
+def permission_sdk(monkeypatch):
+    # Only the permission enum is needed; never import an optional or authenticated SDK.
+    monkeypatch.setitem(sys.modules, "droid_sdk", SimpleNamespace(ToolConfirmationOutcome=PermissionOutcome))
 
 
 @pytest.fixture(autouse=True)
@@ -98,9 +111,26 @@ async def shared_bridge(monkeypatch, responder=None):
             ctx.unbind(bindings)
 
 
-def call_shared(agent, emitter, fn, kwargs, *, tool_id=SDK_ID, source="stream"):
+async def call_shared(agent, emitter, fn, kwargs, *, tool_id=SDK_ID, source="stream", approved=True):
     registry = agent._new_registry(emitter)
     registry.observe(tool_id, f"blue-ledger___{fn._rl_tool[0]}", kwargs, source)
+    assert registry.require_permission and agent.identity_policy() == "strict"
+    if approved:
+        # Controlled approval for positive identity cases, through the actual OFF handler.
+        # A stream sighting alone is insufficient; negative cases explicitly leave it unapproved.
+        action = SimpleNamespace(
+            confirmation_type="mcp_tool",
+            server_name="blue-ledger",
+            actual_tool_name=fn._rl_tool[0],
+            tool_use=SimpleNamespace(id=tool_id, input=kwargs),
+        )
+        request = SimpleNamespace(
+            actions=[action],
+            options=[SimpleNamespace(value=PermissionOutcome.PROCEED_ONCE)],
+            respond=lambda value: SimpleNamespace(selected_option=value),
+        )
+        response = await agent._permission_entry(registry, request)
+        assert response.selected_option is PermissionOutcome.PROCEED_ONCE
     result = json.loads(agent._offload(fn, registry=registry)(**kwargs))
     registry.close()
     return result
@@ -116,7 +146,7 @@ async def test_shared_bridge_exact_id_events_write_and_receipt(monkeypatch, name
             kwargs = {"vendor_id": "v", "finding_ids": [f.id for f in session.snapshot.findings if f.vendor_id == "v"]}
         fn = getattr(tools, name)
         assert not any("invocation" in p or "tool_use_id" in p for p in inspect.signature(fn).parameters)
-        output = call_shared(agent, emitter, fn, kwargs)
+        output = await call_shared(agent, emitter, fn, kwargs)
         assert output.get("ok", True)
         assert emitter.events == [
             {"type": "agent.tool_call", "payload": {"tool": name, "args": kwargs, "tool_use_id": SDK_ID}},
@@ -152,7 +182,7 @@ async def test_shared_bridge_receipt_failure_is_not_success_or_raw_prose(monkeyp
 
     async with shared_bridge(monkeypatch, respond) as (agent, session, emitter, requests, timeline):
         kwargs = {"finding_id": session.snapshot.findings[0].id}
-        result = call_shared(agent, emitter, tools.raise_flag, kwargs)
+        result = await call_shared(agent, emitter, tools.raise_flag, kwargs)
         assert result == {"ok": False, "state": state}
         assert len(session.effects) == len(requests) == 1
         effect = session.effects[0]
@@ -160,7 +190,7 @@ async def test_shared_bridge_receipt_failure_is_not_success_or_raw_prose(monkeyp
         assert requests[0][0].headers["X-Tool-Use-Id"] == SDK_ID
         assert emitter.events[-1]["payload"] == {"tool_use_id": SDK_ID, "ok": False, "summary": "raise_flag: not confirmed"}
         assert "private" not in json.dumps(emitter.events) + json.dumps(result) + effect.detail
-        replay = call_shared(agent, emitter, tools.raise_flag, kwargs, tool_id="toolu_second")
+        replay = await call_shared(agent, emitter, tools.raise_flag, kwargs, tool_id="toolu_second")
         assert replay == {"ok": False, "state": state, "replayed": True}
         assert len(session.effects) == len(requests) == 1
         assert timeline == ["call", "write", "result", "call", "result"]
@@ -168,16 +198,53 @@ async def test_shared_bridge_receipt_failure_is_not_success_or_raw_prose(monkeyp
 
 async def test_shared_bridge_body_error_and_local_fallback_fail_closed(monkeypatch):
     async with shared_bridge(monkeypatch) as (agent, session, emitter, requests, _):
-        result = call_shared(agent, emitter, tools.raise_flag, {"finding_id": "unknown"})
+        result = await call_shared(agent, emitter, tools.raise_flag, {"finding_id": "unknown"})
         assert not result["ok"]
         assert emitter.events[-1]["payload"]["ok"] is False
-        # No registered SDK sighting: the copied private marker cannot authorize the local fallback.
+        # No registered SDK sighting: strict identity refuses before the Blue body can run.
         result = json.loads(agent._offload(tools.post_report)())
-        assert not result["ok"]
+        assert result == {
+            "error": True,
+            "identity": "unverified",
+            "not_run": True,
+            "tool": "post_report",
+            "detail": "no verified tool_use_id for this call",
+        }
         assert len(emitter.events) == 4
-        assert emitter.events[-1]["payload"]["ok"] is False
-        assert emitter.events[-1]["payload"]["summary"] == "post_report: not confirmed"
+        local = emitter.events[-2]["payload"]["tool_use_id"]
+        assert UUID(local).version == 4 and local not in {PRIVATE, SDK_ID}
+        assert emitter.events[-1]["payload"] == {"tool_use_id": local, "ok": False, "summary": json.dumps(result)}
+        assert "private" not in json.dumps(emitter.events) + json.dumps(result)
         assert not requests and not session.effects
+
+
+async def test_unapproved_stream_registration_has_only_refusal_pairs_and_no_effects(monkeypatch):
+    async with shared_bridge(monkeypatch) as (agent, session, emitter, requests, timeline):
+        output = await call_shared(agent, emitter, tools.post_report, {}, approved=False)
+        assert output == {
+            "error": True,
+            "identity": "unverified",
+            "not_run": True,
+            "tool": "post_report",
+            "detail": "no verified tool_use_id for this call",
+        }
+        assert timeline == ["call", "result", "call", "result"] and len(emitter.events) == 4
+        local = emitter.events[0]["payload"]["tool_use_id"]
+        assert UUID(local).version == 4 and local != SDK_ID
+        # D8: one pair for the refused execution and one for the registered ID that never ran.
+        assert emitter.events[0] == {"type": "agent.tool_call", "payload": {"tool": "post_report", "args": {}, "tool_use_id": local}}
+        assert emitter.events[1]["payload"] == {"tool_use_id": local, "ok": False, "summary": json.dumps(output)}
+        assert emitter.events[2] == {"type": "agent.tool_call", "payload": {"tool": "post_report", "args": {}, "tool_use_id": SDK_ID}}
+        registered = emitter.events[3]["payload"]
+        assert registered["tool_use_id"] == SDK_ID and registered["ok"] is False
+        assert json.loads(registered["summary"]) == {
+            "error": True,
+            "not_run": True,
+            "tool": "post_report",
+            "detail": "turn ended before the tool ran",
+        }
+        assert not requests and not session.effects
+        assert "private" not in json.dumps(emitter.events) + json.dumps(output)
 
 
 async def test_shared_bridge_deadline_keeps_unknown_receipt_and_one_failure_pair(monkeypatch):
@@ -187,7 +254,7 @@ async def test_shared_bridge_deadline_keeps_unknown_receipt_and_one_failure_pair
     async with shared_bridge(monkeypatch, interrupted) as (agent, session, emitter, requests, timeline):
         monkeypatch.setattr(agent, "_tool_budget_sec", lambda name: 0.02)
         kwargs = {"finding_id": session.snapshot.findings[0].id}
-        result = call_shared(agent, emitter, tools.raise_flag, kwargs)
+        result = await call_shared(agent, emitter, tools.raise_flag, kwargs)
         assert result["error"] is True and result["timeout"] is True
         assert len(session.effects) == len(requests) == 1
         effect = session.effects[0]
@@ -197,7 +264,7 @@ async def test_shared_bridge_deadline_keeps_unknown_receipt_and_one_failure_pair
         assert timeline == ["call", "write", "result"] and len(emitter.events) == 2
         assert emitter.events[-1]["payload"]["ok"] is False
         assert "private" not in json.dumps(emitter.events)
-        replay = call_shared(agent, emitter, tools.raise_flag, kwargs, tool_id="toolu_retry")
+        replay = await call_shared(agent, emitter, tools.raise_flag, kwargs, tool_id="toolu_retry")
         assert replay == {"ok": False, "state": "unknown", "replayed": True}
         assert len(requests) == len(session.effects) == 1 and len(emitter.events) == 4
 
