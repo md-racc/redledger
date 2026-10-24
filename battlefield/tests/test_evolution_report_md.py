@@ -106,3 +106,43 @@ def test_write_checked_writes_all_and_ignores_runs(tmp_path: Path) -> None:
     assert (tmp_path / "ln_1" / "gen-1" / "a.json").read_text() == "[]\n"
     assert (tmp_path / ".gitignore").read_text() == "*\n"
     assert sorted(p.name for p in tmp_path.iterdir()) == [".gitignore", "ln_1"]  # no temp dir left behind
+
+
+def test_soft_scan_skips_identifiers_but_keeps_secret_shapes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import uuid
+
+    ids = {
+        "tool_use_id": uuid.uuid4().hex,
+        "key": f"{uuid.uuid4().hex}:2",
+        "episode": "ep_" + "a1b2c3d4e5f6" * 3,
+        "tool": "toolu_01" + "AbCdEf1234567890" * 3,
+        "path": "/api/fe/lineages/ln_1/report/with/a/really/long/url/path/segment",
+        "prose": "task-assessment_for_vendor_onboarding_quarter_three_review",
+    }
+    assert er.soft_scan(json.dumps(ids)) == []
+    er._write_checked(tmp_path / "ln_1", {"gen-1/audit_log.jsonl": json.dumps(ids) + "\n"})
+    assert "WARNING" not in capsys.readouterr().err
+    hexkey = "9f" * 32  # openssl rand -hex 32
+    b64 = "Zk9vQmFyMTIzNDU2Nzg5MGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6"
+    assert {h[:4] for h in er.soft_scan(json.dumps({"k": hexkey, "b": b64}))} == {"9f9f", "Zk9v"}  # still warned
+    with pytest.raises(SystemExit) as e:  # a real-looking key still blocks
+        er._write_checked(tmp_path / "ln_2", {"report.json": json.dumps({**ids, "k": "sk-" + "Q1w2E3r4T5y6" * 3})})
+    assert e.value.code == 3 and not (tmp_path / "ln_2").exists()
+
+
+def test_demo_generations_never_retire_a_rule() -> None:
+    from app.evolution import report
+
+    def gen(n: int, demo: bool, rules: list[str]) -> dict:
+        return {"generation": n, "demo": demo, "blue_rules": [{"rule_id": r} for r in rules]}
+
+    gens = [gen(1, False, ["a", "b"]), gen(2, False, ["a", "learned:x"]), gen(3, True, ["a"]), gen(4, True, ["a"])]
+    out = report._rule_lifecycle(gens)
+    assert [r["rule_id"] for r in out["retired_rules"]] == ["b"]  # learned:x only went quiet in the shorter demos
+    assert out["learned_rules"] == [{"rule_id": "learned:x", "first_generation": 2}]
+
+
+def test_soft_scan_still_warns_on_underscore_prefixed_secrets() -> None:
+    assert er.soft_scan(json.dumps({"k": "sk_live_" + "abcdefghijklmnopqrstuvwxyz123456"}))
+    assert er.soft_scan(json.dumps({"api_key_" + "x": "api_key_" + "Zq9" * 14}))
+    assert not er.soft_scan(json.dumps({"tool": "toolu_01" + "AbCdEf1234567890" * 3}))
