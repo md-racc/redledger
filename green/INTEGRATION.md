@@ -4,8 +4,8 @@
 
 Contracts #80 supersede the mirror proposal: **Green never calls Blue**. Shared
 strict identity and `LedgerClient.prepare` are merged (#84), as are nullable pending
-deciders (#86) and preparation creation (#87). Consumption (step 2b, #89) is still
-unmerged at this checkpoint; no code depends on that branch.
+deciders (#86), preparation creation (#87), and consumption (step 2b, #89,
+`5d3dc03`). Green's handler/cause-accounting follow-up is now unblocked.
 
 `preparation.py` stages the eight existing mutation mappings and the contract's
 per-mode decisions against mocked Ledger HTTP. Preparation uses the SDK key
@@ -13,7 +13,7 @@ without consuming the first mutation's key. Its JSON cancellation comment carrie
 the cause; this is not yet wired to the production permission/cancellation path.
 The static CANCEL and pre-SDK live guard remain. No new model tools or AP policy.
 
-After consumption merges, integrate the handler and turn-local cause accounting;
+Next, integrate the handler and turn-local cause accounting;
 then prove exact first-session restrictions, OFF callbacks, CANCEL comment delivery,
 identity/header/event parity, bounded escalation holds, and no duplicate gating or
 writes in isolated acceptance. Mocked HTTP is not real SDK or database evidence.

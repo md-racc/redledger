@@ -11,10 +11,10 @@ ones when the controller is off so the baseline loses money. Don't make green su
 blue's job.
 
 `battlefield` remains the enforcement point. Live Green is intentionally disabled before
-Droid Session/tool execution pending preparation consumption and Green SDK acceptance,
+Droid Session/tool execution pending permission-handler integration and Green SDK acceptance,
 including exact tool restrictions and verified invocation correlation. The merged contract
 uses Battlefield preparations, not a Green → Blue mirror (#80, Option P). Shared strict identity
-and `LedgerClient.prepare` landed in #84; preparation creation landed in #87.
+and `LedgerClient.prepare` landed in #84; preparation creation/consumption landed in #87/#89.
 The permission handler still cancels with a static prerequisite message. Dormant helpers in
 `preparation.py` do not enable it. [INTEGRATION.md](INTEGRATION.md) separates current prerequisites
 from the superseded handoff; [IDENTITY.md](IDENTITY.md) records identity evidence limits.
@@ -76,7 +76,7 @@ from the superseded handoff; [IDENTITY.md](IDENTITY.md) records identity evidenc
   `:<n>` keys for subsequent writes, canceled-call pairs and copied clerk ContextVars.
   #84 refuses missing, ambiguous or conflicting identities in strict live turns; local UUIDs
   remain valid for DRY_RUN, not live Green. Adapter fixtures are not live SDK evidence.
-  Preparation consumption and verified Green SDK behavior remain release prerequisites.
+  Handler/cause integration and verified Green SDK behavior remain release prerequisites.
 
 ## Preparation staging, not live enablement
 
@@ -86,7 +86,8 @@ validation/key/turn conflicts cancel in every mode; availability or malformed-re
 fall back to inline gating only in off/shadow; enforce fails closed. Block decisions carry
 `control_hold` or `escalation_timeout`; failures carry `invalid_state` or `integration_failure`.
 Helpers never retry, consume a write key, execute a mutation, or invent an identity.
-They are not connected to `on_permission` while consumption (step 2b, #89) is unmerged.
+Consumption (#89) is merged; connecting these helpers to `on_permission` and turn-local cause
+accounting is a separate follow-up, not part of this dormant staging.
 Do not remove the pre-SDK guard or static CANCEL without separate Green acceptance.
 
 ## Realism work (shared with Ad)
@@ -150,7 +151,7 @@ if not, create `green/<topic>` from origin/main. Edit only inside `green/`,
 Never force-push, never merge, never touch another directory; if you need a contracts change,
 write the proposed diff into the PR description and stop. Run `make lint test-green` before
 each push. Everything must work with DRY_RUN=true. Current scope: trusting AP clerk foundation;
-live preparation integration waits for merged consumption and Green SDK acceptance. Never call Blue.
+live preparation execution waits for handler integration and Green SDK acceptance. Never call Blue.
 ```
 
 ## Don't

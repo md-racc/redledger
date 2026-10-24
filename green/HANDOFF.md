@@ -3,8 +3,8 @@
 **Historical proposal, not current integration instructions.** Contracts #80
 supersede the mirror/replay design below: Green never calls Blue. Strict identity
 and the preparation client (#84), pending-decider model (#86), and preparation
-creation (#87) are merged. See [INTEGRATION.md](INTEGRATION.md) for the current
-consumption/Green-acceptance prerequisites. Issue #78 lifts the old SDK-session
+creation/consumption (#87/#89) are merged. See [INTEGRATION.md](INTEGRATION.md) for
+the current handler/Green-acceptance prerequisites. Issue #78 lifts the old SDK-session
 hold, not the production live guard or Phase C gate. No SDK evidence is added here.
 
 Initial proposal prepared for Dev Ad and the parallel Blue session, 2026-10-23.
