@@ -163,9 +163,12 @@ once per agent, sequentially:
 POST /reflect
   { "lineage_id": "ln_…", "generation": 2, "episode_id": "ep_…",
     "review": { "generation": 2, "episode_id": "ep_…", "seed": 44, "score": Score,
-                "items": [ … same kinds as the debrief, every item of the generation,
-                          resolved or not; blue's false_positive items include all
-                          legit items it blocked/escalated/flagged/froze … ],
+                "items": [ … same kinds as the debrief plus the AAR-only kinds, covering every
+                          attack of the generation whether or not it resolved (the episode
+                          has ended, so nothing is still in play; an unresolved attack's
+                          outcome is as scored at the end), green's fraud items for every
+                          red item it acted on, and blue's false_positive / green's
+                          legit_blocked items for every legit item concerned … ],
                 "rules": [ { "rule_id": "…", "fired": 9, "on_red": 6, "on_legit": 3 } ],   # blue only
                 "history": [ { "generation": 1, "seed": 43, "score": Score,
                                "summary": { … per-agent counts by scheme / rule / outcome … } } ] },
