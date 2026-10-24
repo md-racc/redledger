@@ -20,7 +20,7 @@ rest of the frontend; without it, "Run episode" tries the live battlefield first
 
 Keys and controls: scroll or the rail to tour; *Skip intro*; in the arena drag to orbit, click an agent for its
 dossier (`Esc` closes), *Roster* lists every agent, *Run episode*, *Send agents in / back*, controller `off | shadow |
-enforce`, *Back to tour*.
+enforce`, *Auto-cam* (frames each fraud attempt), *Back to tour*.
 
 ## Checks
 
@@ -33,7 +33,8 @@ npm run typecheck && npm run lint && npm test && npm run build
 | file | covers |
 |---|---|
 | `lib/arena/sim.test.ts` | nav grid facts (lagoon / hall / rotunda), a clear path from every spawn, column push-out, spawn on walkable ground, convergence onto slots, an extraction and a block scene, holding an attack until its outcome, dispersal |
-| `lib/arena/director.test.ts` | event mapping, outcome without a launch, vendor freeze binding, rule aliases, dossier placeholders, live stats, overrides, vendor binding |
+| `lib/arena/director.test.ts` | event mapping, outcome without a launch, vendor freeze binding, rule aliases, dossier placeholders, live stats, overrides, vendor binding, per-day ledger tallies |
+| `lib/arena/pacing.test.ts` | the scroll pacing curve: monotonic, invertible, dwell share per chapter, slow-vs-fast ratio |
 | `lib/reducer.test.ts`, `lib/proxy.test.ts` | the existing suites |
 
 There are no automated browser tests; the visual path (intro, tour, arena, click-to-open, replay) was checked by hand in
@@ -64,9 +65,9 @@ tests will tell you if a spawn is no longer reachable.
 | `three-mesh-bvh` | fast raycasts against the Palace for the ground-height grid |
 | `zustand` | the small UI store (stage, hover, selection, sim phase) |
 | `next` 15.0.3 → 15.5.28, `react` / `react-dom` RC → 19 stable | R3F 9 needs stable React 19 |
-| fonts via `next/font/google` | Anton (title), Instrument Serif (captions, dossier quotes), JetBrains Mono (HUD, data) |
+| fonts | `next/font/google`: Anton (title lockup, HUD numbers), Instrument Serif (chapter titles, dossier quotes) and IBM Plex Serif (all the small text: HUD, labels, data rows; `--mono` in `app/arena.css`, falling back to Georgia). To change the small font, change that one variable |
 
-The Google fonts are fetched at build time; a build with no network access needs them swapped for `next/font/local`.
+Anton, Instrument Serif and IBM Plex Serif are fetched from Google Fonts at build time; a build with no network access needs them swapped for `next/font/local`.
 
 ## Troubleshooting
 

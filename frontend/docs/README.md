@@ -8,8 +8,10 @@ data-path dashboard still lives at `/ops`.
 |---|---|
 | [architecture.md](architecture.md) | the stage machine, the render loop, the file map, how state flows without re-rendering at 60 Hz |
 | [agents-and-events.md](agents-and-events.md) | who the 30 agents are, the backend ids they answer to, event → animation mapping, the sim's state machine |
+| [agent-design.md](agent-design.md) | what each of the 30 figures looks like (team base + role kit), how it is built and animated, how to add one |
 | [dossier-modal.md](dossier-modal.md) | the click-to-open modal: placeholders, live data, catalogs, host overrides, every field key |
 | [camera-and-tour.md](camera-and-tour.md) | the intro flight, the scroll rail, chapters, the arena orbit, how to edit waypoints |
+| [backdrop.md](backdrop.md) | the ledger crown wired to verdicts, skyline, searchlights, motes |
 | [palace-model.md](palace-model.md) | the glb files, coordinate system, generated site data, pathfinding, the cutaway, licence |
 | [performance-and-quality.md](performance-and-quality.md) | the quality ladder, `?q=`, what costs what, known limits |
 | [development.md](development.md) | running, env switches, tests, regenerating site data, troubleshooting |
@@ -28,8 +30,8 @@ With a battlefield running, set `BATTLEFIELD_URL`, `OPERATOR_TOKEN` and `NEXT_PU
 ## What was added in this branch
 
 - `app/page.tsx` the arena, `app/ops/page.tsx` the old skeleton, `app/arena.css` all overlay styling, `app/layout.tsx` fonts
-- `components/arena/**` the R3F scene and the HTML overlays
-- `lib/arena/**` simulation, pathfinding, event director, dossier data, store, quality, generated site data (+ tests)
+- `components/arena/**` the R3F scene (including the backdrop) and the HTML overlays
+- `lib/arena/**` simulation, pathfinding, event director, dossier data, scroll pacing, ledger tallies, store, quality, generated site data (+ tests)
 - `public/models/**` the two Palace glb files and their attribution; `public/basis/**` the KTX2 transcoder
 - `tools/gen-site-data.py` regenerates `lib/arena/siteData.ts`
 - `ARENA.md` a one-page overview, this `docs/` folder the detail

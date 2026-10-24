@@ -1,7 +1,8 @@
 # Agents and events
 
 The backend has three agents (red, green, blue). The arena shows what each is made of, as 30 figures in three groups.
-The roster and its backend ids are in `lib/arena/roster.ts`.
+The roster and its backend ids are in `lib/arena/roster.ts`. What each figure looks like (a distinct tell per scheme, an
+emblem per rule, a trade per client) is in [agent-design.md](agent-design.md).
 
 ## The roster
 
@@ -58,13 +59,13 @@ All coordinates are three.js world space of the glb (1 unit = 1 m, origin = rotu
 
 | | spawn anchor (x, z, radius) | where | slot ring radius |
 |---|---|---|---|
-| red | (-86, -12, 8) | lawn at the north colonnade tip | 13.4 |
-| blue | (78, -30, 8) | south shore lawn | 9.4 |
-| green | (-20, 42, 6) | lawn behind the rotunda | 5.2 |
+| red | (-86, -12, 8) | lawn at the north colonnade tip | 18.0 |
+| blue | (78, -30, 8) | south shore lawn | 12.5 |
+| green | (-20, 42, 6) | lawn behind the rotunda | 7.0 |
 
 Spawns are on open ground (nothing roofed overhead) so the aerial shots can see them. The slot rings put clients in the
 middle, guards around them and fraudsters outside, so an attack has to cut through the guards. Everything stays inside
-the r = 16 inner colonnade.
+the r = 23.85 outer colonnade (the r = 16 inner piers fade out in the arena and are not obstacles).
 
 ## Events → animation (`lib/arena/director.ts`)
 
@@ -92,14 +93,14 @@ carries the approve / block buttons for an open escalation (`api.resolve`).
 Pure TypeScript, no three.js, so it runs under vitest. `ArenaSim.update(dt)` is called once per frame.
 
 Agent modes: `idle` (fidgeting at its spawn) → `travel` (along an A* path to its slot) → `hold` (parked, drifting 0.7 m) →
-`approach` → `pitch` (fraudster working a client) → `return`; `dash` (guard intercepting at 15 m/s) and `caught`
+`approach` → `pitch` (fraudster working a client) → `return`; `dash` (guard intercepting at 24 m/s) and `caught`
 (fraudster neutralised). Status overlays: `ok`, `caught`, `drained`, `frozen`.
 
 Phases: `idle` → `converging` → `engaged` → `dispersing` → `idle`. Fraud scenes only start in `engaged`, one live scene per
 fraudster, and run `queued → approach → pitch → resolve → after`. Guards against hangs: a stalled agent skips its waypoint
 after 1.4 s, an approach that takes over 25 s completes, and a scene without a guard still ends.
 
-Movement: speeds are 7.6-9.4 m/s depending on team (stylised runners); intermediate waypoints are clipped at 1.3 m
+Movement: speeds are 11-16 m/s depending on team (fast, stylised sprinters; fraudsters 13.5-15.5, guards 14-16, clients 11-13; departures are staggered by only ~0.05 s each); intermediate waypoints are clipped at 1.3 m
 (they are only steering hints); a soft separation keeps agents 2.1 m apart; columns are circles the agents slide out of
 (`pushOutOfColumns`).
 

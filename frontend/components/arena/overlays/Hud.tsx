@@ -18,6 +18,8 @@ export function Hud({ feed }: { feed: Feed }) {
   const selected = useArena((s) => s.selectedId);
   const select = useArena((s) => s.select);
   const actions = useArena((s) => s.actions);
+  const cinematic = useArena((s) => s.cinematic);
+  const setCinematic = useArena((s) => s.setCinematic);
   const [roster, setRoster] = useState(false);
   const { state, source } = feed;
   const arenaFormed = simPhase === "engaged" || simPhase === "converging";
@@ -33,6 +35,7 @@ export function Hud({ feed }: { feed: Feed }) {
           {state.episodeId && <span className="hud-chip">day {state.currentDay}/{state.days}</span>}
         </div>
         <div className="hud-actions">
+          <button className="btn ghost" onClick={() => setCinematic(!cinematic)} aria-pressed={cinematic} title="The camera frames each fraud attempt as it plays out">Auto-cam <kbd>{cinematic ? "on" : "off"}</kbd></button>
           <button className="btn ghost" onClick={() => setRoster((v) => !v)} aria-expanded={roster}>Roster <kbd>{roster ? "–" : "+"}</kbd></button>
           <button className="btn ghost" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Back to tour <kbd>↑</kbd></button>
         </div>

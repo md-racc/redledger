@@ -30,9 +30,9 @@ export function ledgerTexture(): THREE.CanvasTexture {
   for (let y = 56; y < H; y += 26) { g.beginPath(); g.moveTo(14, y); g.lineTo(W - 14, y); g.stroke(); }
   g.lineWidth = 3;
   for (const x of [70, 330, 420]) { g.beginPath(); g.moveTo(x, 14); g.lineTo(x, H - 14); g.stroke(); }
-  g.fillStyle = "rgba(60,20,25,0.9)"; g.font = "bold 22px monospace";
+  g.fillStyle = "rgba(60,20,25,0.9)"; g.font = "bold 24px Georgia, serif";
   g.fillText("LEDGER", 90, 38);
-  g.font = "16px monospace";
+  g.font = "18px Georgia, serif";
   const rows = ["0412", "0413", "0414", "0415", "0416", "0417", "0418", "0419", "0420", "0421", "0422", "0423"];
   rows.forEach((r, i) => { const y = 78 + i * 26; g.fillText(r, 18, y); g.fillText((1200 + ((i * 937) % 8800)).toFixed(2), 342, y); });
   _ledger = new THREE.CanvasTexture(c);
@@ -52,7 +52,7 @@ export function glyphTexture(glyph: string, fg: string, bg: string): THREE.Canva
   const g = c.getContext("2d")!;
   g.fillStyle = bg; g.beginPath(); g.roundRect(4, 4, 120, 152, 14); g.fill();
   g.strokeStyle = fg; g.lineWidth = 6; g.beginPath(); g.roundRect(4, 4, 120, 152, 14); g.stroke();
-  g.fillStyle = fg; g.font = "bold 92px monospace"; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillStyle = fg; g.font = "bold 96px Georgia, serif"; g.textAlign = "center"; g.textBaseline = "middle";
   g.fillText(glyph, 64, 84);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;

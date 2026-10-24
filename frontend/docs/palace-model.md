@@ -75,7 +75,7 @@ The rotunda is roofed, so from above nobody on the floor is visible. In the aren
   `column_tan_inner`, `drum_band`) fade out and are then hidden, which also removes their shadows
 - sliced walls are rendered double-sided so they read as solid from inside
 
-Going back up the tour reverses it. The materials are matched by the names in the glb, so a renamed material needs
+A faint ring sweeps down with the cut plane as the building opens and vanishes once it lands. Going back up the tour reverses it. The materials are matched by the names in the glb, so a renamed material needs
 `HIDE_IN_ARENA` updating.
 
 ## Sky, water, light (`components/arena/Atmosphere.tsx`)

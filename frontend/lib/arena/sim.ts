@@ -147,7 +147,7 @@ export class ArenaSim {
     this.phase = "converging";
     let order = 0;
     for (const a of this.agents.values()) {
-      a.delay = order++ * 0.09 + this.rng() * 0.5;
+      a.delay = order++ * 0.05 + this.rng() * 0.3;
       this.sendTo(a, a.slot, "travel");
     }
   }
@@ -297,7 +297,7 @@ export class ArenaSim {
         case "approach":
         case "dash": {
           if (a.delay > 0) { a.delay -= dt; a.vel += (0 - a.vel) * Math.min(1, dt * 10); break; }
-          const sp = a.mode === "dash" ? DASH_SPEED : a.maxSpeed * (a.mode === "approach" ? 0.85 : 1);
+          const sp = a.mode === "dash" ? DASH_SPEED : a.maxSpeed * (a.mode === "approach" ? 0.9 : 1);
           const arrived = this.follow(a, dt, sp);
           if (arrived) this.onArrive(a);
           break;

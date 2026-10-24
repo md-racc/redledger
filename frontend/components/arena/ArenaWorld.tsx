@@ -7,6 +7,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { CENTER, SLOT_RING } from "@/lib/arena/config";
 import { DemoDriver, Director } from "@/lib/arena/director";
 import { buildNavGrid, mulberry32 } from "@/lib/arena/nav";
+import { cinema, HOLD_SECONDS } from "@/lib/arena/cinema";
 import { addPop, agePops, anchors, pops } from "@/lib/arena/popBus";
 import { ROSTER, TEAM_META, TEAMS } from "@/lib/arena/roster";
 import { ArenaSim, GOOD_OUTCOMES, type FxTone } from "@/lib/arena/sim";
@@ -109,6 +110,24 @@ export function ArenaWorld({ subscribe, ground, feedActive, onSim }: Props) {
       const y = g ? g.heightAt(a.x, a.z) : 0;
       animateFigure(h, a, { y, dt, t, hovered: st.hoveredId === a.spec.id, selected: st.selectedId === a.spec.id, engaged });
     }
+    // auto-cam: tell the camera what to frame (the live fraud scene and everyone in it)
+    const live = sim.scenes.find((s) => s.stage === "approach" || s.stage === "pitch" || s.stage === "resolve");
+    const sr = live && sim.agents.get(live.redId), sg = live && sim.agents.get(live.greenId);
+    if (live && sr && sg) {
+      const gd = live.stage === "resolve" && live.guardId ? sim.agents.get(live.guardId) : null;
+      const pts = gd ? [sr, sg, gd] : [sr, sg];
+      let span = 0;
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) span = Math.max(span, Math.hypot(pts[i].x - pts[j].x, pts[i].z - pts[j].z));
+      cinema.x = pts.reduce((n, p) => n + p.x, 0) / pts.length;
+      cinema.z = pts.reduce((n, p) => n + p.z, 0) / pts.length;
+      cinema.y = (g ? g.heightAt(cinema.x, cinema.z) : 0) + 2.5;
+      cinema.dist = Math.min(46, Math.max(32, span * 2 + 22));
+      cinema.active = true;
+      cinema.hold = HOLD_SECONDS;
+    } else if (cinema.active) {
+      cinema.hold -= dt;
+      if (cinema.hold <= 0) cinema.active = false;
+    }
     if (tmp.lastPhase !== sim.phase) { tmp.lastPhase = sim.phase; st.setSimPhase(sim.phase); }
 
     // one-shot effects from the sim
@@ -121,7 +140,7 @@ export function ArenaWorld({ subscribe, ground, feedActive, onSim }: Props) {
         r.mesh.position.set(fx.x, y + 0.2, fx.z);
         r.mesh.visible = true;
       } else {
-        addPop({ x: fx.x, y: y + 5.2, z: fx.z, text: fx.text, tone: fx.tone });
+        addPop({ x: fx.x, y: y + 6.6, z: fx.z, text: fx.text, tone: fx.tone });
       }
     }
     for (const r of rings) {
@@ -156,7 +175,7 @@ export function ArenaWorld({ subscribe, ground, feedActive, onSim }: Props) {
     const tagId = st.hoveredId ?? st.selectedId;
     const tagFig = tagId ? figures.get(tagId) : null;
     if (tagFig) {
-      tmp.v.copy(tagFig.root.position).setY(tagFig.root.position.y + 5.2).project(camera);
+      tmp.v.copy(tagFig.root.position).setY(tagFig.root.position.y + 7.2).project(camera);
       anchors.tag.on = tmp.v.z < 1;
       anchors.tag.sx = (tmp.v.x * 0.5 + 0.5) * size.width;
       anchors.tag.sy = (-tmp.v.y * 0.5 + 0.5) * size.height;
@@ -277,7 +296,8 @@ function ScanPlane() {
     const open = cutaway.height < CLEAR_Y - 2;
     ring.current.visible = disc.current.visible = open;
     if (!open) return;
-    const k = Math.min(1, (CLEAR_Y - cutaway.height) / 40);
+    // a ring that sweeps down with the cut plane, then vanishes once it lands
+    const k = Math.sin(Math.PI * Math.min(1, Math.max(0, (CLEAR_Y - cutaway.height) / (CLEAR_Y - CUT_Y))));
     ring.current.position.y = disc.current.position.y = cutaway.height + 0.05;
     (ring.current.material as THREE.MeshBasicMaterial).opacity = k * (0.3 + 0.1 * Math.sin(s.clock.elapsedTime * 3));
     (disc.current.material as THREE.MeshBasicMaterial).opacity = k * 0.05;
