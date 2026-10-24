@@ -211,6 +211,9 @@ class DroidAgent(ABC):
     # turns only: an execution with no unambiguous SDK-reported id never runs (agent.tool_result
     # {"error": true, "identity": <reason>, "not_run": true} under a local id), and ledger writes without
     # a verified invocation raise UnverifiedInvocation. Blue sets "strict"; red stays best_effort for now.
+    # A refused call therefore shows one pair per id, intended (D8): the local refusal pair for the
+    # execution, and, for each SDK id it could have matched (e.g. both ambiguous identical calls), that
+    # id's own not_run pair when the turn closes. Every id still gets exactly one pair.
     identity: str | None = None
 
     def __init__(self, settings: AgentSettings):
@@ -687,12 +690,12 @@ class DroidAgent(ABC):
         prefix = f"{self.name}-ledger___"
         try:
             listed = await session.list_tools()
-        except Exception as e:
+            seen = {t.id for t in listed if t.id.startswith(prefix)}
+        except Exception as e:  # best_effort (red, live): a listing we can't read never fails the turn
             if self._strict_live():
                 raise RuntimeError(f"strict identity: list_tools failed: {e}") from e
             log.warning("list_tools_failed", error=str(e))
             return
-        seen = {t.id for t in listed if t.id.startswith(prefix)}
         missing, extra = sorted(set(expected) - seen), sorted(seen - set(expected))
         if missing or extra:
             if self._strict_live():

@@ -127,3 +127,23 @@ async def test_gate_blocked_keeps_cause_escalation_and_preparation():
         with pytest.raises(GateBlocked) as e:
             await L.pay_invoice("inv_1")
     assert (e.value.cause, e.value.escalation_id, e.value.preparation_id) == ("gate_unavailable", "esc_1", "prep_1")
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "response,expected_body",
+    [
+        (httpx.Response(409, content=b"{not json", headers={"content-type": "application/json"}), "{not json"),
+        (httpx.Response(409, text="conflict"), "conflict"),
+        (
+            httpx.Response(409, json={"error": "preparation_unknown_kind", "preparation_id": "prep_1"}),
+            {"error": "preparation_unknown_kind", "preparation_id": "prep_1"},
+        ),
+    ],
+)
+async def test_malformed_or_unknown_409s_stay_plain_ledger_errors(response, expected_body):
+    respx.post("http://bf/api/invoices/inv_1/pay").mock(return_value=response)
+    async with _client(DRY) as L:
+        with pytest.raises(LedgerError) as e:
+            await L.pay_invoice("inv_1")
+    assert not isinstance(e.value, PreparationRejected) and e.value.status == 409 and e.value.body == expected_body

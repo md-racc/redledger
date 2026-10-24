@@ -181,3 +181,17 @@ def test_approval_threshold_defaults_and_reads_the_env(monkeypatch):
     assert AgentSettings(AGENT_NAME="red").approval_threshold == Decimal("5000")
     monkeypatch.setenv("APPROVAL_THRESHOLD", "7500.50")
     assert AgentSettings(AGENT_NAME="red").approval_threshold == Decimal("7500.50")
+
+
+async def test_best_effort_survives_an_unreadable_listing_and_strict_fails_on_it():
+    bad = types.SimpleNamespace(list_tools=None)
+
+    async def listing():
+        return [types.SimpleNamespace(name="no id attribute")]
+
+    bad.list_tools = listing
+    red = _RedLike(LIVE)
+    await red._learn_tool_ids(bad)  # logged list_tools_failed, turn continues
+    assert red._tool_ids is None
+    with pytest.raises(RuntimeError, match="list_tools failed"):
+        await _Strict(LIVE)._learn_tool_ids(bad)

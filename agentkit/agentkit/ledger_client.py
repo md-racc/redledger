@@ -26,6 +26,7 @@ import uuid
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from .config import AgentSettings
 from .invocation import VERIFIED_SOURCES, ToolUse, UnverifiedInvocation, current_invocation, strict_identity
@@ -57,7 +58,7 @@ class PreparationRejected(LedgerError):
 
     def __init__(self, body: dict[str, Any]):
         super().__init__(409, body)
-        parsed = PreparationRejectedBody.model_validate(body)
+        parsed = PreparationRejectedBody.model_validate(body)  # _handle only builds this from a valid body
         self.error: str = parsed.error
         self.preparation_id: str = parsed.preparation_id
         self.detail: str = parsed.detail
@@ -131,8 +132,15 @@ class LedgerClient:
     @staticmethod
     def _handle(r: httpx.Response) -> Any:
         if r.status_code == 409:
-            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"error": r.text}
-            if isinstance(body, dict) and str(body.get("error", "")).startswith("preparation_") and body.get("preparation_id"):
+            try:
+                body = r.json()
+            except Exception:
+                body = r.text  # as for any other error status: a malformed or non-JSON body is kept as text
+            if isinstance(body, dict) and str(body.get("error", "")).startswith("preparation_"):
+                try:
+                    PreparationRejectedBody.model_validate(body)
+                except ValidationError:
+                    raise LedgerError(409, body) from None  # an unknown preparation_* error stays a plain 409
                 raise PreparationRejected(body)
             raise LedgerError(409, body)
         if r.status_code == 403:
