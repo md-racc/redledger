@@ -68,6 +68,7 @@ services:
       AGENT_NAME: red
       PORT: "8001"
       DROID_MODEL: ${DROID_MODEL_RED:-}
+      DROID_REASONING: ${DROID_REASONING_RED:-}
     depends_on: [battlefield]
     ports: ["127.0.0.1:8001:8001"]
 
@@ -80,6 +81,7 @@ services:
       AGENT_NAME: green
       PORT: "8002"
       DROID_MODEL: ${DROID_MODEL_GREEN:-}
+      DROID_REASONING: ${DROID_REASONING_GREEN:-}
     depends_on: [battlefield, blue]
     ports: ["127.0.0.1:8002:8002"]
 
@@ -92,6 +94,7 @@ services:
       AGENT_NAME: blue
       PORT: "8003"
       DROID_MODEL: ${DROID_MODEL_BLUE:-}
+      DROID_REASONING: ${DROID_REASONING_BLUE:-}
       BLUE_GATE_LLM_PROVIDER: ${BLUE_GATE_LLM_PROVIDER:-}
       BLUE_GATE_LLM_API_KEY: ${BLUE_GATE_LLM_API_KEY:-}
       BLUE_GATE_LLM_MODEL: ${BLUE_GATE_LLM_MODEL:-}
