@@ -3,6 +3,7 @@
 import type { RLEvent } from "@/lib/types";
 import type { SyncMsg, SyncState, TrafficRow } from "@/lib/sync/hub";
 import { liveClients } from "@/lib/sync/hub";
+import { blueIdForRule } from "@/lib/arena/roster";
 
 export type TeamKey = "red" | "green" | "blue" | "battlefield";
 export const TEAM_KEYS: TeamKey[] = ["red", "green", "blue", "battlefield"];
@@ -53,7 +54,7 @@ export function concerns(e: RLEvent, selectedId: string | null | undefined): boo
   if (!selectedId) return false;
   const [team, key] = selectedId.split(":");
   if (team === "red") return p(e).scheme_id === key || e.agent === "red" && JSON.stringify(e.payload).includes(key);
-  if (team === "blue") return (Array.isArray(p(e).rules_fired) && p(e).rules_fired.includes(key)) || JSON.stringify(e.payload).includes(`"${key}"`);
+  if (team === "blue") return (Array.isArray(p(e).rules_fired) && p(e).rules_fired.some((r: string) => (blueIdForRule(r) ?? `blue:${r}`) === selectedId)) || JSON.stringify(e.payload).includes(`"${key}"`);
   return false;
 }
 

@@ -153,6 +153,7 @@ function EscalationBar({ feed }: { feed: Feed }) {
         <button className="esc-btn approve" onClick={() => void feed.resolveEscalation(e.escalation_id, "approve").catch(() => {})}><b>{x.approve.label}</b><span>{x.approve.result}</span></button>
         <button className="esc-btn block" onClick={() => void feed.resolveEscalation(e.escalation_id, "block").catch(() => {})}><b>{x.block.label}</b><span>{x.block.result}</span></button>
       </div>
+      <p className="escalation-foot">If nobody decides before the clock runs out, it is blocked.</p>
     </div>
   );
 }

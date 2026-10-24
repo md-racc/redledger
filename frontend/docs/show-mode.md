@@ -38,6 +38,16 @@ The show picks its source when it starts (`wantLive` in `useShow.ts`):
 
 `?show=live` or `?show=recorded` forces one. With live agents (credits, slow turns) it defaults to recorded.
 
+## When the operator is already running something
+
+Battlefield allows one active run at a time (contracts #122/#123); starting, resuming or stepping a second one answers `409 {error: "another run is active", episode_id, lineage_id}`. On stage the operator runs the live lineage or episode, and the screen should simply show it:
+
+- **Run episode** and **Launch attack** look for a running episode first (`GET /episodes`) and, if there is one (or on a 409 anyway), *join* it: the socket attaches to that episode with a full catch-up and the note reads "watching the run already in progress". A running **lineage** is followed generation to generation (`GET /lineages/{id}` every 3 s) until it finishes. A launched attack is queued on the running episode (red picks it up on its next turn) instead of creating a sandbox. No empty episode is left behind.
+- The **90-second show** cannot join: its off and on acts need their own episodes. With another run active, both acts play from the recording and the note says "the backend is busy with another run".
+- The backstage consoles follow the *running* episode before the newest one, so they stay on the run on stage.
+
+`lib/arena/activeRun.ts` (tested) parses the 409 and finds a lineage's current episode; `lib/api.ts` throws an `ApiError` that carries the status and body. The stand-in (`tools/fake-battlefield.mjs`) answers the same 409.
+
 ## Reading the screen: focus
 
 Thirty agents is a lot to look at. `lib/arena/focus.ts` keeps a set of whoever is in an interaction right now (the fraudster,
