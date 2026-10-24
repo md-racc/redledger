@@ -14,7 +14,8 @@ info:
     (e.g. any agent on `GET /events` or a control-plane route).
     Transition: each `AGENT_TOKEN_<A>` falls back to the shared `AGENT_TOKEN`, then `INTERNAL_TOKEN`
     (battlefield warns that per-agent separation is off); `OPERATOR_TOKEN` falls back to
-    `INTERNAL_TOKEN` (warning when it equals an agent token). See contracts/agent-service.md Tokens.
+    `INTERNAL_TOKEN`. Battlefield warns whenever any two resolved tokens (the three agent tokens and
+    `OPERATOR_TOKEN`) are equal, from any source; the prod deploy refuses equal values. See contracts/agent-service.md Tokens.
     Per-operation `security` below says which token(s) a route accepts. A route listing both
     accepts either: an agent with `X-Agent` + its own token, or the operator without `X-Agent`
     + `OPERATOR_TOKEN`.

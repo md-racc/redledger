@@ -28,8 +28,10 @@ Rules (battlefield enforces; see `ledger-api.yaml` per-route `security`):
 - Transition / single-token mode: battlefield resolves `AGENT_TOKEN_<A>` → shared `AGENT_TOKEN` →
   legacy `INTERNAL_TOKEN`, per agent. If any agent falls back to the shared token, battlefield logs a
   warning at startup that per-agent separation is off (any agent can then claim any `X-Agent`, as
-  before). `OPERATOR_TOKEN` falls back to `INTERNAL_TOKEN`; battlefield warns when it equals any agent
-  token. This keeps `DRY_RUN`, `make mock-agents` and `make local-stack` working with one token.
+  before). `OPERATOR_TOKEN` falls back to `INTERNAL_TOKEN`. Whatever their source, if **any two** of
+  the resolved `AGENT_TOKEN_RED`, `AGENT_TOKEN_GREEN`, `AGENT_TOKEN_BLUE`, `OPERATOR_TOKEN` are equal,
+  battlefield logs a startup warning naming which pair (never the values) — separation between them is
+  off. The prod deploy (`deploy/render-env.sh`) refuses to render equal values. This keeps `DRY_RUN`, `make mock-agents` and `make local-stack` working with one token.
   On the agent side nothing changes: `agentkit.AgentSettings.internal_token` keeps reading
   `AGENT_TOKEN`, then `INTERNAL_TOKEN`; deployment gives each container its own value.
 - The browser never holds an agent token or `OPERATOR_TOKEN`; no token goes in a `NEXT_PUBLIC_*` var.
