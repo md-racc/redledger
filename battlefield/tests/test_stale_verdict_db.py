@@ -127,10 +127,11 @@ async def test_shadow_block_replayed_under_enforce_is_stale_not_403(blue: dict[s
     async with _client() as cl:
         r = await cl.post(f"/api/invoices/{inv}/approve", headers=_green(ep, key))
     assert r.status_code == 409  # never the shadow block turned into an enforced 403
-    assert r.json()["verdict_id"] == shadow.verdict_id
+    assert r.json() == {"error": "stale verdict", "verdict_id": shadow.verdict_id}
     assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "pending"  # not marked blocked
     (row,) = await _audit(ep, key)
-    assert row["action"] == "invoices.approve" and row["http_status"] == 409 and row["result"]["verdict_id"] == shadow.verdict_id
+    assert row["action"] == "invoices.approve" and row["http_status"] == 409
+    assert row["result"] == {"error": "stale verdict", "verdict_id": shadow.verdict_id}
     assert len(blue["asked"]) == 1  # blue not re-asked
     assert await db.fetchval("SELECT count(*) FROM verdicts WHERE episode_id=$1", ep) == 1
 
@@ -155,7 +156,7 @@ async def test_preparation_does_not_reuse_a_stale_inline_verdict(blue: dict[str,
     await _set_mode(ep, "enforce")
     async with _client() as cl:
         r = await cl.post("/api/preparations", json={"action": "invoices.approve", "entity_id": inv, "args": {}}, headers=_green(ep, key))
-    assert r.status_code == 409
+    assert r.status_code == 409 and r.json()["error"] == "stale verdict"
     assert await db.fetchval("SELECT count(*) FROM preparations WHERE episode_id=$1", ep) == 0
     assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "pending"
     assert [a["http_status"] for a in await _audit(ep, key)] == [409]
@@ -192,7 +193,7 @@ async def test_escalation_approved_on_day_d_is_stale_on_day_d_plus_1(blue: dict[
     assert exc.value.detail == "day changed" and exc.value.verdict_id == first.verdict_id
     async with _client() as cl:
         r = await cl.post(f"/api/invoices/{inv}/approve", headers=_green(ep, key, day=4))
-    assert r.status_code == 409 and r.json()["verdict_id"] == first.verdict_id
+    assert r.status_code == 409 and r.json() == {"error": "stale verdict", "verdict_id": first.verdict_id}
     assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "pending"
     assert [(a["http_status"], a["result"]["verdict_id"]) for a in await _audit(ep, key)] == [(409, first.verdict_id)]
     assert await db.fetchval("SELECT count(*) FROM escalations WHERE episode_id=$1", ep) == 1

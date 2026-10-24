@@ -157,7 +157,7 @@ async def _load(table: str, id_: str, c: Caller, action: str, args: dict[str, An
 
 
 def _conflict_response(e: gate.IdempotencyConflictError) -> JSONResponse:
-    return JSONResponse(status_code=409, content={"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": e.verdict_id})
+    return JSONResponse(status_code=409, content={"error": e.error, "verdict_id": e.verdict_id})
 
 
 def _blocked_response(e: gate.GateBlockedError) -> JSONResponse:
@@ -363,7 +363,7 @@ async def _gated(
     try:
         return await gate.check(c, action=action, entity_type=entity_type, entity_id=entity["id"], amount=amount, args=args or {}, context=ctx)
     except gate.IdempotencyConflictError as e:
-        await audit.record(c, action, args or {"id": entity["id"]}, {"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": e.verdict_id}, 409)
+        await audit.record(c, action, args or {"id": entity["id"]}, {"error": e.error, "verdict_id": e.verdict_id}, 409)
         raise
     except gate.GateBlockedError as e:
         # conditional, so a block can never overwrite a transition a concurrent request already made
@@ -755,7 +755,7 @@ async def _post_gl(body: GlEntryCreate, c: Caller) -> Any:
             await audit.record(c, "gl.post", body.model_dump(), {"blocked": True, "reason": e.reason}, 403, e.verdict_id)
             return _blocked_response(e)
         except gate.IdempotencyConflictError as e:
-            await audit.record(c, "gl.post", body.model_dump(), {"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": e.verdict_id}, 409)
+            await audit.record(c, "gl.post", body.model_dump(), {"error": e.error, "verdict_id": e.verdict_id}, 409)
             return _conflict_response(e)
         vid = d.verdict_id
     # The 201 audit row is what a retry finds, so it commits atomically with the entry: a crash between
