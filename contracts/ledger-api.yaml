@@ -41,7 +41,7 @@ components:
     XAgent:     { name: X-Agent, in: header, required: true, schema: { type: string, enum: [red, green, blue] } }
     XEpisode:   { name: X-Episode, in: header, required: true, schema: { type: string } }
     XDay:       { name: X-Day, in: header, required: true, schema: { type: integer } }
-    XToolUseId: { name: X-Tool-Use-Id, in: header, required: true, schema: { type: string }, description: idempotency key }
+    XToolUseId: { name: X-Tool-Use-Id, in: header, required: true, schema: { type: string }, description: "idempotency key (Droid tool_use_id; n-th write of one tool call is <tool_use_id>:<n>). On gated green routes a key already judged for a different action/entity/amount gets 409 {error: 'idempotency key reused for a different action'} and is never replayed." }
     id:         { name: id, in: path, required: true, schema: { type: string } }
   schemas:
     Money: { type: number, format: double }

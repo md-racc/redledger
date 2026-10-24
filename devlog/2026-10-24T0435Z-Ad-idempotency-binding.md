@@ -1,0 +1,1 @@
+- 2026-10-24T04:35Z · Ad · contracts: bind idempotency keys to their first action (409 on reuse), <tool_use_id>:<n> for multi-write tool calls, green mirror = first write key; Droid CLI findings (no tool_use_id in MCP _meta; permission iff impact > autonomy); next: battlefield/agentkit-tool-identity; blocked: none
