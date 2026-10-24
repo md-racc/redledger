@@ -195,9 +195,15 @@ async def test_live_guard_precedes_sdk_import_session_or_tools(book, monkeypatch
     assert not book.calls and agent.autonomy == "off"
 
 
-async def test_permission_handler_always_cancels_with_static_prerequisite(monkeypatch):
+async def test_permission_handler_cancels_invalid_context_with_sanitized_cause(monkeypatch):
     # Only a fake enum/request. No assertion about SDK prompting, IDs or comment delivery.
     cancel = object()
     monkeypatch.setitem(sys.modules, "droid_sdk", SimpleNamespace(ToolConfirmationOutcome=SimpleNamespace(CANCEL=cancel)))
     request = SimpleNamespace(respond=lambda outcome, **kwargs: (outcome, kwargs))
-    assert await GreenAgent(S).on_permission(request) == (cancel, {"comment": PREREQUISITE})
+    outcome, kwargs = await GreenAgent(S).on_permission(request)
+    assert outcome is cancel
+    assert json.loads(kwargs["comment"]) == {
+        "cause": "integration_failure",
+        "reason": "Permission context unavailable or invalid.",
+        "verdict_cause": None,
+    }

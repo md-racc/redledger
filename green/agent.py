@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from workflow import clerk_scope, run_clerk
+from preparation import PreparationDecision, decide_preparation, preparation_for
+from workflow import Key, clerk_scope, run_clerk, state
 
 import tools as green_tools
-from agentkit import DroidAgent, EventEmitter, TurnRequest, TurnResponse, collect_tools
+from agentkit import DroidAgent, EventEmitter, TurnRequest, TurnResponse, collect_tools, ctx
+from agentkit.invocation import VERIFIED_SOURCES, ToolUse, current_registry
 from agentkit.models import Usage
 from agentkit.tools import ToolFn
 
@@ -16,6 +18,17 @@ PREREQUISITE = (
     "Green live integration prerequisite: merged shared preflight protocol, verified "
     "invocation identity and exact tool restrictions are required before Droid execution."
 )
+
+
+def permission_key(use: ToolUse) -> Key | None:
+    try:
+        mapped = preparation_for(use.tool, use.args)
+    except ValueError:
+        return None
+    if mapped is None or mapped.entity_id is None:
+        return None
+    kind = {"invoices": "invoice", "expenses": "expense", "vendor_changes": "vendor_change"}[mapped.action.split(".")[0]]
+    return kind, mapped.entity_id
 
 
 class GreenAgent(DroidAgent):
@@ -46,8 +59,32 @@ class GreenAgent(DroidAgent):
     async def on_permission(self, request: Any) -> Any:
         from droid_sdk import ToolConfirmationOutcome
 
-        # Never submit incomplete context or a fabricated key to Blue's verdict cache.
-        return request.respond(ToolConfirmationOutcome.CANCEL, comment=PREREQUISITE)
+        decision = PreparationDecision(False, "integration_failure", "Permission context unavailable or invalid.")
+        clerk, keys = None, []
+        try:
+            if current_registry() is None:
+                return request.respond(ToolConfirmationOutcome.CANCEL, comment=decision.comment)
+            uses = self.tool_uses(request)
+            keys = [key for use in uses if (key := permission_key(use)) is not None]
+            clerk = state()
+            if len(uses) > 1 or len(getattr(request, "actions", ()) or ()) > 1:
+                # One SDK response selects the whole batch; never prepare a partial batch.
+                decision = PreparationDecision(False, "integration_failure", "Submit separate tool requests; batched permissions are unsupported.")
+            elif len(uses) == 1:
+                use = uses[0]
+                if use.source not in VERIFIED_SOURCES or not isinstance(use.tool_use_id, str) or not use.tool_use_id.strip():
+                    decision = PreparationDecision(False, "integration_failure", "Verified SDK identity required.")
+                else:
+                    held = clerk.held_decision(keys[0]) if keys else None
+                    decision = held or await decide_preparation(ctx.ledger(), use, ctx.turn().controller_mode)
+        except Exception:
+            # Cancellation (BaseException) propagates. Never expose exception/body/argument text.
+            decision = PreparationDecision(False, "integration_failure", "Permission context unavailable or invalid.")
+        if not decision.proceed and clerk is not None:
+            for key in keys:
+                clerk.cancel(key, decision)
+        outcome = ToolConfirmationOutcome.PROCEED_ONCE if decision.proceed else ToolConfirmationOutcome.CANCEL
+        return request.respond(outcome, comment=decision.comment if not decision.proceed else "")
 
     async def dry_run_turn(self, req: TurnRequest) -> str:
         with clerk_scope(reuse=True):

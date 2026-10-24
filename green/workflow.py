@@ -13,8 +13,10 @@ from typing import Any
 
 import httpx
 import structlog
+from preparation import PreparationDecision
 
 from agentkit import GateBlocked, LedgerError, ctx
+from agentkit.models import CancelCause
 
 Key = tuple[str, str]
 log = structlog.get_logger(__name__)
@@ -53,6 +55,36 @@ class ClerkState:
     unknown: set[Key] = field(default_factory=set)
     attempted: set[tuple[str, Key]] = field(default_factory=set)
     confirmed: dict[str, dict[Key, Decimal]] = field(default_factory=dict)
+    cancellations: dict[CancelCause, set[Key]] = field(default_factory=dict)
+    cancellation_decisions: dict[Key, PreparationDecision] = field(default_factory=dict)
+    gate_unavailable: set[Key] = field(default_factory=set)
+
+    def held_decision(self, key: Key) -> PreparationDecision | None:
+        if key in self.cancellation_decisions:
+            return self.cancellation_decisions[key]
+        if key in self.blocked:
+            return PreparationDecision(False, "control_hold", "Entity already held this turn.")
+        if key in self.failures | self.uncertain | self.unknown:
+            return PreparationDecision(False, "integration_failure", "Entity already failed or uncertain this turn.")
+        if key in self.deferred:
+            return PreparationDecision(False, "invalid_state", "Entity already deferred this turn.")
+        return None
+
+    def cancel(self, key: Key, decision: PreparationDecision) -> None:
+        """Unique entity causes, preserving the first hold across tools and repeated callbacks."""
+        if decision.proceed or decision.cause is None or key in self.cancellation_decisions:
+            return
+        self.cancellation_decisions[key] = decision
+        self.cancellations.setdefault(decision.cause, set()).add(key)
+        if decision.verdict_cause == "gate_unavailable":
+            self.gate_unavailable.add(key)
+            self.failures.add(key)
+        elif decision.cause in ("control_hold", "escalation_timeout"):
+            self.blocked.add(key)
+        elif decision.cause == "integration_failure":
+            self.failures.add(key)
+        else:
+            self.deferred.add(key)
 
     def confirm(self, action: str, key: Key, amount: Decimal = Decimal("0")) -> None:
         self.confirmed.setdefault(action, {})[key] = amount
@@ -62,11 +94,17 @@ class ClerkState:
         labels = ("vendor_change.approve", "invoice.match", "invoice.approve", "invoice.pay", "expense.approve", "expense.pay")
         counts = ", ".join(f"{label} {len(self.confirmed.get(label, {}))}" for label in labels)
         total = sum((sum(self.confirmed.get(label, {}).values(), Decimal("0")) for label in ("invoice.pay", "expense.pay")), Decimal("0"))
-        return (
+        summary = (
             f"confirmed {counts}; paid ${total:.2f}; blocked {len(self.blocked)}, "
             f"deferred {len(self.deferred - self.blocked - self.failures - self.unknown)}, "
             f"failures {len(self.failures - self.blocked - self.unknown)}, unknown {len(self.unknown)}"
         )
+        if self.cancellations:
+            causes = ("control_hold", "escalation_timeout", "integration_failure", "invalid_state")
+            summary += "; cancellations " + ", ".join(f"{cause} {len(self.cancellations.get(cause, set()))}" for cause in causes)
+            if self.gate_unavailable:
+                summary += f"; gate_unavailable {len(self.gate_unavailable)}"
+        return summary
 
 
 _state: ContextVar[ClerkState | None] = ContextVar("green_clerk", default=None)
