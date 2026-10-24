@@ -1,0 +1,1 @@
+- 2026-10-24T15:30Z · Ad · battlefield: turn loop cancels leftover tasks (asyncio.run-style, bounded 2 s) before closing — fixes prod red's 'Task was destroyed but it is pending' (sse_starlette _shutdown_watcher); next: strict identity (step 3); blocked: none
