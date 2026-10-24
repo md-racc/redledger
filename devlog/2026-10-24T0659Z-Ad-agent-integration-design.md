@@ -1,0 +1,1 @@
+- 2026-10-24T06:59Z · Ad · docs: agent integration design (packages A/B) with Ad's decisions D1–D14 accepted, D10 moot after #52, D15 live probe on hold; green→blue mirror dropped (tell M); next: contracts/gate-preparation (PR1); blocked: none
