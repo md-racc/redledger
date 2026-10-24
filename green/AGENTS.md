@@ -136,8 +136,20 @@ paid/approved/blocked/rejected). Legit items you had blocked arrive only in the 
 - Playbook: `ledger.get_playbook()` / `ledger.put_playbook(...)` inside your turn (procedures as data).
   These shared APIs are not current Green model tools. Writes require an active turn;
   reflection returns content for Battlefield to persist, never calls `put_playbook`.
-- Override `reflect(req)` / `dry_run_reflect(req)` to turn the after-action review into the next
-  playbook; the agentkit default keeps it. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
+- `reflect(req)` and `dry_run_reflect(req)` share deterministic, keyless AAR reflection in
+  `playbook.py`; Battlefield persists the returned content. Reflection performs no ledger I/O.
+- The reserved `green_reflection` object stores schema version 1, latest-review counts of unique
+  entities (fraud paid/approved/blocked/rejected versus legitimate blocked), and up to three fixed
+  procedural reminders retained across reviews. Duplicate disclosures count once; conflicting
+  outcomes for one entity are ignored. Counts are snapshots, not cumulative totals.
+- Only valid Green `fraud` / AAR-only `legit_blocked` items are used (at most 2000; IDs up to 128
+  characters). No raw items, identifiers, amounts, field values, source prose, scores, history or
+  other agents' internals are learned. Unrelated operator content, including unknown namespace
+  fields, is preserved; incompatible namespace versions and oversized content are kept unchanged.
+- This is stored reflection memory, **not changed AP policy**: neither `build_prompt` nor the
+  keyless clerk consumes it or daily debriefs yet. Active-turn consumption needs a separate PR;
+  do not add playbook tools/writes without fresh tool-ID acceptance. Live Green and the static
+  CANCEL handler remain guarded. Contract: `contracts/agent-service.md` (Lineages).
 
 ## Paste this to your coding agent as its first message
 

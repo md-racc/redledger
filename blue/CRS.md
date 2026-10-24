@@ -63,15 +63,17 @@ remain separate acceptance steps; mocked audit-to-gate tests are not evidence of
 
 ## M-owned acceptance and Ad handoff
 
-The droid-sdk 0.5.0 / mcp 1.30.0 registry matched seven schemas and rejected metadata arguments.
-Readiness stayed false: the shared bridge blocked its owner-loop heartbeat and used a local,
-unverified invocation. A separate real, list-only Session matched all seven IDs without streaming.
+The historical droid-sdk 0.5.0 / mcp 1.30.0 probe matched seven schemas and rejected metadata
+arguments, but blocked its owner-loop heartbeat and used a local, unverified invocation. A
+separate real, list-only Session matched all seven IDs without streaming. #79 now isolates the
+turn loop; Blue's shared narration, TurnLock and canned cross-loop tests are covered in
+`SDK-READINESS.md`. These offline checks do not qualify authenticated SDK traffic or CRS access.
+Readiness remains false and the live guard remains intact.
 
 | Remaining check | Owner |
 |---|---|
-| Bind Blue receipts to verified shared invocation IDs and avoid duplicate narration | M, Blue-only follow-up; retain the live guard |
-| Nonblocking shared SDK bridge, cancellation and owner-loop safety, concurrent gate budget | Ad (`agentkit/`); do not fork the shared lifecycle inside Blue |
-| Authenticated SDK-to-write receipts using the observed seven IDs | M, after the shared bridge is safe |
+| Strict identity, exact-ID restriction and authenticated SDK-to-write receipts | Ad supplies shared strict identity; M adopts it and proves real receipts using the observed seven IDs |
+| Actual SDK cancellation/ownership and concurrent gate budget | Ad + M; #79 and canned cross-loop tests are prerequisites, not live proof |
 | Apply schema, prepare valid-HR employees with distinct accounts, bind P01/P12/P16 (P4) | Ad/operator prepares; M binds through the operator extension, never core-table writes |
 | Clean/mismatch/step-up episodes, a later CRS-caused expense hold, and `billable:false` logs | M/operator with an authorized environment; unknown and step-up remain neutral |
 
