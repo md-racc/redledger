@@ -7,6 +7,7 @@
 #   deploy/prod.sh step|pause|resume|score|wait|credits EP
 #   deploy/prod.sh toggle EP off|shadow|enforce
 #   deploy/prod.sh attack EP SCHEME [PARAMS_JSON]
+#   deploy/prod.sh fixtures EP FILE           seed operator fixtures (legit employees/expenses) from a local JSON file
 #   deploy/prod.sh escalations [EP]
 #   deploy/prod.sh resolve ESC approve|block
 #   deploy/prod.sh record EP [NAME]          # -> battlefield/fixtures/episodes/<NAME or EP>.jsonl
@@ -259,6 +260,9 @@ elif OP == "attack":
     ep, scheme, params = ARGS
     body = {"scheme_id": scheme, "params": parse_json(params or "{}", dict, "PARAMS_JSON")}
     show(call("POST", "/episodes/%s/attack" % seg(ep), body))
+elif OP == "fixtures":
+    ep, raw = ARGS
+    show(call("POST", "/episodes/%s/fixtures" % seg(ep), parse_json(raw, dict, "FILE")))
 elif OP == "escalations":
     (ep,) = ARGS
     q = {"status": "open"}
@@ -597,6 +601,11 @@ main() {
     attack)
       need EP "${1:-}"; need SCHEME "${2:-}"; check_id EP "$1"; check_id SCHEME "$2"
       py "$HTTP_TIMEOUT" attack "$1" "$2" "${3:-}" ;;
+    fixtures)
+      need EP "${1:-}"; need FILE "${2:-}"; check_id EP "$1"
+      [[ -f "$2" && -r "$2" ]] || die "FILE must be a readable local JSON file"
+      (( $(wc -c <"$2") <= 65536 )) || die "FILE must be at most 64 KiB"
+      py "$HTTP_TIMEOUT" fixtures "$1" "$(cat -- "$2")" ;;
     escalations)
       [[ -z "${1:-}" ]] || check_id EP "$1"
       py "$HTTP_TIMEOUT" escalations "${1:-}" ;;
