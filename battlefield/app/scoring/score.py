@@ -12,11 +12,28 @@ from .. import db
 from ..config import settings
 from ..events import bus
 
-# Payments that went to an account installed by an approved red bank_account change. Red-origin
-# invoices are excluded: they are already scored through their own attack_id / origin_of_source.
+
+def _live(col: str, lo: str, hi: str) -> str:
+    """A red bank_account change is live from its resolved_day (lo) until the vendor's next approved
+    bank_account change of any origin (hi; NULL = still live)."""
+    return f"{col} >= {lo} AND ({hi}::int IS NULL OR {col} < {hi})"
+
+
+# Payments diverted to the swapped account while it was live. Red-origin invoices are excluded:
+# they are already scored through their own attack_id / origin_of_source.
 _SWAP_PAYMENTS_SQL = (
-    "SELECT p.id, p.amount FROM payments p JOIN invoices i ON i.id=p.invoice_id "
-    "WHERE p.episode_id=$1 AND i.vendor_id=$2 AND p.to_account=$3 AND p.paid_day >= $4 AND p.origin_of_source <> 'red'"
+    "SELECT p.id, p.invoice_id, p.amount FROM payments p JOIN invoices i ON i.id=p.invoice_id "
+    "WHERE p.episode_id=$1 AND i.vendor_id=$2 AND p.to_account=$3 AND p.origin_of_source <> 'red' AND " + _live("p.paid_day", "$4", "$5")
+)
+
+# Non-red invoices of the swapped vendor the controller stopped while the swap was live (caught at
+# pay time): a block/escalate verdict, or status blocked/rejected, inside the window.
+_SWAP_STOPPED_SQL = (
+    "SELECT i.id, i.amount, i.status FROM invoices i WHERE i.episode_id=$1 AND i.vendor_id=$2 AND i.origin <> 'red' AND ("
+    "  (i.status IN ('blocked','rejected') AND " + _live("i.status_day", "$3", "$4") + ")"
+    "  OR EXISTS (SELECT 1 FROM verdicts v WHERE v.episode_id=$1 AND v.entity_id=i.id AND v.verdict IN ('block','escalate') AND "
+    + _live("v.day", "$3", "$4")
+    + "))"
 )
 
 
@@ -29,52 +46,71 @@ async def _linked_attacks(episode_id: str) -> set[str]:
     return {r["attack_id"] for r in rows}
 
 
-async def _red_vendor_changes(episode_id: str, attacks: list[Any], linked: set[str]) -> dict[str, list[dict[str, Any]]]:
-    """Attribute red-origin vendor_changes to attacks and resolve each change's state.
+async def _red_changes(episode_id: str) -> list[dict[str, Any]]:
+    """Every origin='red' vendor_change, resolved against ledger state.
+
+    Each dict gets:
+      payments  {payment_id: amount}  diverted to the swapped account while it was live
+      paid_invoices  {invoice_id}     the invoices behind those payments
+      stopped   {invoice_id}          the vendor's non-red invoices stopped while the swap was live
+      blocked_invoices {invoice_id: amount}  the subset of `stopped` that ended blocked/rejected
+      state     blocked | pending | extracted | done
+    """
+    changes = await db.fetch(
+        "SELECT ch.*, v.status AS vendor_status, ("
+        "  SELECT MIN(n.resolved_day) FROM vendor_changes n WHERE n.episode_id=ch.episode_id AND n.vendor_id=ch.vendor_id "
+        "  AND n.field='bank_account' AND n.status='approved' AND n.resolved_day > ch.resolved_day"
+        ") AS next_resolved_day "
+        "FROM vendor_changes ch JOIN vendors v ON v.id=ch.vendor_id WHERE ch.episode_id=$1 AND ch.origin='red'",
+        episode_id,
+    )
+    out: list[dict[str, Any]] = []
+    for ch in changes:
+        d = dict(ch)
+        d["payments"], d["paid_invoices"], d["stopped"], d["blocked_invoices"] = {}, set(), set(), {}
+        swap = d["status"] == "approved" and d["field"] == "bank_account" and d["resolved_day"] is not None
+        if swap:
+            # approve_change writes vendors.bank_account=new_value and resolved_day=<approval day>
+            lo, hi = d["resolved_day"], d["next_resolved_day"]
+            for p in await db.fetch(_SWAP_PAYMENTS_SQL, episode_id, d["vendor_id"], d["new_value"], lo, hi):
+                d["payments"][p["id"]] = float(p["amount"])
+                d["paid_invoices"].add(p["invoice_id"])
+            for i in await db.fetch(_SWAP_STOPPED_SQL, episode_id, d["vendor_id"], lo, hi):
+                d["stopped"].add(i["id"])
+                if i["status"] in ("blocked", "rejected"):
+                    d["blocked_invoices"][i["id"]] = float(i["amount"])
+        if d["status"] in ("blocked", "rejected") or d["vendor_status"] == "frozen" or d["blocked_invoices"]:
+            d["state"] = "blocked"  # stopped at the change, by a freeze, or at pay time
+        elif d["status"] == "pending":
+            d["state"] = "pending"
+        elif swap:
+            d["state"] = "extracted" if d["payments"] else "pending"  # approved, waiting for the next payment run
+        else:
+            d["state"] = "done"  # approved non-bank change: no money moves through it
+        out.append(d)
+    return out
+
+
+def _attribute(changes: list[dict[str, Any]], attacks: list[Any], linked: set[str]) -> dict[str, list[dict[str, Any]]]:
+    """Attribute red vendor_changes to attacks.
 
     `vendor_changes` has no `attack_id`, so attribution is a heuristic: a red change belongs to the
     attacks launched on its `requested_day`; when several attacks launched that day, it goes to
     the ones with no linked invoice/expense rows, and only if every attack that day has rows does
-    it go to all of them. Two change-only attacks on one day therefore share each other's changes.
-    The real fix is `attack_id` on `vendor_changes` (contracts change).
-
-    Each change dict gets `state` (blocked | pending | extracted | done) and `payments`
-    ({payment_id: amount}).
+    it go to all of them. Two change-only attacks on one day therefore share each other's changes,
+    and a change on a day with no attack is attributed to nobody. The real fix is `attack_id` on
+    `vendor_changes` (contracts change).
     """
-    if not attacks:
-        return {}
-    changes = await db.fetch(
-        "SELECT ch.*, v.status AS vendor_status FROM vendor_changes ch JOIN vendors v ON v.id=ch.vendor_id WHERE ch.episode_id=$1 AND ch.origin='red'",
-        episode_id,
-    )
-    if not changes:
-        return {}
     by_day: dict[int, list[str]] = defaultdict(list)
     for a in attacks:
         by_day[a["day_launched"]].append(a["id"])
-
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for ch in changes:
         day_attacks = by_day.get(ch["requested_day"])
         if not day_attacks:
             continue
-        targets = [aid for aid in day_attacks if aid not in linked] or day_attacks
-        d = dict(ch)
-        d["payments"] = {}
-        if d["status"] == "approved" and d["field"] == "bank_account" and d["resolved_day"] is not None:
-            # approve_change writes vendors.bank_account=new_value and resolved_day=<approval day>
-            pays = await db.fetch(_SWAP_PAYMENTS_SQL, episode_id, d["vendor_id"], d["new_value"], d["resolved_day"])
-            d["payments"] = {p["id"]: float(p["amount"]) for p in pays}
-        if d["status"] in ("blocked", "rejected") or d["vendor_status"] == "frozen":
-            d["state"] = "blocked"
-        elif d["status"] == "pending":
-            d["state"] = "pending"
-        elif d["field"] == "bank_account" and d["status"] == "approved":
-            d["state"] = "extracted" if d["payments"] else "pending"  # approved, waiting for the next payment run
-        else:
-            d["state"] = "done"  # approved non-bank change: no money moves through it
-        for aid in targets:
-            out[aid].append(d)
+        for aid in [aid for aid in day_attacks if aid not in linked] or day_attacks:
+            out[aid].append(ch)
     return out
 
 
@@ -82,7 +118,7 @@ async def resolve_attacks(episode_id: str, day: int) -> list[dict[str, Any]]:
     """Update attacks.outcome / amount_extracted / detected_day from ledger state. Returns changed attacks."""
     changed: list[dict[str, Any]] = []
     attacks = await db.fetch("SELECT * FROM attacks WHERE episode_id=$1", episode_id)
-    red_changes = await _red_vendor_changes(episode_id, attacks, await _linked_attacks(episode_id))
+    red_changes = _attribute(await _red_changes(episode_id), attacks, await _linked_attacks(episode_id))
     for a in attacks:
         aid = a["id"]
         rows = await db.fetch(
@@ -92,21 +128,25 @@ async def resolve_attacks(episode_id: str, day: int) -> list[dict[str, Any]]:
         )
         chs = red_changes.get(aid, [])
         entities = bool(rows or chs)
-        extracted = sum(float(r["amount"]) for r in rows if r["status"] == "paid") + sum(sum(ch["payments"].values()) for ch in chs)
+        swap_payments = {pid: amt for ch in chs for pid, amt in ch["payments"].items()}  # each payment once
+        extracted = sum(float(r["amount"]) for r in rows if r["status"] == "paid") + sum(swap_payments.values())
         blocked = [r for r in rows if r["status"] in ("blocked", "rejected")] + [ch for ch in chs if ch["state"] == "blocked"]
         pending = [r for r in rows if r["status"] in ("pending", "matched", "approved")] + [ch for ch in chs if ch["state"] == "pending"]
 
-        # detection: earliest block verdict or flag touching the attack's entities
-        ids = [r["id"] for r in rows] + [r["owner_id"] for r in rows] + [ch["id"] for ch in chs] + [ch["vendor_id"] for ch in chs]
+        # detection: earliest block verdict or flag touching the attack's entities, on or after launch
+        ids = [r["id"] for r in rows] + [r["owner_id"] for r in rows]
+        for ch in chs:
+            ids += [ch["id"], ch["vendor_id"], *ch["stopped"]]
         detected_day = None
         if ids:
             detected_day = await db.fetchval(
                 "SELECT MIN(d) FROM ("
-                "  SELECT day AS d FROM verdicts WHERE episode_id=$1 AND verdict IN ('block','escalate') AND entity_id = ANY($2::text[]) "
-                "  UNION ALL SELECT day FROM flags WHERE episode_id=$1 AND entity_id = ANY($2::text[])"
+                "  SELECT day AS d FROM verdicts WHERE episode_id=$1 AND verdict IN ('block','escalate') AND entity_id = ANY($2::text[]) AND day >= $3 "
+                "  UNION ALL SELECT day FROM flags WHERE episode_id=$1 AND entity_id = ANY($2::text[]) AND day >= $3"
                 ") x",
                 episode_id,
                 ids,
+                a["day_launched"],
             )
         frozen = await db.fetchval("SELECT COUNT(*) FROM vendors v JOIN invoices i ON i.vendor_id=v.id WHERE i.attack_id=$1 AND v.status='frozen'", aid)
 
@@ -145,41 +185,57 @@ async def compute(episode_id: str) -> dict[str, Any]:
         )
     )
 
-    # bank_swap: payments diverted by attributed red bank_account changes (each payment once), and
-    # the target of change-only attacks whose every change was stopped.
+    # bank_swap: payments diverted by attributed red bank_account changes and sim invoices stopped at
+    # pay time (each once), plus the target of change-only attacks stopped at the change itself.
     attacks = await db.fetch("SELECT id, day_launched, target_amount FROM attacks WHERE episode_id=$1", episode_id)
     linked = await _linked_attacks(episode_id)
-    red_changes = await _red_vendor_changes(episode_id, attacks, linked)
+    all_changes = await _red_changes(episode_id)
+    red_changes = _attribute(all_changes, attacks, linked)
     swap_payments: dict[str, float] = {}
+    swap_blocked: dict[str, float] = {}
     for chs in red_changes.values():
         for ch in chs:
             swap_payments.update(ch["payments"])
+            swap_blocked.update(ch["blocked_invoices"])
     extracted += sum(swap_payments.values())
+    blocked_amt += sum(swap_blocked.values())
     for a in attacks:
         chs = red_changes.get(a["id"], [])
-        if chs and a["id"] not in linked and all(ch["state"] == "blocked" and not ch["payments"] for ch in chs):
+        if chs and a["id"] not in linked and all(ch["state"] == "blocked" and not ch["payments"] and not ch["blocked_invoices"] for ch in chs):
             blocked_amt += float(a["target_amount"])
 
+    # Sim invoices stopped while a red swap was live were the controller being right, not false
+    # positives; sim invoices paid into a red swap were not legit processing. Ground truth, so this
+    # uses every red change, attributed to an attack or not.
+    not_fp = sorted({i for ch in all_changes for i in ch["stopped"]})
+    diverted = sorted({i for ch in all_changes for i in ch["paid_invoices"]})
+
     legit_blocked_rows = await db.fetch(
-        "SELECT amount FROM invoices WHERE episode_id=$1 AND origin='sim' AND status='blocked' "
+        "SELECT amount FROM invoices WHERE episode_id=$1 AND origin='sim' AND status='blocked' AND NOT (id = ANY($2::text[])) "
         "UNION ALL SELECT amount FROM expenses WHERE episode_id=$1 AND origin='sim' AND status='blocked' "
         "UNION ALL SELECT 0::numeric FROM vendor_changes WHERE episode_id=$1 AND origin='sim' AND status='blocked'",
         episode_id,
+        not_fp,
     )
     legit_escalated = int(
         await db.fetchval(
-            "SELECT COUNT(*) FROM verdicts v WHERE v.episode_id=$1 AND v.verdict='escalate' AND ("
+            "SELECT COUNT(*) FROM verdicts v WHERE v.episode_id=$1 AND v.verdict='escalate' AND NOT (v.entity_id = ANY($2::text[])) AND ("
             "  EXISTS (SELECT 1 FROM invoices i WHERE i.id=v.entity_id AND i.origin='sim') "
             "  OR EXISTS (SELECT 1 FROM expenses e WHERE e.id=v.entity_id AND e.origin='sim') "
             "  OR EXISTS (SELECT 1 FROM vendor_changes ch WHERE ch.id=v.entity_id AND ch.origin='sim'))",
             episode_id,
+            not_fp,
         )
     )
     fp_cost = (
         sum(float(r["amount"]) for r in legit_blocked_rows) * settings.fp_penalty_rate + (len(legit_blocked_rows) + legit_escalated) * settings.fp_flat_penalty
     )
     legit_processed = int(
-        await db.fetchval("SELECT COUNT(*) FROM invoices WHERE episode_id=$1 AND origin='sim' AND status='paid' AND status_day >= 0", episode_id)
+        await db.fetchval(
+            "SELECT COUNT(*) FROM invoices WHERE episode_id=$1 AND origin='sim' AND status='paid' AND status_day >= 0 AND NOT (id = ANY($2::text[]))",
+            episode_id,
+            diverted,
+        )
     )
     launched = int(await db.fetchval("SELECT COUNT(*) FROM attacks WHERE episode_id=$1", episode_id))
     caught = int(await db.fetchval("SELECT COUNT(*) FROM attacks WHERE episode_id=$1 AND outcome IN ('blocked','flagged','partial')", episode_id))

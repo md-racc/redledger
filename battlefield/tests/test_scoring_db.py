@@ -233,3 +233,110 @@ async def test_end_of_day_emits_outcome_and_score(episode: str) -> None:
     assert rows[0]["payload"]["attack_id"] == atk and rows[0]["payload"]["outcome"] == "blocked"
     assert rows[1]["payload"] == s
     assert await score.resolve_attacks(episode, 1) == []  # idempotent: nothing changes on a re-run
+
+
+# ---------- bank_swap caught at pay time ----------
+
+
+async def test_bank_swap_caught_at_pay_time(episode: str) -> None:
+    vid = await f.vendor(episode, bank_account="ACCT-RED")
+    atk = await f.attack(episode, day=1, target_amount=4_000)
+    await f.change(episode, vid, day=1, status="approved", resolved_day=1)  # blue allowed the change
+    inv = await f.invoice(episode, vid, amount=4000, status="blocked", day=2)  # ...then blocked the pay to the swapped account
+    await f.verdict(episode, "invoice", inv, verdict="block", day=2)
+    await _resolve(episode)
+    assert await _attack(atk) == {"outcome": "blocked", "amount_extracted": 0, "detected_day": 2}
+    s = await score.compute(episode)
+    assert s["dollars_blocked"] == 4000  # the stopped invoice, not also the target
+    assert s["attacks_caught"] == 1
+    assert s["legit_blocked"] == 0 and s["false_positive_cost"] == 0
+
+
+async def test_bank_swap_pay_time_escalation_is_detection_not_fp(episode: str) -> None:
+    vid = await f.vendor(episode, bank_account="ACCT-RED")
+    other = await f.vendor(episode)
+    atk = await f.attack(episode, day=1)
+    await f.change(episode, vid, day=1, status="approved", resolved_day=1)
+    inv = await f.invoice(episode, vid, amount=900, day=2)  # escalated, human hasn't answered yet
+    await f.verdict(episode, "invoice", inv, verdict="escalate", day=2)
+    legit = await f.invoice(episode, other, amount=900, day=2)
+    await f.verdict(episode, "invoice", legit, verdict="escalate", day=2)
+    await _resolve(episode)
+    assert await _attack(atk) == {"outcome": "flagged", "amount_extracted": 0, "detected_day": 2}
+    s = await score.compute(episode)
+    assert s["false_positive_cost"] == settings.fp_flat_penalty  # only the unrelated vendor's escalation
+    assert s["dollars_blocked"] == 0
+
+
+async def test_bank_swap_paid_then_blocked_at_pay_time_is_partial(episode: str) -> None:
+    vid = await f.vendor(episode, bank_account="ACCT-RED")
+    atk = await f.attack(episode, day=1, target_amount=9_000)
+    await f.change(episode, vid, day=1, status="approved", resolved_day=1)
+    paid = await f.invoice(episode, vid, amount=1000, status="paid", day=2)
+    await f.payment(episode, paid, amount=1000, to_account="ACCT-RED", day=2)
+    stopped = await f.invoice(episode, vid, amount=2000, status="rejected", day=3)
+    await f.verdict(episode, "invoice", stopped, verdict="block", day=3)
+    await _resolve(episode)
+    assert await _attack(atk) == {"outcome": "partial", "amount_extracted": 1000, "detected_day": 3}
+    s = await score.compute(episode)
+    assert s["dollars_extracted"] == 1000 and s["dollars_blocked"] == 2000
+
+
+async def test_block_before_swap_was_live_is_still_a_false_positive(episode: str) -> None:
+    vid = await f.vendor(episode, bank_account="ACCT-RED")
+    atk = await f.attack(episode, day=1)
+    early = await f.invoice(episode, vid, amount=1000, status="blocked", day=0)
+    await f.verdict(episode, "invoice", early, verdict="block", day=0)
+    await f.change(episode, vid, day=1, status="approved", resolved_day=1)
+    await _resolve(episode)
+    assert await _attack(atk) == {"outcome": "pending", "amount_extracted": 0, "detected_day": None}
+    s = await score.compute(episode)
+    assert s["legit_blocked"] == 1 and s["dollars_blocked"] == 0
+
+
+# ---------- review nits ----------
+
+
+async def test_reused_account_payment_goes_to_the_live_swap_only(episode: str) -> None:
+    vid = await f.vendor(episode, bank_account="ACCT-RED")
+    a1 = await f.attack(episode, day=1)
+    a2 = await f.attack(episode, day=3)
+    await f.change(episode, vid, day=1, status="approved", resolved_day=1)
+    await f.change(episode, vid, day=3, status="approved", resolved_day=3)
+    early = await f.invoice(episode, vid, amount=400, status="paid", day=2)
+    await f.payment(episode, early, amount=400, to_account="ACCT-RED", day=2)
+    late = await f.invoice(episode, vid, amount=1000, status="paid", day=4)
+    await f.payment(episode, late, amount=1000, to_account="ACCT-RED", day=4)
+    await _resolve(episode)
+    assert await _attack(a1) == {"outcome": "extracted", "amount_extracted": 400, "detected_day": None}
+    assert await _attack(a2) == {"outcome": "extracted", "amount_extracted": 1000, "detected_day": None}
+    assert (await score.compute(episode))["dollars_extracted"] == 1400
+
+
+async def test_detection_before_launch_does_not_count(episode: str) -> None:
+    sim_v = await f.vendor(episode)
+    await f.flag(episode, "vendor", sim_v, day=0)  # blue was suspicious of this vendor before red showed up
+    swap = await f.attack(episode, day=1)
+    await f.change(episode, sim_v, day=1)
+    red_v = await f.vendor(episode, origin="red")
+    await f.verdict(episode, "vendor", red_v, verdict="block", day=0)
+    inv_atk = await f.attack(episode, day=2, scheme_id="ghost_vendor")
+    await f.invoice(episode, red_v, amount=3000, origin="red", attack_id=inv_atk, day=2)
+    await _resolve(episode)
+    assert await _attack(swap) == {"outcome": "pending", "amount_extracted": 0, "detected_day": None}
+    assert await _attack(inv_atk) == {"outcome": "pending", "amount_extracted": 0, "detected_day": None}
+    await f.flag(episode, "vendor", sim_v, day=2)
+    await _resolve(episode)
+    assert (await _attack(swap))["detected_day"] == 2
+
+
+async def test_payments_into_a_swap_are_not_legit_processed(episode: str) -> None:
+    vid = await f.vendor(episode, bank_account="ACCT-RED")
+    other = await f.vendor(episode)
+    await f.attack(episode, day=1)
+    await f.change(episode, vid, day=1, status="approved", resolved_day=1)
+    diverted = await f.invoice(episode, vid, amount=1000, status="paid", day=2)
+    await f.payment(episode, diverted, amount=1000, to_account="ACCT-RED", day=2)
+    ok = await f.invoice(episode, other, amount=500, status="paid", day=2)
+    await f.payment(episode, ok, amount=500, to_account="ACCT-OLD", day=2)
+    assert (await score.compute(episode))["legit_processed"] == 1
