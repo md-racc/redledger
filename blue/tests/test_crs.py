@@ -4,6 +4,7 @@ import httpx
 import pytest
 import respx
 
+from agentkit.invocation import SOURCE_STREAM, Invocation, bind_invocation
 from audit import tools
 from audit.crs import BASE_URL, IDENTITY_PATH, PERSONAS, CRSClient, parse_identity
 from audit.evidence import model_view
@@ -98,36 +99,40 @@ async def test_profile_to_crs_finding_receipt_then_expense_gate(monkeypatch, gat
         return {"persona_id": "P01"}
 
     ledger._get = profile
-    async with bound_session(ledger, dry_run=False) as (session, emitter):
-        token = tools.INVOCATION.set("verified-check")
+
+    # Unit-supplied SDK metadata, not evidence of an authenticated live session.
+    async def invoke(name, invocation_id, **arguments):
+        token = tools.INVOCATION.set(invocation_id)
         try:
-            first = json.loads(await tools.crs_identity_check())
-            assert json.loads(await tools.crs_identity_check()) == first and check.call_count == 1
-            assert len(session.snapshot.findings) == int(held)
-            if held:
-                finding = session.snapshot.findings[0]
-                tools.INVOCATION.set("verified-flag")
-                assert json.loads(await tools.raise_flag(finding.id))["state"] == "confirmed"
-                assert not tools.freeze_authorized([finding])
-            projected = json.dumps(model_view(session.snapshot)) + json.dumps(emitter.calls) + json.dumps(emitter.results)
-            assert all(private not in projected for private in ("MARGARET", "666701001", "WILLOW", "test-jwt", "dummy-password", "P01"))
-            flags = [
-                {"entity_type": args[0], "entity_id": args[1], "severity": args[2], "reason": args[3]} for kind, args, _ in ledger.writes if kind == "flag"
-            ]
-            req = gate_request(
-                action="expenses.pay",
-                entity_type="expense",
-                entity_id="exp",
-                context={
-                    "employee": employee,
-                    "expense": {"id": "exp", "employee_id": "emp", "amount": 1200},
-                    "vendors_sharing_bank_account": [],
-                    "flags": flags,
-                },
-            )
-            assert any(hit.id == "already_flagged_high" for hit in evaluate(req)) == held
+            with bind_invocation(Invocation(invocation_id, name, source=SOURCE_STREAM)):
+                return json.loads(await getattr(tools, name)(**arguments))
         finally:
             tools.INVOCATION.reset(token)
+
+    async with bound_session(ledger, dry_run=False) as (session, emitter):
+        first = await invoke("crs_identity_check", "verified-check")
+        assert await invoke("crs_identity_check", "verified-recheck") == first and check.call_count == 1
+        assert len(session.snapshot.findings) == int(held)
+        if held:
+            finding = session.snapshot.findings[0]
+            assert (await invoke("raise_flag", "verified-flag", finding_id=finding.id))["state"] == "confirmed"
+            assert session.effects[-1].tool_use_id == ledger.writes[-1][2] == "verified-flag"
+            assert not tools.freeze_authorized([finding])
+        projected = json.dumps(model_view(session.snapshot)) + json.dumps(emitter.calls) + json.dumps(emitter.results)
+        assert all(private not in projected for private in ("MARGARET", "666701001", "WILLOW", "test-jwt", "dummy-password", "P01"))
+        flags = [{"entity_type": args[0], "entity_id": args[1], "severity": args[2], "reason": args[3]} for kind, args, _ in ledger.writes if kind == "flag"]
+        req = gate_request(
+            action="expenses.pay",
+            entity_type="expense",
+            entity_id="exp",
+            context={
+                "employee": employee,
+                "expense": {"id": "exp", "employee_id": "emp", "amount": 1200},
+                "vendors_sharing_bank_account": [],
+                "flags": flags,
+            },
+        )
+        assert any(hit.id == "already_flagged_high" for hit in evaluate(req)) == held
 
 
 @respx.mock
