@@ -264,3 +264,69 @@ async def test_a_block_never_overwrites_a_concurrent_payment(pg: None, monkeypat
     assert (blocked.status_code, paid.status_code) == (403, 200)
     assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "paid"  # not flipped to blocked
     assert await _count("SELECT count(*) FROM payments WHERE invoice_id=$1", inv) == 1
+
+
+# ---------- state that changes while a payment is held in an escalation ----------
+@pytest.fixture
+def escalating_blue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Blue escalates every pay (so it waits for a human) and allows everything else."""
+
+    async def ask(c: Caller, mode: str, action: str, et: str | None, eid: str | None, amount: float | None, args: dict, context: dict):
+        return ("escalate", "needs a human", 0.5, []) if action.endswith(".pay") else ("allow", "ok", 0.9, [])
+
+    monkeypatch.setattr(gate, "_ask_blue", ask)
+
+
+async def _open_escalation(ep: str) -> str:
+    for _ in range(200):
+        esc = await db.fetchval("SELECT id FROM escalations WHERE episode_id=$1 AND status='open'", ep)
+        if esc:
+            return esc
+        await asyncio.sleep(0.01)
+    raise AssertionError("no escalation opened")
+
+
+async def test_vendor_frozen_during_the_hold_aborts_the_payment(pg: None, escalating_blue: None) -> None:
+    ep = await _episode("enforce")
+    vid = await f.vendor(ep)
+    inv = await f.invoice(ep, vid, amount=900.0, status="approved")
+    async with _client() as c:
+        pay = asyncio.create_task(c.post(f"/api/invoices/{inv}/pay", headers=_green(ep, "tu_held")))
+        esc = await _open_escalation(ep)
+        await db.execute("UPDATE vendors SET status='frozen' WHERE id=$1", vid)  # blue freezes it meanwhile
+        assert await gate.resolve_escalation(esc, "approve", "operator")
+        r = await pay
+    assert r.status_code == 409 and r.json()["detail"] == "vendor is frozen"
+    assert await _count("SELECT count(*) FROM payments WHERE invoice_id=$1", inv) == 0
+    assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "approved"  # CAS rolled back with it
+    assert await _count("SELECT count(*) FROM bank_transactions WHERE episode_id=$1", ep) == 0
+    assert [(r["action"], r["http_status"]) for r in await _audit(ep, "tu_held")] == [("invoices.pay", 409)]
+
+
+async def test_bank_change_approved_during_the_hold_is_where_the_money_goes(pg: None, escalating_blue: None) -> None:
+    ep = await _episode("enforce")
+    vid = await f.vendor(ep, bank_account="ACCT-OLD")
+    inv = await f.invoice(ep, vid, amount=900.0, status="approved")
+    ch = await f.change(ep, vid, new_value="ACCT-NEW")
+    async with _client() as c:
+        pay = asyncio.create_task(c.post(f"/api/invoices/{inv}/pay", headers=_green(ep, "tu_held")))
+        esc = await _open_escalation(ep)
+        assert (await c.post(f"/api/vendor_changes/{ch}/approve", headers=_green(ep, "tu_change"))).status_code == 200
+        assert await gate.resolve_escalation(esc, "approve", "operator")
+        r = await pay
+    assert r.status_code == 200
+    assert await db.fetchval("SELECT to_account FROM payments WHERE invoice_id=$1", inv) == "ACCT-NEW"
+
+
+async def test_expense_pays_the_employee_account_on_file_after_the_hold(pg: None, escalating_blue: None) -> None:
+    ep = await _episode("enforce")
+    emp = await f.employee(ep)
+    ex = await f.expense(ep, emp, status="approved")
+    async with _client() as c:
+        pay = asyncio.create_task(c.post(f"/api/expenses/{ex}/pay", headers=_green(ep, "tu_held")))
+        esc = await _open_escalation(ep)
+        await db.execute("UPDATE employees SET bank_account='EMP-NEW' WHERE id=$1", emp)
+        assert await gate.resolve_escalation(esc, "approve", "operator")
+        r = await pay
+    assert r.status_code == 200
+    assert await db.fetchval("SELECT to_account FROM payments WHERE expense_id=$1", ex) == "EMP-NEW"

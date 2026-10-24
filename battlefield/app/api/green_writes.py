@@ -154,6 +154,10 @@ def _blocked_response(e: gate.GateBlockedError) -> JSONResponse:
     return JSONResponse(status_code=403, content={"verdict": "block", "reason": e.reason, "verdict_id": e.verdict_id, "escalation_id": e.escalation_id})
 
 
+class _VendorFrozen(Exception):
+    """The vendor was frozen while the payment waited on the gate (e.g. during an escalation hold)."""
+
+
 class _StateLost(Exception):
     """A compare-and-set transition found the entity no longer in an allowed state (a concurrent
     request moved it first)."""
@@ -324,6 +328,12 @@ async def pay_invoice(invoice_id: str, c: Caller = Depends(GREEN)):
         # held across the gate above).
         async with db.pool().acquire() as conn, conn.transaction():
             await _cas(conn, c, "invoices", invoice_id, INV_PAYABLE, "status='paid', status_day=$1", c.day)
+            # The vendor read above is from before the gate, which may have held this call for a human
+            # for up to ESCALATION_TIMEOUT_SEC. Re-read it locked: a freeze during the hold aborts the
+            # payment (the CAS rolls back with it), and the money goes to the account on file now.
+            vendor = await conn.fetchrow("SELECT * FROM vendors WHERE id=$1 FOR UPDATE", inv["vendor_id"])
+            if vendor["status"] == "frozen":
+                raise _VendorFrozen()
             await conn.execute(
                 "INSERT INTO payments (id, episode_id, invoice_id, amount, to_account, paid_day, paid_by, origin_of_source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
                 pid,
@@ -349,6 +359,8 @@ async def pay_invoice(invoice_id: str, c: Caller = Depends(GREEN)):
                 await conn.execute("UPDATE purchase_orders SET status='fulfilled' WHERE id=$1", inv["po_id"])
     except _StateLost as e:
         raise await _lost(c, "invoices.pay", args, "invoice", e) from None
+    except _VendorFrozen:
+        raise await _reject(c, "invoices.pay", args, 409, "vendor is frozen") from None
     await audit.record(c, "invoices.pay", args, {"payment_id": pid, "amount": float(inv["amount"])}, 200, d.verdict_id)
     await audit.mutation(c, "invoices.pay", "invoice", invoice_id, float(inv["amount"]), d.verdict_id)
     return db.row_to_dict(await db.fetchrow("SELECT * FROM payments WHERE id=$1", pid), hide=True)
@@ -433,7 +445,6 @@ async def pay_expense(expense_id: str, c: Caller = Depends(GREEN)):
     ex = await _load("expenses", expense_id, c, "expenses.pay", args)
     if ex["status"] not in EXP_PAYABLE:
         raise await _reject(c, "expenses.pay", args, 409, f"expense is {ex['status']}")
-    emp = await db.fetchrow("SELECT * FROM employees WHERE id=$1", ex["employee_id"])
     try:
         d = await _gated(c, "expenses.pay", "expense", ex, float(ex["amount"]), await _expense_context(ex), "expenses", allowed=EXP_PAYABLE)
     except gate.GateBlockedError as e:
@@ -444,6 +455,7 @@ async def pay_expense(expense_id: str, c: Caller = Depends(GREEN)):
     try:
         async with db.pool().acquire() as conn, conn.transaction():
             await _cas(conn, c, "expenses", expense_id, EXP_PAYABLE, "status='paid'")
+            emp = await conn.fetchrow("SELECT * FROM employees WHERE id=$1 FOR UPDATE", ex["employee_id"])  # current bank details, not pre-gate
             await conn.execute(
                 "INSERT INTO payments (id, episode_id, expense_id, amount, to_account, paid_day, paid_by, origin_of_source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
                 pid,
@@ -528,19 +540,22 @@ async def _post_gl(body: GlEntryCreate, c: Caller) -> Any:
     except gate.IdempotencyConflictError as e:
         await audit.record(c, "gl.post", body.model_dump(), {"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": e.verdict_id}, 409)
         return _conflict_response(e)
-    await db.execute(
-        "INSERT INTO gl_entries (id, episode_id, day, account, debit, credit, memo, posted_by, ref_type, ref_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
-        gid,
-        c.episode_id,
-        c.day,
-        body.account,
-        body.debit,
-        body.credit,
-        body.memo,
-        c.agent,
-        body.ref_type,
-        body.ref_id,
-    )
-    await audit.record(c, "gl.post", body.model_dump(), {"id": gid}, 201, d.verdict_id)
+    # The 201 audit row is what a retry finds, so it commits atomically with the entry: a crash between
+    # them can't leave a posted entry with no record (which would let a retry post a second one).
+    async with db.pool().acquire() as conn, conn.transaction():
+        await conn.execute(
+            "INSERT INTO gl_entries (id, episode_id, day, account, debit, credit, memo, posted_by, ref_type, ref_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+            gid,
+            c.episode_id,
+            c.day,
+            body.account,
+            body.debit,
+            body.credit,
+            body.memo,
+            c.agent,
+            body.ref_type,
+            body.ref_id,
+        )
+        await audit.record(c, "gl.post", body.model_dump(), {"id": gid}, 201, d.verdict_id, conn=conn)
     await audit.mutation(c, "gl.post", "gl_entry", gid, max(body.debit, body.credit), d.verdict_id)
     return db.row_to_dict(await db.fetchrow("SELECT * FROM gl_entries WHERE id=$1", gid))
