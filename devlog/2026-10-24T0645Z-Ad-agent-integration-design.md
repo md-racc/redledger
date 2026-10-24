@@ -1,1 +1,0 @@
-- 2026-10-24T06:45Z · Ad · docs: design for agent integration packages A+B (battlefield preparations consumed by gated routes, recommend dropping green->blue mirror, strict live identity, turn loop); next: Ad decisions D1-D15 then contracts PR; blocked: escalation-e2e unmerged
