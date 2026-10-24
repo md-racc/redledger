@@ -106,11 +106,21 @@ Goal for this session: <fill in>
   joins the open escalation or reuses its decision; on startup open escalations are timed out
   (their held request died with the old process) and `running` episodes are paused with an
   `error {where:"orchestrator"}`, never auto-resumed. Resuming such an episode re-runs its current
-  day from the start (`legit_traffic.inject` has no per-day guard, so that day's traffic can be
-  injected twice; not fixed). Mock blue escalates on demand with
-  `MOCK_BLUE_ESCALATE`; drive it with `scripts/escalation_smoke.py`. **Docs PR needed:** README §11
+  day, but `run_day` is idempotent per day: if the episode already has that day's `day.started`, it
+  skips legit traffic and the event (logs `day_resumed`) and goes on with the turns. Mock blue
+  escalates on demand with `MOCK_BLUE_ESCALATE`; drive it with `scripts/escalation_smoke.py`. **Docs PR needed:** README §11
   should list `MOCK_BLUE_ESCALATE` (mock only), and events.md could list `where: orchestrator`.
-- Replays broadcast via `bus._broadcast` under a virtual episode id and are not persisted.
+- Replays (done): `POST /replays/{id}/play` creates a real `episodes` row `replay_<fixture>_<8hex>`
+  (status `running`→`finished`/`failed`; seed/mode/days from the fixture's `episode.started`) and
+  re-emits every fixture event through `bus.emit`, paced by original `ts` / speed (gap cap 3 s), so
+  `GET /events`, WS `after_id` catch-up and tickets work; concurrent plays get distinct ids. A
+  caller-supplied `episode_id` must match `replay_[A-Za-z0-9_-]{1,57}` and not exist (else 422/409).
+  Replays have no ledger rows, the runner/controller routes 409 on them, and any X-Agent request
+  with a `replay_*` X-Episode is 403. Fixtures are validated before the row is created (422 names
+  the line; symlinks resolving outside FIXTURES_DIR 404); shutdown cancels replays as `failed`. `/fe` for a replay:
+  snapshot score, timeline (cash_in/out null), attacks, compare, feed, thinking, activity `turns`
+  come from events; vendors, verdicts*, ap_aging, leaderboard, search, reports, escalations, entity
+  trails and activity `activity` are table-derived and empty (404 for trails).
 - No pagination on `/api/events` beyond `limit`; fine for 10-day episodes.
 - Day pacing for demos is `DAY_PAUSE_SEC`; there is no per-turn pacing.
 
