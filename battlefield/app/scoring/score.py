@@ -218,23 +218,32 @@ async def compute(episode_id: str) -> dict[str, Any]:
     not_fp = sorted({i for ch in all_changes for i in ch["stopped"]})
     diverted = sorted({i for ch in all_changes for i in ch["paid_invoices"]})
 
-    legit_blocked_rows = await db.fetch(
-        "SELECT amount FROM invoices WHERE episode_id=$1 AND origin='sim' AND status='blocked' AND NOT (id = ANY($2::text[])) "
-        "UNION ALL SELECT amount FROM expenses WHERE episode_id=$1 AND origin='sim' AND status='blocked' "
-        "UNION ALL SELECT 0::numeric FROM vendor_changes WHERE episode_id=$1 AND origin='sim' AND status='blocked'",
+    # False positives: each legit (sim) item is charged once, by its worst controller outcome.
+    #   blocked:   amount x FP_PENALTY_RATE + FP_FLAT_PENALTY. The item ended blocked, any block verdict
+    #              touched it (enforced, or a shadow "would-have" block), or an escalation of it ended
+    #              block/timeout. A block verdict followed by green's own reject still counts.
+    #   escalated: FP_FLAT_PENALTY only. Escalated (enforced and approved or still open, or a shadow
+    #              "would-have" escalation) but never blocked: human time spent, money moved.
+    # Verdicts carry `enforced`, so shadow scores the same way as enforce ("would-have" costs) and off
+    # (no verdicts) scores 0: the three modes compare cleanly. In shadow, legit_blocked therefore counts
+    # would-have blocks. Invoices stopped while a red swap was live (not_fp) are never charged.
+    fp_items = await db.fetch(
+        "WITH items AS ("
+        "  SELECT id, amount, status FROM invoices WHERE episode_id=$1 AND origin='sim' AND NOT (id = ANY($2::text[])) "
+        "  UNION ALL SELECT id, amount, status FROM expenses WHERE episode_id=$1 AND origin='sim' "
+        "  UNION ALL SELECT id, 0::numeric, status FROM vendor_changes WHERE episode_id=$1 AND origin='sim'"
+        ") SELECT it.id, it.amount, ("
+        "  it.status = 'blocked' "
+        "  OR EXISTS (SELECT 1 FROM verdicts v WHERE v.episode_id=$1 AND v.entity_id=it.id AND v.verdict='block') "
+        "  OR EXISTS (SELECT 1 FROM escalations e JOIN verdicts v ON v.id=e.verdict_id "
+        "             WHERE v.episode_id=$1 AND v.entity_id=it.id AND e.status IN ('blocked','timeout'))"
+        ") AS blocked, EXISTS (SELECT 1 FROM verdicts v WHERE v.episode_id=$1 AND v.entity_id=it.id AND v.verdict='escalate') AS escalated "
+        "FROM items it",
         episode_id,
         not_fp,
     )
-    legit_escalated = int(
-        await db.fetchval(
-            "SELECT COUNT(*) FROM verdicts v WHERE v.episode_id=$1 AND v.verdict='escalate' AND NOT (v.entity_id = ANY($2::text[])) AND ("
-            "  EXISTS (SELECT 1 FROM invoices i WHERE i.id=v.entity_id AND i.origin='sim') "
-            "  OR EXISTS (SELECT 1 FROM expenses e WHERE e.id=v.entity_id AND e.origin='sim') "
-            "  OR EXISTS (SELECT 1 FROM vendor_changes ch WHERE ch.id=v.entity_id AND ch.origin='sim'))",
-            episode_id,
-            not_fp,
-        )
-    )
+    legit_blocked_rows = [r for r in fp_items if r["blocked"]]
+    legit_escalated = sum(1 for r in fp_items if r["escalated"] and not r["blocked"])
     fp_cost = (
         sum(float(r["amount"]) for r in legit_blocked_rows) * settings.fp_penalty_rate + (len(legit_blocked_rows) + legit_escalated) * settings.fp_flat_penalty
     )

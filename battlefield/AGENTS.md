@@ -95,6 +95,21 @@ Goal for this session: <fill in>
   provenance. `list_audit` now gives any X-Agent caller only `agent IN ('green','blue')` rows and
   never an `attacks.*` action; `agent=red` returns `[]`, not 403. Operator view is unfiltered.
   A new agent that writes audit rows stays hidden from agents until added to that allowlist.
+- False positives (done, Ad's call): each legit (sim) item is charged once, by its worst outcome.
+  Blocked (ended blocked, any block verdict, or an escalation that ended block/timeout) costs
+  `amount × FP_PENALTY_RATE + FP_FLAT_PENALTY`; escalated but never blocked (approved or still open)
+  costs `FP_FLAT_PENALTY`. Shadow verdicts score as "would-have" costs the same way, so
+  off/shadow/enforce compare cleanly, and `legit_blocked` in shadow counts would-have blocks. Live
+  red-swap pay-time stops stay excluded. **Docs PR needed:** README §4's `false_positive_cost` line
+  still says `(legit blocks + legit escalations) × FP_FLAT_PENALTY`.
+- Escalations (done): close exactly once (resolver, timeout or orphan sweep); a same-key replay
+  joins the open escalation or reuses its decision; on startup open escalations are timed out
+  (their held request died with the old process) and `running` episodes are paused with an
+  `error {where:"orchestrator"}`, never auto-resumed. Resuming such an episode re-runs its current
+  day from the start (`legit_traffic.inject` has no per-day guard, so that day's traffic can be
+  injected twice; not fixed). Mock blue escalates on demand with
+  `MOCK_BLUE_ESCALATE`; drive it with `scripts/escalation_smoke.py`. **Docs PR needed:** README §11
+  should list `MOCK_BLUE_ESCALATE` (mock only), and events.md could list `where: orchestrator`.
 - Replays broadcast via `bus._broadcast` under a virtual episode id and are not persisted.
 - No pagination on `/api/events` beyond `limit`; fine for 10-day episodes.
 - Day pacing for demos is `DAY_PAUSE_SEC`; there is no per-turn pacing.
