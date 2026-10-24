@@ -1,5 +1,12 @@
 # Red Ledger — full stack. Owner: Dev Ad.
-# Internal traffic is plain HTTP on the compose network; TLS terminates at the edge (Caddy/Cloudflare).
+# Internal traffic is plain HTTP on the compose networks; TLS terminates at the edge (Caddy/Cloudflare).
+# Networks (invariants 1, 4, 11): only battlefield joins more than one.
+#   edge   — frontend (+ caddy in prod) ↔ battlefield. Agents are NOT here: the frontend's
+#            /api/bf/* proxy carries OPERATOR_TOKEN, so an agent that could reach it could read
+#            origin, /events, /attacks/all.
+#   agents — red/green/blue ↔ battlefield (and green → blue mirror gate). Needs internet egress
+#            for Factory/LLM APIs, so not internal.
+#   data   — postgres ↔ battlefield only. Internal: no egress, no other service can reach the DB.
 # Usage:
 #   make up          -> this file (agents live, need FACTORY_API_KEY)
 #   make up-dry      -> + docker-compose.dev.yml (agents DRY_RUN, hot reload)
@@ -30,6 +37,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    networks: [data]
     ports:
       - "127.0.0.1:5432:5432"
 
@@ -59,6 +67,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks: [edge, agents, data]
     ports:
       - "8000:8000"
 
@@ -73,6 +82,7 @@ services:
       DROID_MODEL: ${DROID_MODEL_RED:-}
       DROID_REASONING: ${DROID_REASONING_RED:-}
     depends_on: [battlefield]
+    networks: [agents]
     ports: ["127.0.0.1:8001:8001"]
 
   green:
@@ -86,6 +96,7 @@ services:
       DROID_MODEL: ${DROID_MODEL_GREEN:-}
       DROID_REASONING: ${DROID_REASONING_GREEN:-}
     depends_on: [battlefield, blue]
+    networks: [agents]
     ports: ["127.0.0.1:8002:8002"]
 
   blue:
@@ -104,6 +115,7 @@ services:
       APPROVAL_THRESHOLD: ${APPROVAL_THRESHOLD:-5000}
       CRS_API_KEY: ${CRS_API_KEY:-}
     depends_on: [battlefield]
+    networks: [agents]
     ports: ["127.0.0.1:8003:8003"]
 
   frontend:
@@ -118,7 +130,14 @@ services:
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
       NEXT_PUBLIC_MOCK: ${NEXT_PUBLIC_MOCK:-false}
     depends_on: [battlefield]
+    networks: [edge]
     ports: ["3000:3000"]
+
+networks:
+  edge: {}
+  agents: {}
+  data:
+    internal: true
 
 volumes:
   pgdata:
