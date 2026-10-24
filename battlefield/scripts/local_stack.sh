@@ -80,14 +80,20 @@ cmd_up() {
   mkdir -p "$LOGS" "$PIDS"
   printf '*\n' >"$DIR/.gitignore"
 
-  if [[ ! -s "$ENVF" ]]; then
-    umask 077
-    python3 - "$ENVF" <<'PY'
+  # One token per agent plus the operator's (contracts/agent-service.md "Tokens"); a stack created
+  # before per-agent tokens gets the missing ones appended. AGENT_TOKEN stays as the shared fallback.
+  umask 077
+  touch "$ENVF"
+  python3 - "$ENVF" <<'PY'
 import secrets, sys
-open(sys.argv[1], "w").write(f"AGENT_TOKEN={secrets.token_hex(24)}\nOPERATOR_TOKEN={secrets.token_hex(24)}\n")
+path = sys.argv[1]
+have = {line.split("=", 1)[0] for line in open(path) if "=" in line}
+with open(path, "a") as f:
+    for name in ("AGENT_TOKEN", "AGENT_TOKEN_RED", "AGENT_TOKEN_GREEN", "AGENT_TOKEN_BLUE", "OPERATOR_TOKEN"):
+        if name not in have:
+            f.write(f"{name}={secrets.token_hex(24)}\n")
 PY
-    chmod 600 "$ENVF"
-  fi
+  chmod 600 "$ENVF"
   set -a
   # shellcheck disable=SC1090
   . "$ENVF"
@@ -115,15 +121,17 @@ PY
     sleep 1
   done
 
-  local a m port dry
+  local a m port dry own
   for a in blue red green; do
     m="$(mode_of "$a")"; port="${AGENT_PORT[$a]}"
     dry="$(eval "printf '%s' \"\${DRY_RUN_${a^^}:-\${DRY_RUN:-true}}\"")"
     if [[ "$m" == real ]]; then say "starting $a (real, DRY_RUN=$dry) on :$port"; else say "starting $a (mock) on :$port"; fi
+    # each agent process holds only its own token, as AGENT_TOKEN
+    own="$(eval "printf '%s' \"\${AGENT_TOKEN_${a^^}}\"")"
     if [[ "$m" == mock ]]; then
-      AGENT_NAME="$a" start_proc "$a" "$ROOT/battlefield" uv run --quiet uvicorn mock_agents.server:app --host 127.0.0.1 --port "$port"
+      AGENT_NAME="$a" AGENT_TOKEN="$own" start_proc "$a" "$ROOT/battlefield" uv run --quiet uvicorn mock_agents.server:app --host 127.0.0.1 --port "$port"
     else
-      AGENT_NAME="$a" PORT="$port" DRY_RUN="$dry" PYTHONPATH="." \
+      AGENT_NAME="$a" AGENT_TOKEN="$own" PORT="$port" DRY_RUN="$dry" PYTHONPATH="." \
         DROID_MODEL="$(eval "printf '%s' \"\${DROID_MODEL_${a^^}:-}\"")" \
         DROID_REASONING="$(eval "printf '%s' \"\${DROID_REASONING_${a^^}:-}\"")" \
         start_proc "$a" "$ROOT/$a" uv run --quiet uvicorn server:app --host 127.0.0.1 --port "$port"

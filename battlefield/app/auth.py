@@ -1,12 +1,12 @@
 """Bearer auth + per-agent route permissions + WebSocket tickets. Owner: Dev Ad.
 
-Two kinds of caller, told apart by the X-Agent header and each with its own token:
-  - agents: send X-Agent / X-Episode / X-Day (+ X-Tool-Use-Id on writes) and must present
-    AGENT_TOKEN. `Caller` is injected into handlers and carries them. Responses to agents hide
-    provenance columns.
+Two kinds of caller, told apart by the X-Agent header (contracts/agent-service.md "Tokens"):
+  - agents: send X-Agent / X-Episode / X-Day (+ X-Tool-Use-Id on writes) and must present their
+    OWN token (AGENT_TOKEN_<A>, falling back to the shared AGENT_TOKEN). Another agent's token or
+    the operator token for a claimed X-Agent is a 401, audited, so no agent can act or read as
+    another. `Caller` carries the headers. Responses to agents hide provenance columns.
   - operator/frontend server: no X-Agent; must present OPERATOR_TOKEN. Sees everything.
-The token must match the expected token for the role, else 401. (With the legacy single
-INTERNAL_TOKEN both are equal and both roles keep working; config logs a warning.)
+(With one shared token every role keeps working; config logs that separation is off.)
 
 Permissions are declared per route with `allow("red", "green")`. A route with no `allow` is
 operator-only when it is a control-plane route, or all-agents when it is a read route.
@@ -40,12 +40,60 @@ def token_matches(presented: str | None, expected: str) -> bool:
     return hmac.compare_digest(presented.encode(), expected.encode())
 
 
+def _agent_token(agent: str) -> str:
+    """The claimed agent's own token, else the shared AGENT_TOKEN (same rule as Settings.token_for;
+    resolved here with getattr so a settings stand-in that only has agent_token keeps working)."""
+    return getattr(settings, f"agent_token_{agent}", None) or settings.agent_token
+
+
+def _presented(authorization: str | None) -> str | None:
+    return authorization[7:] if authorization is not None and authorization.startswith("Bearer ") else None
+
+
+def _token_owner(presented: str | None) -> str | None:
+    """Which known role a token belongs to ("red" / "green" / "blue" / "operator"), or None. Each
+    candidate is compared in constant time; with shared tokens the first match wins (it is only used to
+    decide whether a refusal is worth an audit row)."""
+    for role in (*AGENTS, "operator"):
+        if token_matches(presented, settings.operator_token if role == "operator" else _agent_token(role)):
+            return role
+    return None
+
+
 def _authenticate(authorization: str | None, x_agent: str | None) -> None:
-    """401 unless the bearer token is the one for the caller's role (X-Agent present = agent)."""
-    expected = settings.agent_token if x_agent is not None else settings.operator_token
-    presented = authorization[7:] if authorization is not None and authorization.startswith("Bearer ") else None
-    if not token_matches(presented, expected):
+    """401 unless the bearer token is the caller's own: the claimed agent's token with X-Agent,
+    OPERATOR_TOKEN without. An unknown X-Agent presented with a valid agent token is a 400 (caller)."""
+    presented = _presented(authorization)
+    if x_agent is None:
+        if not token_matches(presented, settings.operator_token):
+            raise HTTPException(401, "bad token")
+        return
+    if x_agent in AGENTS:
+        if not token_matches(presented, _agent_token(x_agent)):
+            raise HTTPException(401, "bad token")
+        return
+    if _token_owner(presented) not in AGENTS:
         raise HTTPException(401, "bad token")
+
+
+async def _authenticate_audited(request: Request, authorization: str | None, x_agent: str | None, x_episode: str | None, x_day: int | None) -> None:
+    """`_authenticate`, plus an audit row when a known caller presents a token that doesn't
+    authenticate the X-Agent it claims (one agent posing as another, or the operator token with
+    X-Agent). Garbage tokens are only logged: an unauthenticated request never writes the database."""
+    try:
+        _authenticate(authorization, x_agent)
+    except HTTPException as e:
+        if e.status_code == 401 and x_agent in AGENTS:
+            owner = _token_owner(_presented(authorization))
+            log.warning("agent_token_mismatch", claimed=x_agent, presented_by=owner or "unknown", path=request.url.path)
+            if owner is not None and x_episode is not None and x_day is not None:
+                await _audit_refusal(
+                    Caller(agent=x_agent, episode_id=x_episode, day=x_day, tool_use_id=None),
+                    request,
+                    {"error": "token does not authenticate X-Agent", "presented_by": owner},
+                    401,
+                )
+        raise
 
 
 def bearer(authorization: str | None = Header(default=None), x_agent: str | None = Header(default=None, alias="X-Agent")) -> None:
@@ -79,7 +127,7 @@ async def caller(
     x_day: int | None = Header(default=None, alias="X-Day"),
     x_tool_use_id: str | None = Header(default=None, alias="X-Tool-Use-Id"),
 ) -> Caller:
-    _authenticate(authorization, x_agent)
+    await _authenticate_audited(request, authorization, x_agent, x_episode, x_day)
     if x_agent is not None:
         if x_agent not in AGENTS:
             raise HTTPException(400, f"unknown X-Agent {x_agent}")
@@ -98,16 +146,20 @@ async def caller(
 
 
 async def _audit_no_turn(c: Caller, request: Request) -> None:
-    """Audit an agent write refused for lack of an active turn (an orphaned or timed-out turn). Best
-    effort: the refusal must stand even if the audit write fails."""
+    """Audit an agent write refused for lack of an active turn (an orphaned or timed-out turn)."""
+    await _audit_refusal(c, request, {"error": turns.NO_ACTIVE_TURN}, 409)
+
+
+async def _audit_refusal(c: Caller, request: Request, result: dict, status: int) -> None:
+    """Best effort: the refusal must stand even if the audit write fails. Never records a token."""
     from .api import audit  # late: audit imports this module
 
     route = request.scope.get("route")
     path = getattr(route, "path", request.url.path)
     try:
-        await audit.record(c, f"{request.method} {path}", dict(request.path_params), {"error": turns.NO_ACTIVE_TURN}, 409)
+        await audit.record(c, f"{request.method} {path}", dict(request.path_params), result, status)
     except Exception:
-        log.exception("no_turn_audit_failed", agent=c.agent, episode_id=c.episode_id, path=path)
+        log.exception("refusal_audit_failed", agent=c.agent, episode_id=c.episode_id, path=path, status=status)
 
 
 def allow(*agents: str, operator: bool = True):

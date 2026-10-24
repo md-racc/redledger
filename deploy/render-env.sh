@@ -4,7 +4,10 @@
 # `production` environment's secrets and variables exported by appleboy/ssh-action.
 #   deploy/render-env.sh [output-path]      # default: .env in the current directory
 # Writes atomically (temp file in the same directory, then mv) with mode 600. Refuses to write
-# anything if AGENT_TOKEN or OPERATOR_TOKEN is empty or the two are equal. Never prints values,
+# anything if AGENT_TOKEN or OPERATOR_TOKEN is empty or the two are equal. Per-agent tokens
+# (contracts/agent-service.md "Tokens"): AGENT_TOKEN_RED/GREEN/BLUE are all-or-none; when set they
+# must be pairwise distinct and distinct from OPERATOR_TOKEN, else refuse. When none is set, all
+# three fall back to the shared AGENT_TOKEN (warning: per-agent separation off). Never prints values,
 # only variable names.
 set -eu
 umask 077
@@ -17,6 +20,27 @@ die() { printf 'render-env: %s\n' "$*" >&2; exit 1; }
 [ -n "${AGENT_TOKEN:-}" ] || die "AGENT_TOKEN is empty; refusing to write $out"
 [ -n "${OPERATOR_TOKEN:-}" ] || die "OPERATOR_TOKEN is empty; refusing to write $out"
 [ "$AGENT_TOKEN" != "$OPERATOR_TOKEN" ] || die "AGENT_TOKEN equals OPERATOR_TOKEN; refusing to write $out"
+# Per-agent tokens: all three or none.
+n_agent_tokens=0
+for t in "${AGENT_TOKEN_RED:-}" "${AGENT_TOKEN_GREEN:-}" "${AGENT_TOKEN_BLUE:-}"; do
+  [ -z "$t" ] || n_agent_tokens=$((n_agent_tokens + 1))
+done
+case "$n_agent_tokens" in
+  0)
+    printf 'render-env: AGENT_TOKEN_RED/GREEN/BLUE unset; all agents share AGENT_TOKEN (per-agent separation off)\n' >&2
+    token_red=$AGENT_TOKEN token_green=$AGENT_TOKEN token_blue=$AGENT_TOKEN
+    ;;
+  3)
+    token_red=$AGENT_TOKEN_RED token_green=$AGENT_TOKEN_GREEN token_blue=$AGENT_TOKEN_BLUE
+    [ "$token_red" != "$token_green" ] || die "AGENT_TOKEN_RED equals AGENT_TOKEN_GREEN; refusing to write $out"
+    [ "$token_red" != "$token_blue" ] || die "AGENT_TOKEN_RED equals AGENT_TOKEN_BLUE; refusing to write $out"
+    [ "$token_green" != "$token_blue" ] || die "AGENT_TOKEN_GREEN equals AGENT_TOKEN_BLUE; refusing to write $out"
+    for pair in "RED:$token_red" "GREEN:$token_green" "BLUE:$token_blue"; do
+      [ "${pair#*:}" != "$OPERATOR_TOKEN" ] || die "AGENT_TOKEN_${pair%%:*} equals OPERATOR_TOKEN; refusing to write $out"
+    done
+    ;;
+  *) die "set all of AGENT_TOKEN_RED, AGENT_TOKEN_GREEN, AGENT_TOKEN_BLUE or none of them; refusing to write $out" ;;
+esac
 # A public deploy (DOMAIN set) must verify the Cloudflare Access JWT at the origin; blank values
 # would silently disable that check and reopen the Access bypass. Fail closed instead.
 if [ -n "${DOMAIN:-}" ]; then
@@ -58,6 +82,9 @@ printf '# Rendered by deploy/render-env.sh. Do not edit by hand; the next deploy
 
 # ---- tokens and secrets ----
 emit AGENT_TOKEN "$AGENT_TOKEN"
+emit AGENT_TOKEN_RED "$token_red"
+emit AGENT_TOKEN_GREEN "$token_green"
+emit AGENT_TOKEN_BLUE "$token_blue"
 emit OPERATOR_TOKEN "$OPERATOR_TOKEN"
 emit FACTORY_API_KEY "${FACTORY_API_KEY:-}"
 emit BLUE_GATE_LLM_API_KEY "${BLUE_GATE_LLM_API_KEY:-}"
