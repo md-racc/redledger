@@ -72,12 +72,14 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
           CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
           NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
+          # `true` runs agents with canned turns and no Factory/LLM calls (render-env defaults false)
+          DRY_RUN: ${{ vars.DRY_RUN }}
         with:
           host: ${{ secrets.VULTR_HOST }}
           username: ${{ secrets.VULTR_USER }}
           key: ${{ secrets.VULTR_SSH_KEY }}
           script_stop: true
-          envs: AGENT_TOKEN,OPERATOR_TOKEN,FACTORY_API_KEY,BLUE_GATE_LLM_API_KEY,CRS_API_KEY,CARTESIA_API_KEY,DROID_MODEL_RED,DROID_MODEL_GREEN,DROID_MODEL_BLUE,DROID_REASONING_RED,DROID_REASONING_GREEN,DROID_REASONING_BLUE,BLUE_GATE_LLM_PROVIDER,BLUE_GATE_LLM_MODEL,MAX_CREDITS_PER_EPISODE,DOMAIN,GITHUB_REPO,CORS_ORIGINS,NEXT_PUBLIC_WS_URL
+          envs: AGENT_TOKEN,OPERATOR_TOKEN,FACTORY_API_KEY,BLUE_GATE_LLM_API_KEY,CRS_API_KEY,CARTESIA_API_KEY,DROID_MODEL_RED,DROID_MODEL_GREEN,DROID_MODEL_BLUE,DROID_REASONING_RED,DROID_REASONING_GREEN,DROID_REASONING_BLUE,BLUE_GATE_LLM_PROVIDER,BLUE_GATE_LLM_MODEL,MAX_CREDITS_PER_EPISODE,DOMAIN,GITHUB_REPO,CORS_ORIGINS,NEXT_PUBLIC_WS_URL,DRY_RUN
           # Keep every command on one line: older ssh-action versions implement script_stop by
           # appending an exit check after each line, which breaks multi-line loops/continuations.
           script: |
