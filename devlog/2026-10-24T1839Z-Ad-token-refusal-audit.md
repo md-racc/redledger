@@ -1,0 +1,1 @@
+- 2026-10-24T18:39Z · Ad · contracts: audit token refusals only when the token belongs to a known caller (unauthenticated requests never write); next: #109 per-agent tokens; blocked: none
