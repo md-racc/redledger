@@ -1,0 +1,1 @@
+- 2026-10-24T15:43Z · Ad · contracts: Preparation.decided_by nullable while effective is pending (GET during a hold); next: step 2a fixes; blocked: none

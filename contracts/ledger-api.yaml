@@ -274,7 +274,7 @@ components:
         amount: { type: number, format: double, nullable: true, description: "null for gl.post and vendor_changes.*" }
         effective: { type: string, enum: [allow, block, pending], description: "what execution under this key will do; shadow and off always allow" }
         enforced: { type: boolean }
-        decided_by: { type: string, enum: [mode, gate, human, timeout], description: "mode = off (no gate call); gate = blue's verdict decided it, including shadow, where blue answered but effective is always allow; human / timeout = an enforced escalation was resolved / expired" }
+        decided_by: { type: string, enum: [mode, gate, human, timeout], nullable: true, description: "null exactly while effective is pending (an enforced escalation is still held); mode = off (no gate call); gate = blue's verdict decided it, including shadow, where blue answered but effective is always allow; human / timeout = an enforced escalation was resolved / expired" }
         verdict_id: { type: string, nullable: true, description: "null in off" }
         verdict: { type: string, enum: [allow, block, escalate], nullable: true }
         cause: { type: string, enum: [control, gate_unavailable], nullable: true }
