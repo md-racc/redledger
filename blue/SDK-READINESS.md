@@ -43,6 +43,59 @@ call was run for this integration. The shared bridge is still synchronous/blocki
 worker loop. Uncontended unit-test locks and mocked HTTP do not qualify owner-loop safety.
 Neither `AuditAgent._droid_turn` nor readiness/health guards were changed: readiness is always false.
 
+## Session tool-ID discovery
+
+A separate list-only probe on CRS PR #64, with droid-sdk 0.5.0 / mcp 1.30.0, opened a real
+Session and matched all seven IDs below. No stream, agent tool, ledger write or CRS request
+ran. This settles the IDs for that tool set, not SDK invocation delivery or live audit safety.
+Repeat after incorporating #64; this branch's base alone has six tools. The CLI must already
+be authenticated. No `.env` is loaded and no credential values or raw SDK errors are printed:
+
+```sh
+cd blue
+UV_OFFLINE=1 UV_NO_ENV_FILE=1 uv run --extra dev --extra droid python - <<'PY'
+import asyncio, contextlib, io, json, tempfile
+from pathlib import Path
+from droid_sdk import Autonomy, InteractionHandlers, Session, SessionConfig, ToolConfirmationOutcome
+from audit.readiness import _offline_agent
+
+EXPECTED = {
+    "blue-ledger___benford_check",
+    "blue-ledger___crs_identity_check",
+    "blue-ledger___day_activity",
+    "blue-ledger___freeze_vendor",
+    "blue-ledger___post_report",
+    "blue-ledger___raise_flag",
+    "blue-ledger___vendor_dedupe",
+}
+
+async def cancel(request):
+    return request.respond(ToolConfirmationOutcome.CANCEL)
+
+async def probe():
+    try:
+        server = _offline_agent()._mcp_server()
+        config = SessionConfig(autonomy=Autonomy.OFF, disable_builtin_skills=True,
+            system_prompt="Tool registry discovery only.", mcp_servers=[server], restrict_tools=EXPECTED)
+        with tempfile.TemporaryDirectory(prefix="blue-sdk-discovery-") as cwd:
+            async with asyncio.timeout(25):
+                async with Session(cwd=Path(cwd), config=config,
+                        interactions=InteractionHandlers(on_permission=cancel)) as session:
+                    ids = sorted(t.id for t in await session.list_tools() if t.id.startswith("blue-ledger___"))
+                    return {"matched": set(ids) == EXPECTED, "tool_ids": ids}
+    except Exception as exc:
+        return {"matched": False, "error_type": type(exc).__name__}
+
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    result = asyncio.run(probe())
+print(json.dumps(result, sort_keys=True))
+raise SystemExit(0 if result["matched"] else 2)
+PY
+```
+
+Expected: `matched:true` and exactly the pinned seven IDs. The offline readiness helper still
+returns `ready:false` because it does not run this Session probe or qualify the remaining blockers.
+
 ## Earlier optional-SDK diagnostic evidence (not rerun for this integration)
 
 From the repository root:
@@ -92,10 +145,9 @@ The readiness helper always returns false; none of these offline observations ca
 3. Make the bridge nonblocking for the service loop while retaining bounded deadlines, event
    draining and cancellation safety. Prove concurrent `/gate` stays within its 8-second budget.
    Do not fork shared lifecycle/offload inside Blue.
-4. When humans authorize coordinated SDK validation, verify the exact Blue IDs with
-   `session.list_tools()` and restrict before the first live event (six tools on this base;
-   revalidate the final tool set after additions). No actual Blue session IDs
-   or live SDK behavior were verified here. Keep DRY_RUN key-free and Green-only audit-log reads;
+4. The list-only probe above observed the exact seven IDs with CRS present; retain that
+   restriction before the first live event and revalidate after tool/SDK changes.
+   Actual streaming/invocation behavior remains unqualified. Keep DRY_RUN key-free and Green-only audit-log reads;
    no scoreboard, event-stream, attack or other-agent internals may enter the audit.
 
 Ad already recorded SDK/CLI metadata and permission findings in
