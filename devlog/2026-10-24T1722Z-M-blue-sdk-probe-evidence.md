@@ -1,0 +1,1 @@
+- 2026-10-24T17:22Z · M · blue: record one approved portable SDK replay at f8b2782, verified single-call/report/event binding and local gate allow in 3.437ms for 1850 credits; next: Ad-coordinated real-Ledger/seeded/CRS acceptance; blocked: runtime access/Docker/Postgres, further SDK spend unapproved; live guards unchanged

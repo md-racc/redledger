@@ -205,16 +205,17 @@ delay. Reported usage was **2,989 Factory credits**. An earlier attempt was inco
 successful model discovery after removing an empty `FACTORY_API_KEY` justified the retry.
 
 `tests/sdk_authenticated_probe.py` preserves a portable, explicitly opt-in form of that
-temporary probe; it is not collected by pytest. After #85 and this policy are integrated,
-with the existing CLI authenticated and the `dev` + `droid` extras installed:
+temporary probe; it is not collected by pytest. With the merged prerequisites, the existing
+CLI authenticated and the `dev` + `droid` extras installed:
 
 ```sh
 cd blue
 UV_NO_ENV_FILE=1 uv run --no-sync python tests/sdk_authenticated_probe.py --allow-model-call
 ```
 
-The portable replay later matched all Session IDs but ended without a permission callback,
-tool event, write or reported usage. Reproducibility remains unqualified; do not retry blindly.
+An earlier portable replay matched all Session IDs but ended without a permission callback,
+tool event, write or reported usage. That run was inconclusive; its cause remains unknown.
+The authorized result below is a separate attempt, not a diagnosis of that earlier failure.
 
 ### Portable probe diagnostics, not another live result
 
@@ -238,3 +239,52 @@ not a real Ledger commit, production gate latency, CRS access or the three-day s
 checkpoint. The real live hard stop and false readiness/health remain unchanged.
 
 See [ACCEPTANCE.md](ACCEPTANCE.md) for ownership and the remaining runtime-dependent checks.
+
+### Authorized portable replay, 2026-10-24
+
+At source `f8b27829a7bb61b13e8b06b83f15c41c9f1170c8`, the user approved exactly one
+session capped at 60 seconds. The portable command above, additionally using `UV_OFFLINE=1`,
+returned exit 0 in about 13 seconds. There was no retry. Versions were CLI `0.249.0`,
+Python `3.11.15`, SDK `0.5.0` and MCP `1.30.0`; model was `gemini-3.8-flash`, low reasoning.
+
+Sanitized qualification fields from that run:
+
+```json
+{
+  "controlled_probe_passed": true,
+  "failure_codes": [],
+  "ready": false,
+  "turn_ok": true,
+  "error_type": null,
+  "cleanup_pending": false,
+  "autonomy": "off",
+  "identity": "strict",
+  "factory_credits": 1850.0,
+  "permission_count": 1,
+  "intercepted_report_writes": 1,
+  "tool_calls": 1,
+  "tool_results": 1,
+  "authenticated_id_binding": true,
+  "invocation_source": "stream",
+  "gate_http_status": 200,
+  "gate_verdict": "allow",
+  "gate_ms": 3.437,
+  "gate_during_intercepted_write": true,
+  "runtime_guard_changed": false,
+  "real_ledger_or_crs_access": false,
+  "stages": [
+    "shared_sdk_entry",
+    "synthetic_prompt_ready",
+    "checking_actual_session_ids",
+    "actual_session_ids_matched",
+    "permission_callback",
+    "turn_returned"
+  ]
+}
+```
+
+This qualifies that single controlled, intercepted run, including the confirmed report receipt
+and exact shared event pair. The gate timing is local ASGI overlap with a two-second intercepted
+write, not a real Ledger or production-latency result. All runtime guards and false readiness
+remain unchanged. Real-Ledger, interrupted/unknown-receipt, CRS, #83 seeded and all-real shadow
+acceptance are still outstanding; the one-session spending authorization is exhausted.
