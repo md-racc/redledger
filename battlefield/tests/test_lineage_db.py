@@ -24,6 +24,7 @@ async def _fresh(pg: None, monkeypatch: pytest.MonkeyPatch) -> None:
     await db.execute("UPDATE lineages SET status='failed' WHERE status IN ('running','paused')")
     monkeypatch.setattr(lineage, "POLL_SEC", 0.01)
     monkeypatch.setattr(settings, "day_pause_sec", 0.0)
+    monkeypatch.setattr(lineage, "_control", asyncio.Lock())  # module-level lock binds to the first test's loop
 
 
 def _client() -> httpx.AsyncClient:
@@ -327,6 +328,10 @@ async def _paused_generation(c: httpx.AsyncClient, *events: tuple[str, dict[str,
         ([("error", {"where": "orchestrator", "message": "battlefield restarted mid-episode; resume to continue"})], True),  # restart
         ([("error", {"where": "credit_guard", "message": "episode paused at 9 credits (limit 5)"})], False),  # MAX_CREDITS_PER_EPISODE
         ([], False),  # by hand
+        (  # both guards tripped on one turn: the episode cap is not lifted by a lineage resume
+            [("error", {"where": "credit_guard", "message": "episode paused at 9 credits (limit 5)"}), ("lineage.paused", {})],
+            False,
+        ),
     ],
 )
 async def test_lineage_resume_resumes_only_episodes_it_paused(monkeypatch: pytest.MonkeyPatch, events: list, resumed: bool) -> None:
@@ -336,6 +341,7 @@ async def test_lineage_resume_resumes_only_episodes_it_paused(monkeypatch: pytes
         if not resumed:  # the lineage was paused after the episode had already stopped
             await db.execute("INSERT INTO events (episode_id, day, type, agent, payload) VALUES ($1,0,'lineage.paused','battlefield','{}')", eid)
         assert (await c.post(f"/api/episodes/{eid}/resume", headers=f.auth())).status_code == 409  # its lineage is paused
+        assert (await c.post(f"/api/episodes/{eid}/step", headers=f.auth())).status_code == 409
         assert (await c.post(f"/api/lineages/{lid}/resume", headers=f.auth())).status_code == 200
         status = await db.fetchval("SELECT status FROM episodes WHERE id=$1", eid)
         try:
@@ -386,5 +392,24 @@ async def test_interrupted_generation_creation_is_redone_once(monkeypatch: pytes
         t = await _types(eid)
         assert t[:3] == ["playbook.updated", "generation.started", "episode.started"] and t.count("playbook.updated") == 1
         assert await db.fetchval("SELECT status FROM lineages WHERE id=$1", lid) == "finished" and stub.reflects
+    finally:
+        await _cleanup(lid)
+
+
+async def test_fast_pause_then_resume_keeps_one_loop_running(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub(monkeypatch, _Agents())
+    async with _client() as c:
+        lid = (await _create(c))["id"]
+        await c.post(f"/api/lineages/{lid}/start", headers=f.auth())
+        task = lineage.state(lid).task
+        for _ in range(3):
+            assert (await c.post(f"/api/lineages/{lid}/pause", headers=f.auth())).status_code == 200
+            assert (await c.post(f"/api/lineages/{lid}/resume", headers=f.auth())).status_code == 200
+            await asyncio.sleep(0.03)
+            assert lineage.state(lid).task is task and not task.done()  # never respawned, never exited on 'paused'
+        await asyncio.wait_for(task, 60)
+    try:
+        assert await db.fetchval("SELECT status FROM lineages WHERE id=$1", lid) == "finished"
+        assert await db.fetchval("SELECT COUNT(*) FROM episodes WHERE lineage_id=$1 AND status='finished'", lid) == 2
     finally:
         await _cleanup(lid)

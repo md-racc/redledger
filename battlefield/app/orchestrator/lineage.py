@@ -201,7 +201,8 @@ async def resume(lineage_id: str) -> bool:
 async def paused_by_lineage(episode_id: str) -> bool:
     """Did the lineage (its pause or credit guard, both emitting `lineage.paused` first) or restart recovery
     (`error {where: orchestrator}` first) cause the episode's latest `episode.paused`? Deduced from the events
-    between the last `episode.started`/`episode.resumed` and that pause."""
+    between the last `episode.started`/`episode.resumed` and that pause. Never if the episode's own credit
+    guard (MAX_CREDITS_PER_EPISODE) tripped in that span too: only POST /episodes/{id}/resume lifts it."""
     return bool(
         await db.fetchval(
             """
@@ -209,7 +210,10 @@ async def paused_by_lineage(episode_id: str) -> bool:
                  r AS (SELECT COALESCE(MAX(e.id), 0) AS id FROM events e, p
                        WHERE e.episode_id=$1 AND e.type IN ('episode.started','episode.resumed') AND e.id < p.id)
             SELECT 1 FROM events e, p, r WHERE e.episode_id=$1 AND e.id > r.id AND e.id < p.id
-              AND (e.type='lineage.paused' OR (e.type='error' AND e.payload->>'where'='orchestrator')) LIMIT 1
+              AND (e.type='lineage.paused' OR (e.type='error' AND e.payload->>'where'='orchestrator'))
+              AND NOT EXISTS (SELECT 1 FROM events g WHERE g.episode_id=$1 AND g.id > r.id AND g.id <= p.id AND g.type='error'
+                              AND g.payload->>'where'='credit_guard' AND g.payload->>'message' LIKE 'episode paused%')
+            LIMIT 1
             """,
             episode_id,
         )
@@ -238,9 +242,13 @@ async def _loop(lineage_id: str) -> None:
     try:
         while True:
             await st.gate.wait()
-            ln = await db.fetchrow("SELECT * FROM lineages WHERE id=$1", lineage_id)
+            async with _control:  # atomic with resume(): a pause read here can't swallow a resume
+                ln = await db.fetchrow("SELECT * FROM lineages WHERE id=$1", lineage_id)
+                if ln["status"] == "paused":
+                    st.gate.clear()  # stay alive and wait: resume() sets the gate, never needs to respawn
+                    continue
             if ln["status"] != "running":
-                return
+                return  # finished / failed (or never started)
             cfg, g = config(ln), ln["current_generation"]
             ep = await episode_of(lineage_id, g) if g else None
             if ep is not None and await discard_unannounced(ep):

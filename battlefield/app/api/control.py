@@ -104,6 +104,14 @@ async def _lineage_episode(body: EpisodeCreate) -> dict[str, Any]:
 # ---------- lineages ----------
 
 
+async def _not_held_by_paused_lineage(episode_id: str) -> None:
+    """A paused lineage owns its current generation's episode: resume the lineage, not the episode."""
+    if await db.fetchval(
+        "SELECT 1 FROM episodes e JOIN lineages l ON l.id=e.lineage_id WHERE e.id=$1 AND l.status='paused' AND e.generation=l.current_generation", episode_id
+    ):
+        raise HTTPException(409, "its lineage is paused: POST /lineages/{id}/resume instead")
+
+
 async def _lineage_out(row: Any) -> dict[str, Any]:
     out = db.row_to_dict(row) or {}
     eps = await db.fetch("SELECT id, generation, seed, status FROM episodes WHERE lineage_id=$1 ORDER BY generation", row["id"])
@@ -202,10 +210,7 @@ async def pause_episode(episode_id: str):
 @router.post("/episodes/{episode_id}/resume")
 async def resume_episode(episode_id: str):
     await _must_exist(episode_id, live=True)
-    if await db.fetchval(
-        "SELECT 1 FROM episodes e JOIN lineages l ON l.id=e.lineage_id WHERE e.id=$1 AND l.status='paused' AND e.generation=l.current_generation", episode_id
-    ):
-        raise HTTPException(409, "its lineage is paused: POST /lineages/{id}/resume instead")
+    await _not_held_by_paused_lineage(episode_id)
     await runner.resume(episode_id)
     return {"ok": True}
 
@@ -213,6 +218,7 @@ async def resume_episode(episode_id: str):
 @router.post("/episodes/{episode_id}/step")
 async def step_episode(episode_id: str):
     await _must_exist(episode_id, live=True)
+    await _not_held_by_paused_lineage(episode_id)
     try:
         return await runner.step(episode_id)
     except RuntimeError as e:
