@@ -57,6 +57,8 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
 
 ## Changes
 
+- 2026-10-24 · Ad · agent-service.md, ledger-api.yaml · per-agent tokens: `AGENT_TOKEN_RED/GREEN/BLUE` (battlefield holds all three, each agent container only its own as `AGENT_TOKEN`); a request with `X-Agent: <a>` must present that agent's token, another agent's token → 401 (audited), so no agent can act or read as another; battlefield calls each agent with its own token; single-token fallback to shared `AGENT_TOKEN` / `INTERNAL_TOKEN` with a startup warning keeps DRY_RUN/mock/local-stack working. Also contracts `POST /inputs` 403 (agent body episode_id ≠ X-Episode, #104) and 422 · Ad integrates; Al/M/R notified
+
 - 2026-10-24 · Ad · schema.sql · `events` and `audit_log` primary keys `(id)` → `(id, ts)` (new databases via CREATE TABLE; existing ones via an idempotent upgrade that only rewrites a primary key that is exactly `(id)`), plus plain `events_id` / `audit_id` indexes for `after_id` cursors. Why: Timescale (INTEGRATIONS.md B1) partitions hypertables on `ts` and requires it in every unique index. Nothing references either table by foreign key or `ON CONFLICT (id)`; `id` stays a BIGSERIAL and is still unique in practice. Hypertable creation itself happens in battlefield startup, guarded so a plain `postgres:16` keeps ordinary tables (next PR) · Ad integrates; R notified (event ids unchanged)
 
 - 2026-10-24 · Ad · ledger-api.yaml, agentkit models · `Preparation.decided_by` is nullable: null exactly while `effective` is `pending` (an enforced escalation is held). `GET /preparations/{key}` during a hold returned null and failed model validation (step 2a verification) · Ad integrates; M notified

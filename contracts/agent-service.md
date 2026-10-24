@@ -1,28 +1,38 @@
 # Agent service contract
 
 Each of `red`, `green`, `blue` is an HTTP service that battlefield drives. Battlefield is the only
-caller. All requests carry `Authorization: Bearer $AGENT_TOKEN`.
+caller. Every request to an agent carries `Authorization: Bearer <that agent's own token>`.
 
 ## Tokens
 
 | Token | Who holds it | What it authorizes |
 |---|---|---|
-| `AGENT_TOKEN` | battlefield, red, green, blue containers | Every Ledger API request carrying `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes` `/reflect` (agent `/health` is unauthenticated) |
+| `AGENT_TOKEN_RED`, `AGENT_TOKEN_GREEN`, `AGENT_TOKEN_BLUE` | battlefield holds all three; each agent container holds **only its own**, as `AGENT_TOKEN` | Ledger API requests carrying `X-Agent: <that agent>`; battlefield → that agent's `/turn` `/gate` `/audit` `/schemes` `/reflect` (agent `/health` is unauthenticated). All three are distinct secrets and distinct from `OPERATOR_TOKEN` |
 | `OPERATOR_TOKEN` | battlefield, frontend **server** (Next route handler), Makefile/curl, the owner | Every Ledger API request without `X-Agent`: control plane (`/episodes*`, `/escalations*`, `/replays*`, `/schemes`, `/health`, `/attacks/all`), `/fe/*` incl. `/fe/query`, `GET /events`, `/inputs`, `POST /ws/ticket`, `/ws?token=` (curl/debug) |
 | WS ticket | browser, ≤60 s lifetime, single use | One `/ws` connection, for one episode (or `*`). Minted by `POST /api/ws/ticket` with `OPERATOR_TOKEN` |
 | none | anyone | `battlefield/extensions/fe_*` routes deliberately marked public |
 
 Rules (battlefield enforces; see `ledger-api.yaml` per-route `security`):
-- A request with `X-Agent` must present `AGENT_TOKEN`. `OPERATOR_TOKEN` + `X-Agent` → 401.
-- A request without `X-Agent` must present `OPERATOR_TOKEN`. `AGENT_TOKEN` without `X-Agent` → 401.
+- A request with `X-Agent: <a>` must present that agent's own token (`AGENT_TOKEN_<A>`). Another
+  agent's token, the operator token, or any other value → 401: the token does not authenticate
+  the claimed `X-Agent`. Battlefield audits the refusal (`audit_log` row with the claimed agent and
+  `http_status` 401; never the token). So no agent can act or read as another agent.
+- A request without `X-Agent` must present `OPERATOR_TOKEN`. Any agent token without `X-Agent` → 401.
 - A correctly authenticated agent on a route its role may not call → 403. `GET /api/events` is
   operator-only: agents emit events, they never read them.
-- Agent services accept only `AGENT_TOKEN` on `/turn` `/gate` `/audit` `/schemes` `/reflect` → else 401.
-- Transition: when `AGENT_TOKEN` / `OPERATOR_TOKEN` is unset, each falls back to the legacy
-  `INTERNAL_TOKEN`; battlefield logs a warning when the two resolved values are equal.
-  `agentkit.AgentSettings.internal_token` keeps its name and reads `AGENT_TOKEN` first, then
-  `INTERNAL_TOKEN`, so agent code needs no change.
-- The browser never holds `AGENT_TOKEN` or `OPERATOR_TOKEN`; no token goes in a `NEXT_PUBLIC_*` var.
+- Battlefield calls each agent with that agent's own token. Agent services accept only their own
+  token (their `AGENT_TOKEN`) on `/turn` `/gate` `/audit` `/schemes` `/reflect` → else 401.
+- No agent ever needs another agent's token: agents never call each other (the green → blue
+  `/gate` mirror was removed by D1, #80). Mock agents run one process per agent (`AGENT_NAME`), and
+  each reads only its own token, exactly like the real services.
+- Transition / single-token mode: battlefield resolves `AGENT_TOKEN_<A>` → shared `AGENT_TOKEN` →
+  legacy `INTERNAL_TOKEN`, per agent. If any agent falls back to the shared token, battlefield logs a
+  warning at startup that per-agent separation is off (any agent can then claim any `X-Agent`, as
+  before). `OPERATOR_TOKEN` falls back to `INTERNAL_TOKEN`; battlefield warns when it equals any agent
+  token. This keeps `DRY_RUN`, `make mock-agents` and `make local-stack` working with one token.
+  On the agent side nothing changes: `agentkit.AgentSettings.internal_token` keeps reading
+  `AGENT_TOKEN`, then `INTERNAL_TOKEN`; deployment gives each container its own value.
+- The browser never holds an agent token or `OPERATOR_TOKEN`; no token goes in a `NEXT_PUBLIC_*` var.
 
 ## Common
 

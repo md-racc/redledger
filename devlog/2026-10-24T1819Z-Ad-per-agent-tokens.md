@@ -1,0 +1,1 @@
+- 2026-10-24T18:19Z · Ad · contracts: per-agent tokens (AGENT_TOKEN_RED/GREEN/BLUE; another agent's token for a claimed X-Agent → 401, audited; single-token fallback with warning); /inputs 403/422 contracted; next: implementation PR; blocked: none
