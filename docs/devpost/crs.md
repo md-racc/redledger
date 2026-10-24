@@ -8,7 +8,7 @@ Status legend: `LIVE` = running on prod (app.redledger.us) with a real model tod
 
 ## 0. Verdict first (read before using anything below)
 
-**CRS live-evidence verdict:** authenticated sandbox calls for P01/P12/P16 are proven from a local stack (all logged `billable:false`), and a CRS mismatch produced exactly one high-severity flag on the right employee inside a real episode. **The CRS finding has not yet changed a later gate decision**: the expense hold never fired, because battlefield's expense gate context omits flags. Nothing CRS-related runs on prod.
+**CRS live-evidence verdict:** authenticated sandbox calls for P01/P12/P16 are proven from a local stack (all logged `billable:false`), and a CRS mismatch produced exactly one high-severity flag on the right employee inside a real episode. **The CRS finding has not yet been shown changing a later gate decision**: in the #134 run the expense hold never fired, because battlefield's expense gate context omitted flags. That is fixed on main in #139; M's end-to-end re-run is pending. Nothing CRS-related runs on prod.
 
 What is proven, and where:
 
@@ -19,17 +19,17 @@ What is proven, and where:
 | Live outcome ladder: P01 verified (after the #125 parser fix), P12 mismatch, P16 review | Yes, local | M's machine | #125; `blue/CRS.md:92-95` |
 | `billable:false` on the provider's `/users/logs` | Yes: 4/4 entries (probe), 13/13 entries (episode run) | provider logs, operator read | `blue/CRS.md:96-97`; #134; #102 (22:27Z) |
 | CRS inside a real episode (real battlefield, real keyless blue, `CRS_LIVE=true`) flags only the mismatch persona | Yes, local, ep_e1d35dfb24b1 (2-day enforce) | local stack | `blue/CRS.md` "Episode acceptance evidence" (#134); #102 (22:27Z) |
-| CRS finding causally blocks a **later** gated action (P12's next expense) | **No.** P12's day-1 expense was **paid** | — | #134 recorded the finding (`blue/CRS.md` "Finding (battlefield…)") but did not change battlefield: `_expense_context` still has no `flags` at `battlefield/app/api/green_writes.py:92-109` on 0de4fe8 |
+| CRS finding causally blocks a **later** gated action (P12's next expense) | **Not yet shown.** In the #134 run P12's day-1 expense was **paid**, because `_expense_context` sent no `flags` to the gate. **Fixed in #139** (ae822a1): the expense gate context now carries employee and expense flags. M's re-run of the #134 driver is pending | — | #134 finding; #139 (`battlefield/app/api/green_writes.py` `_expense_context`) |
 | Anything CRS on prod | **No.** Blue is keyless on prod; `CRS_LIVE` isn't passed to the blue container in any compose file; blue's live audit is hard-disabled | — | `docker-compose.yml:120-139`; `blue/audit/agent.py:150-163`; README "Where Droid runs" (#135) |
 | Episode acceptance driver on main | **Yes**, merged in #134 (`blue/tests/crs_episode_acceptance.py`, opt-in `--allow-provider-call`, not collected by pytest) | — | #134 (0de4fe8) |
 | Frontend or pitch shows CRS | **No** | — | no CRS references in `frontend/` (grep); `frontend/docs/pitch-script.md` |
 
 **Recommendation on whether to submit to CRS** (the challenge's only rule: "Make meaningful use of the CRS sandbox and show it working live in your demo", calhacks.crscreditapi.com):
 - **GO** (submit to Best Identity / Fraud Innovation; optionally Most Unexpected Use) only if all three happen before submission:
-  1. Ad lands the one-query battlefield fix (flags in `_expense_context`, proposed in #134's `blue/CRS.md` finding; not on main yet).
+  1. ~~Ad lands the battlefield fix (flags in `_expense_context`).~~ **Done: #139.**
   2. M re-runs the #134 driver and gets P12's later expense **blocked** with `already_flagged_high` in `rules_fired`, P01's and P16's paid, and `billable:false`.
   3. Someone can run that live at the CRS judging table from a laptop with the local stack and the team's sandbox credentials exported (prod can't do it today).
-- **PARTIAL** (fix doesn't land, but a laptop can run the flag step live): submitting to Identity / Fraud is defensible only if the copy says plainly "the CRS mismatch raises the hold live; wiring that hold into the expense gate is one battlefield change away". It will score low on "it really works". Team call.
+- **PARTIAL** (the re-run doesn't happen or fails, but a laptop can run the flag step live): submitting to Identity / Fraud is defensible only if the copy says plainly "the CRS mismatch raises the hold live; the expense gate reads it as of #139, but we haven't re-run the end-to-end check". It will score low on "it really works". Team call.
 - **NO-GO** (nobody can run it live at a table): don't submit to CRS. A recorded-only CRS demo breaks the challenge's only rule.
 - **Best Financial AI Agent:** not recommended. The CRS path runs in blue's deterministic keyless audit, with no LLM on it, and blue's live Droid audit is disabled. Honest only if P4 (blue live) lands and the live audit calls `crs_identity_check`. **Best Overall CRS Hack:** don't target it; one endpoint and three personas is not "the most impressive product built on CRS".
 
@@ -84,7 +84,7 @@ The original plan (B2) was EIN/vendor verification. The published CalHacks OpenA
 7. **Normalize** (`parse_identity`, `crs.py:27-54`). Evidence counts only from exactly one `idManagerVerification` product with `status == "DELIVERED"` and `searchStatus` in {CLEAR, HIT} and well-formed `messages`. Any code outside {2101, 2201, 2202, 2301, 2401} → unknown. 2401, or 2101 alone → `review`. Any of 2201/2202/2301 → `mismatch`. No messages → `verified` (sponsor note "messages: empty = verified"; the live P01 probe returned HIT + empty, and #125 fixed the parser, which had required CLEAR).
 8. **Finding.** Only `mismatch` creates `crs_employee_identity_mismatch`, severity **high**, family `identity`, fixed text "CRS reports an employee identity inconsistency; independent HR review is required." (`blue/audit/evidence.py:314-328`). `review`, `verified` and `unknown` create nothing. The audit report counts "CRS unknown/step-up" (`tools.py:341`).
 9. **Flag.** The audit raises the finding through `raise_flag(finding_id)`. That tool takes only a service-defined finding id: "No arbitrary entity, severity or reason" (`tools.py:262-280`).
-10. **Hold on the next gated action.** Blue's existing `already_flagged_high` rule blocks an expense approve/pay when a high-severity flag sits on the expense or its employee (`blue/gate/rules.py:331-344`). `/gate` makes no CRS call and gains no latency (`blue/CRS.md:31-32`). **Gap:** battlefield's `_expense_context` (`battlefield/app/api/green_writes.py:92-109`) sends `expense`, `employee`, `employee_expense_history` and `vendors_sharing_bank_account`, but **no `flags`**, so `req.context.get("flags", [])` is empty and step 10 never fires. #134 proposes the symmetric query (employee + expense flags), the same pattern `_invoice_context` already uses. That's Ad's area (battlefield), not blue's.
+10. **Hold on the next gated action.** Blue's existing `already_flagged_high` rule blocks an expense approve/pay when a high-severity flag sits on the expense or its employee (`blue/gate/rules.py:331-344`). `/gate` makes no CRS call and gains no latency (`blue/CRS.md:31-32`). **Gap, now fixed:** in the #134 run battlefield's `_expense_context` sent no `flags`, so `req.context.get("flags", [])` was empty and step 10 never fired. #139 (ae822a1) adds the employee + expense flags query, the same pattern `_invoice_context` uses (`battlefield/app/api/green_writes.py` `_expense_context`, `"flags": flags`). Not yet re-proven end to end with CRS (P6).
 
 ### 4.3 Modes and switches `ON MAIN`
 
@@ -125,8 +125,8 @@ The original plan (B2) was EIN/vendor verification. The published CalHacks OpenA
 
 | Item | Owner | Depends on | If it doesn't land, say |
 |---|---|---|---|
-| **P6 CRS sandbox live demo** | M (#102) | the battlefield flags-context fix (Ad), a re-run of the #134 driver, a laptop with local stack + credentials | See §0 GO / PARTIAL / NO-GO |
-| Flags in `_expense_context` (one query, proposed in #134) | Ad | — | "A CRS mismatch raises a high-severity hold on the employee; wiring that hold into the expense gate is pending." |
+| **P6 CRS sandbox live demo** | M (#102) | a re-run of the #134 driver on main ≥ ae822a1 (the flags fix, #139), a laptop with local stack + credentials | See §0 GO / PARTIAL / NO-GO |
+| ~~Flags in `_expense_context`~~ Done: #139 | Ad | — | Until M's re-run shows P12 blocked: "A CRS mismatch raises a high-severity hold on the employee, and the expense gate now reads it (#139); the end-to-end re-run is pending." |
 | ~~Merge #134~~ Done: driver `blue/tests/crs_episode_acceptance.py` (`--allow-provider-call`) is on main | M | — | — |
 | CRS on prod (pass `CRS_LIVE` + creds to blue, or blue live audit) | Ad (compose) / M | P4 for the live audit | "CRS runs on a local stack of the same code; prod blue is keyless" |
 | P4 Blue live on Droid (would make "Financial AI Agent" honest) | M (#78) | live acceptance | Don't enter Best Financial AI Agent |
@@ -216,7 +216,7 @@ Red Ledger protects a business from ghost-employee and synthetic-identity fraud 
 6. **Does the model see SSNs?** No. The tool returns counts by status, and the model's view excludes names and identity fields (`tools.py:259-260`; `evidence.py:299-311`).
 7. **Do you retry login?** No. One attempt, latched before the request. A failed or expired token needs a human and a restart (`crs.py:80-84`; `blue/CRS.md:55-57`).
 8. **Is it live on your deployed site?** Not yet. Blue runs keyless on prod. The CRS demo runs the same code on a local stack.
-9. **Did CRS change a decision?** `[GO]` Yes: P12's next expense was blocked with `already_flagged_high`. `[else]` It raised the right hold. Feeding flags into the expense gate's evidence is a one-query battlefield change we found in our own acceptance run (#134).
+9. **Did CRS change a decision?** `[GO]` Yes: P12's next expense was blocked with `already_flagged_high`. `[else]` It raised the right hold. Our own acceptance run (#134) found the expense gate wasn't reading flags; we fixed that in #139, and the end-to-end re-run is pending.
 10. **Why not just use the HR record?** Fakes can have HR records. In our scenario HR is valid and accounts are distinct on purpose, so only CRS can catch it.
 11. **Billing?** All sandbox entries we checked were `billable:false` via `/users/logs`.
 12. **What's AI about it?** The surrounding system is three AI agents. The CRS check sits in the controller's audit, and its tool is registered in blue's Droid session (`blue-ledger___crs_identity_check`), but the live Droid audit isn't enabled yet.
