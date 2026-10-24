@@ -101,11 +101,21 @@ async def _expense_context(exp: dict[str, Any]) -> dict[str, Any]:
     vendor_match = db.rows_to_list(
         await db.fetch("SELECT id, name FROM vendors WHERE episode_id=$1 AND bank_account=$2", ep, employee["bank_account"] if employee else ""), hide=True
     )
+    flags = db.rows_to_list(
+        await db.fetch(
+            "SELECT * FROM flags WHERE episode_id=$1 AND ((entity_type='employee' AND entity_id=$2) OR (entity_type='expense' AND entity_id=$3))",
+            ep,
+            exp["employee_id"],
+            exp["id"],
+        ),
+        hide=True,
+    )
     return {
         "expense": {k: db._jsonable(v) for k, v in exp.items() if k not in db.HIDDEN_COLUMNS},
         "employee": employee,
         "employee_expense_history": history,
         "vendors_sharing_bank_account": vendor_match,
+        "flags": flags,
     }
 
 
