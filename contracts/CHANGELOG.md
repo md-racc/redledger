@@ -57,6 +57,8 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
 
 ## Changes
 
+- 2026-10-24 · Ad · ledger-api.yaml, agent-service.md · at most one active run per battlefield (episode start/resume/step and lineage start/resume → 409 `another run is active` with the active ids); battlefield retries an agent's `… in progress` 409 for up to 10 s. Prod: a frontend-started episode collided with a lineage and every red turn got 409 · Ad integrates; R notified (frontend should show/join the active run on this 409)
+
 - 2026-10-24 · Ad · agent-service.md, ledger-api.yaml · token refusals: audited (claimed agent, `presented_by`, 401, never the token) only when the presented token belongs to a known caller; an unknown token is only logged, so unauthenticated requests never write to the database (#109 verification); refusal rows are operator-only (excluded from agents' `GET /audit_log`) so they can't reveal who tried to act as whom · Ad integrates
 
 - 2026-10-24 · Ad · agent-service.md, ledger-api.yaml · per-agent tokens: `AGENT_TOKEN_RED/GREEN/BLUE` (battlefield holds all three, each agent container only its own as `AGENT_TOKEN`); a request with `X-Agent: <a>` must present that agent's token, another agent's token → 401 (audited), so no agent can act or read as another; battlefield calls each agent with its own token; single-token fallback to shared `AGENT_TOKEN` / `INTERNAL_TOKEN` with a startup warning keeps DRY_RUN/mock/local-stack working. Also contracts `POST /inputs` 403 (agent body episode_id ≠ X-Episode, #104) and 422 · Ad integrates; Al/M/R notified

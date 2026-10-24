@@ -28,6 +28,11 @@ info:
     and `attack_id` from every response to an X-Agent caller.
     Any agent write outside that agent's active turn → 409 {error: 'no active turn for this agent'}
     (audited). Reads are always allowed.
+    At most one active run per battlefield. Active = any non-replay episode with status `running`, an episode
+    being stepped, or a lineage with status `running` (a running lineage's own generation episodes are part of
+    its run). `POST /episodes/{id}/start|resume|step` and `POST /lineages/{id}/start|resume` while another run is
+    active → 409 {error: 'another run is active', episode_id: <active episode|null>, lineage_id: <active lineage|null>}.
+    Resuming the active run itself is allowed; replays (`POST /replays/{id}/play`) never count.
     Green's gated actions may be prepared first (`POST /preparations`, keyed by the SDK
     tool_use_id): battlefield gates and persists the decision, and the gated route later consumes
     it. Without a preparation a gated route gates inline. Agents MUST send only SDK-reported
