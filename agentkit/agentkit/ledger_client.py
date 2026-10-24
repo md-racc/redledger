@@ -9,6 +9,10 @@ current invocation's key (the Droid tool_use_id for the call's first write, `<id
 see agentkit.invocation); else a fresh UUID4. An explicit key that the current invocation already
 sent raises agentkit.invocation.IdempotencyKeyReused before the request goes out.
 
+Strict identity (a strict agent's live turn, design B-2): every write needs a current invocation whose id
+the Droid SDK reported, and an explicit key must belong to it (`<id>` or `<id>:<n>`); otherwise
+UnverifiedInvocation is raised before anything is sent. UUID4 keys remain for DRY_RUN and best_effort.
+
 Usage inside a turn:
 
     async with LedgerClient(settings, episode_id=ep, day=d) as ledger:
@@ -22,10 +26,12 @@ import uuid
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from .config import AgentSettings
-from .invocation import current_invocation
-from .models import AttackCreate
+from .invocation import VERIFIED_SOURCES, ToolUse, UnverifiedInvocation, current_invocation, strict_identity
+from .models import AttackCreate, GatedAction, Preparation, PreparationCreate
+from .models import PreparationRejected as PreparationRejectedBody
 
 
 class LedgerError(Exception):
@@ -42,6 +48,21 @@ class GateBlocked(LedgerError):
         super().__init__(403, body)
         self.reason: str = body.get("reason", "")
         self.verdict_id: str | None = body.get("verdict_id")
+        self.cause: str | None = body.get("cause")  # control | gate_unavailable
+        self.escalation_id: str | None = body.get("escalation_id")
+        self.preparation_id: str | None = body.get("preparation_id")
+
+
+class PreparationRejected(LedgerError):
+    """409: the gated route refused to consume the call's preparation (expired, stale, consumed, pending)."""
+
+    def __init__(self, body: dict[str, Any]):
+        super().__init__(409, body)
+        parsed = PreparationRejectedBody.model_validate(body)  # _handle only builds this from a valid body
+        self.error: str = parsed.error
+        self.preparation_id: str = parsed.preparation_id
+        self.detail: str = parsed.detail
+        self.consumed_status: int | None = parsed.consumed_status
 
 
 class LedgerClient:
@@ -93,6 +114,11 @@ class LedgerClient:
 
     async def _write(self, method: str, path: str, body: dict[str, Any] | list[Any] | None, tool_use_id: str | None) -> Any:
         inv = current_invocation()
+        if strict_identity() and not self.s.dry_run:
+            if inv is None or not inv.verified:
+                raise UnverifiedInvocation(f"{method} {path}: no verified tool_use_id for this write (strict identity)")
+            if tool_use_id and tool_use_id != inv.tool_use_id and not tool_use_id.startswith(f"{inv.tool_use_id}:"):
+                raise UnverifiedInvocation(f"{method} {path}: X-Tool-Use-Id {tool_use_id!r} is not this call's id (strict identity)")
         if tool_use_id:
             if inv is not None:
                 inv.reserve(tool_use_id)
@@ -105,6 +131,18 @@ class LedgerClient:
 
     @staticmethod
     def _handle(r: httpx.Response) -> Any:
+        if r.status_code == 409:
+            try:
+                body = r.json()
+            except Exception:
+                body = r.text  # as for any other error status: a malformed or non-JSON body is kept as text
+            if isinstance(body, dict) and str(body.get("error", "")).startswith("preparation_"):
+                try:
+                    PreparationRejectedBody.model_validate(body)
+                except ValidationError:
+                    raise LedgerError(409, body) from None  # an unknown preparation_* error stays a plain 409
+                raise PreparationRejected(body)
+            raise LedgerError(409, body)
         if r.status_code == 403:
             body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"reason": r.text}
             if isinstance(body, dict) and body.get("verdict") == "block":
@@ -126,6 +164,24 @@ class LedgerClient:
 
     async def get_vendor(self, vendor_id: str) -> dict:
         return await self._get(f"/vendors/{vendor_id}")
+
+    # ---------- gate preparations (green; contracts/ledger-api.yaml /preparations) ----------
+    async def prepare(self, use: ToolUse, action: GatedAction, entity_id: str | None, args: dict[str, Any] | None = None) -> Preparation:
+        """Gate a tool call before it runs (from the permission handler), keyed by the call's SDK
+        tool_use_id. Refuses a use whose id the SDK did not report. A block returns 200 too: read
+        `effective`. Sent outside any invocation, so it never consumes one of the call's write keys."""
+        if use.source not in VERIFIED_SOURCES:
+            raise UnverifiedInvocation(f"prepare {action}: tool_use_id {use.tool_use_id!r} has source {use.source!r}, not an SDK-reported id")
+        body = PreparationCreate(action=action, entity_id=entity_id, args=args or {}).model_dump()
+        r = await self.c.post("/preparations", json=body, headers={"X-Tool-Use-Id": use.tool_use_id})
+        return Preparation.model_validate(self._handle(r))
+
+    async def get_preparation(self, key: str) -> Preparation | None:
+        """The preparation stored under `key` in this episode, or None (e.g. to reconcile without retrying)."""
+        r = await self.c.get(f"/preparations/{key}")
+        if r.status_code == 404:
+            return None
+        return Preparation.model_validate(self._handle(r))
 
     async def list_vendor_changes(self, status: str | None = None) -> list[dict]:
         return await self._get("/vendor_changes", status=status)

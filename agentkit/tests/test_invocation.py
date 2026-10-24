@@ -137,6 +137,7 @@ TOOLS = [pay_invoice, three_writes, boom, own_timeout, narrate_then_hang, wedge]
 class _Agent(DroidAgent):
     name = "green"
     autonomy = "off"
+    identity = "best_effort"  # these tests cover best-effort linking; strict has its own tests (test_strict_identity.py)
     verdict = "allow"
     raise_in_handler = False
 
@@ -683,7 +684,7 @@ def _install_fake_sdk(monkeypatch, script):
             return False
 
         async def list_tools(self):
-            return []
+            return [types.SimpleNamespace(id=f"green-ledger___{n}") for n in self.tools]
 
         def stream(self, prompt, *, include_partial_messages, timeout):
             return _Stream(self)
@@ -726,6 +727,7 @@ def _install_fake_sdk(monkeypatch, script):
 
 
 class _Mirror(_Agent):
+    identity = "strict"  # green's live policy (D7): the same end-to-end path must hold under strict
     mirrored: list[str]
 
     async def on_permission(self, request):

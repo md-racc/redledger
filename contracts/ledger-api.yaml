@@ -24,6 +24,12 @@ info:
     Agent routes additionally require X-Agent, X-Episode, X-Day, and (for writes) X-Tool-Use-Id.
     Battlefield enforces per-agent route permissions (403 on violation) and strips `origin`
     and `attack_id` from every response to an X-Agent caller.
+    Any agent write outside that agent's active turn → 409 {error: 'no active turn for this agent'}
+    (audited). Reads are always allowed.
+    Green's gated actions may be prepared first (`POST /preparations`, keyed by the SDK
+    tool_use_id): battlefield gates and persists the decision, and the gated route later consumes
+    it. Without a preparation a gated route gates inline. Agents MUST send only SDK-reported
+    tool_use_ids from live Droid sessions; battlefield binds a key, it cannot verify it.
 servers:
   - url: http://battlefield:8000/api
 
@@ -244,6 +250,55 @@ components:
         reason: { type: string }
         verdict_id: { type: string }
         escalation_id: { type: string, nullable: true }
+        cause: { type: string, enum: [control, gate_unavailable], nullable: true, description: "control = blue evaluated the supplied context; gate_unavailable = blue timed out or failed (fallback verdict)" }
+        decided_by: { type: string, enum: [gate, human, timeout], nullable: true }
+        preparation_id: { type: string, nullable: true }
+    PreparationCreate:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [invoices.match, invoices.approve, invoices.reject, invoices.pay, vendor_changes.approve, vendor_changes.reject, expenses.approve, expenses.pay, gl.post] }
+        entity_id: { type: string, description: "required except for gl.post" }
+        args: { type: object, description: "the exact body the execution will send (gl.post: the GlEntryCreate body)" }
+    Preparation:
+      type: object
+      required: [preparation_id, idempotency_key, controller_mode, day, action, effective, decided_by, expires_at, consumed]
+      properties:
+        preparation_id: { type: string }
+        idempotency_key: { type: string, description: "X-Tool-Use-Id of the prepare call = the first write key of the tool call" }
+        controller_mode: { type: string, enum: [off, shadow, enforce] }
+        day: { type: integer }
+        action: { type: string }
+        entity_type: { type: string, nullable: true }
+        entity_id: { type: string, nullable: true }
+        amount: { type: number, format: double, nullable: true, description: "null for gl.post and vendor_changes.*" }
+        effective: { type: string, enum: [allow, block, pending], description: "what execution under this key will do; shadow and off always allow" }
+        enforced: { type: boolean }
+        decided_by: { type: string, enum: [mode, gate, human, timeout], nullable: true, description: "null exactly while effective is pending (an enforced escalation is still held); mode = off (no gate call); gate = blue's verdict decided it, including shadow, where blue answered but effective is always allow; human / timeout = an enforced escalation was resolved / expired" }
+        verdict_id: { type: string, nullable: true, description: "null in off" }
+        verdict: { type: string, enum: [allow, block, escalate], nullable: true }
+        cause: { type: string, enum: [control, gate_unavailable], nullable: true }
+        reason: { type: string }
+        rules_fired: { type: array, items: { type: string } }
+        escalation_id: { type: string, nullable: true }
+        expires_at: { type: string, format: date-time, description: "created_at + 120 s; never extended, not even by a human decision" }
+        consumed: { type: boolean }
+        consumed_status: { type: integer, nullable: true }
+    ConflictError:
+      type: object
+      description: "A 409 that is not a PreparationRejected: entity state (`{detail: 'invoice is paid'}`), an idempotency key reused for a different action (`{error, verdict_id}`), or an agent write outside its active turn (`{error: 'no active turn for this agent'}`)."
+      properties:
+        error: { type: string }
+        detail: { type: string }
+        verdict_id: { type: string }
+    PreparationRejected:
+      type: object
+      required: [error, preparation_id]
+      properties:
+        error: { type: string, enum: [preparation_expired, preparation_stale, preparation_consumed, preparation_pending] }
+        preparation_id: { type: string }
+        detail: { type: string, description: "e.g. 'mode changed', 'day changed', 'state changed: vendor.bank_account'" }
+        consumed_status: { type: integer, nullable: true, description: "preparation_consumed: the status the consuming call returned" }
     Episode:
       type: object
       properties:
@@ -437,10 +492,11 @@ paths:
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/VendorChange' } } } } }
   /vendor_changes/{id}/approve:
     post: { x-agents: [green], x-gated: vendor_changes.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
-            responses: { '200': { description: approved }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } } } }
+            responses: { '200': { description: approved }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /vendor_changes/{id}/reject:
     post: { x-agents: [green], x-gated: vendor_changes.reject, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
-            requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }, responses: { '200': { description: rejected } } }
+            requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } },
+            responses: { '200': { description: rejected }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
 
   /employees:
     get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Employee' } } } } } } }
@@ -471,12 +527,14 @@ paths:
   /invoices/{id}/match:
     post: { x-agents: [green], x-gated: invoices.match, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
             requestBody: { content: { application/json: { schema: { type: object, required: [po_id], properties: { po_id: { type: string } } } } } },
-            responses: { '200': { description: matched }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } } } }
+            responses: { '200': { description: matched }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /invoices/{id}/approve:
-    post: { x-agents: [green], x-gated: invoices.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: approved }, '403': { description: blocked } } }
+    post: { x-agents: [green], x-gated: invoices.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
+            responses: { '200': { description: approved }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /invoices/{id}/reject:
     post: { x-agents: [green], x-gated: invoices.reject, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
-            requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }, responses: { '200': { description: rejected } } }
+            requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } },
+            responses: { '200': { description: rejected }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /invoices/{id}/pay:
     post:
       summary: The money-moving call.
@@ -487,7 +545,7 @@ paths:
       responses:
         '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
         '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }
-        '409': { description: invoice not in a payable state or vendor frozen }
+        '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (invoice not payable, vendor frozen, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } }
 
   /payments:
     get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: day, in: query, schema: { type: integer } } ],
@@ -502,10 +560,11 @@ paths:
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ExpenseCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Expense' } } } } }
   /expenses/{id}/approve:
-    post: { x-agents: [green], x-gated: expenses.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: ok }, '403': { description: blocked } } }
+    post: { x-agents: [green], x-gated: expenses.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
+            responses: { '200': { description: ok }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /expenses/{id}/pay:
     post: { x-agents: [green], x-gated: expenses.pay, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
-            responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }, '403': { description: blocked } } }
+            responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
 
   /bank/transactions:
     get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: from_day, in: query, schema: { type: integer } }, { name: to_day, in: query, schema: { type: integer } } ],
@@ -519,7 +578,66 @@ paths:
       x-gated: gl.post
       security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/GlEntryCreate' } } } }
-      responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/GlEntry' } } } } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/GlEntry' } } } }
+        '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }
+        '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } }
+
+  /preparations:
+    post:
+      summary: Prepare a gated green action. Validates, gates and persists the decision (and any block or escalation); never performs the action.
+      description: |
+        Keyed by X-Tool-Use-Id, which MUST be the SDK-reported tool_use_id of the live Droid call
+        (battlefield binds it, it cannot verify it). The binding is (action, entity_id, amount ±1¢,
+        args); the controller mode, day and a narrow state fingerprint of the entities the action
+        reads are recorded with it.
+        Same key + same action again returns the stored preparation unchanged: no new gate call, and
+        a pending escalation is joined, never opened twice. A key already bound to a different action
+        is a 409 and is never replayed.
+        Returns 200 for a block as well: a block is a successful preparation (`effective: block`); in
+        enforce the entity is already marked blocked and the verdict persisted, so a cancelled tool
+        call loses nothing. Shadow and off always return `effective: allow`.
+        In enforce an `escalate` verdict holds this request until a human decides or
+        ESCALATION_TIMEOUT_SEC passes (timeout = block).
+        Expiry is fixed at created_at + 120 s and never extended. Battlefield refuses to start unless
+        ESCALATION_TIMEOUT_SEC + GATE_TIMEOUT_SEC + 15 ≤ 120.
+        The gated route later called with the same X-Tool-Use-Id consumes the preparation (no second
+        gate call) and refuses with 409 PreparationRejected when it was already consumed or is still
+        pending; or, in every mode, when the binding, controller mode or day changed; or, in enforce
+        only, when it expired or the state fingerprint drifted (shadow/off audit those and proceed).
+        Every outcome is audited (`action = "prepare:<action>"`).
+        A prepare call is not a ledger write of the tool call: it does not count toward the
+        `<tool_use_id>:<n>` write counter, so the tool's first gated write still uses the bare id.
+        State fingerprint (sha256 over current, provenance-stripped values; recomputed in the
+        execution transaction):
+          invoices.match: invoice{amount, vendor_id, po_id}, the proposed PO{vendor_id, amount, status}, vendor{status}
+          invoices.approve|reject|pay: invoice{amount, vendor_id, po_id}, vendor{status, bank_account, bank_routing, name}, PO{vendor_id, amount, status} or null
+          vendor_changes.approve|reject: change{vendor_id, field, new_value}, vendor{status, the value of `field`}
+          expenses.approve|pay: expense{amount, employee_id}, employee{status, bank_account, hr_record}
+          gl.post: none (the args are the whole action)
+        The subject entity's own `status` is excluded (the route's compare-and-set guards it, and
+        approve-then-pay prepared back to back must not go stale), and so are history lists (paid
+        invoices, recent changes), so one invoice's payment never invalidates a sibling's preparation.
+        Restart: battlefield's startup recovery sets every `pending` preparation to
+        `effective: block, decided_by: timeout`; expiry is wall-clock, so it survives restarts.
+      x-agents: [green]
+      security: [ { agentBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/XAgent' }, { $ref: '#/components/parameters/XEpisode' }, { $ref: '#/components/parameters/XDay' }, { $ref: '#/components/parameters/XToolUseId' } ]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/PreparationCreate' } } } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Preparation' } } } }
+        '404': { description: entity or referenced PO not found }
+        '409': { description: "{error: 'invalid_state', detail} (the gated route's own state checks, e.g. invoice already paid) | {error: 'idempotency key reused for a different action', verdict_id} | {error: 'no active turn for this agent'}", content: { application/json: { schema: { $ref: '#/components/schemas/ConflictError' } } } }
+        '422': { description: unknown action or invalid body }
+  /preparations/{key}:
+    get:
+      summary: Read a preparation by its idempotency key (e.g. to reconcile a tool whose outcome is unknown, without retrying it).
+      x-agents: [green]
+      security: [ { agentBearer: [] } ]
+      parameters: [ { name: key, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Preparation' } } } }
+        '404': { description: no preparation for this key in the caller's episode }
 
   /flags:
     get: { x-agents: [green, blue], security: [ { agentBearer: [] }, { operatorBearer: [] } ], responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Flag' } } } } } } }

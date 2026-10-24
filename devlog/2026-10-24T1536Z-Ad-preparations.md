@@ -1,0 +1,1 @@
+- 2026-10-24T15:36Z · Ad · battlefield: POST/GET /api/preparations — gate half of green's gated actions without the mutation (one blue call per key, verdict cause, enforced block marks entity at preparation, escalation held, restart sweep, startup TTL check); mock green prepares then executes; next: step 2b consumes preparations in green_writes; blocked: none

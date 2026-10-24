@@ -52,6 +52,11 @@ import structlog
 from .config import AgentSettings
 from .events import EventEmitter
 from .invocation import (
+    IDENTITY_BEST_EFFORT,
+    IDENTITY_POLICIES,
+    IDENTITY_STRICT,
+    REFUSE_EXPLICIT,
+    REFUSE_UNVERIFIED,
     SOURCE_EXPLICIT,
     SOURCE_LOCAL,
     SOURCE_STREAM,
@@ -60,6 +65,7 @@ from .invocation import (
     ToolUse,
     bind_invocation,
     bind_registry,
+    bind_strict,
     current_registry,
 )
 from .ledger_client import LedgerClient
@@ -200,6 +206,15 @@ class DroidAgent(ABC):
     # waiting on an asyncio.Event created on the test's loop (a cross-loop wait; M to fix). Red and green
     # pass with it on, so they may opt in now (Al: set `turn_loop_dry_run = True` on RedAgent).
     turn_loop_dry_run: bool = False
+    # Tool-call identity policy (design B-1, D7). None = strict when autonomy == "off" (every call is
+    # permission-requested, so every execution can be linked), else best_effort. Strict applies to live
+    # turns only: an execution with no unambiguous SDK-reported id never runs (agent.tool_result
+    # {"error": true, "identity": <reason>, "not_run": true} under a local id), and ledger writes without
+    # a verified invocation raise UnverifiedInvocation. Blue sets "strict"; red stays best_effort for now.
+    # A refused call therefore shows one pair per id, intended (D8): the local refusal pair for the
+    # execution, and, for each SDK id it could have matched (e.g. both ambiguous identical calls), that
+    # id's own not_run pair when the turn closes. Every id still gets exactly one pair.
+    identity: str | None = None
 
     def __init__(self, settings: AgentSettings):
         self.s = settings
@@ -217,6 +232,15 @@ class DroidAgent(ABC):
                 turn_timeout_sec=settings.turn_timeout_sec,
                 hint="raise TURN_TIMEOUT_SEC to at least ESCALATION_TIMEOUT_SEC + HTTP_TIMEOUT_SEC + 20",
             )
+
+    def identity_policy(self) -> str:
+        policy = self.identity or (IDENTITY_STRICT if self.autonomy == "off" else IDENTITY_BEST_EFFORT)
+        if policy not in IDENTITY_POLICIES:
+            raise ValueError(f"{self.name}: identity must be one of {IDENTITY_POLICIES}, got {policy!r}")
+        return policy
+
+    def _strict_live(self) -> bool:
+        return not self.s.dry_run and self.identity_policy() == IDENTITY_STRICT
 
     # ---------- subclass hooks ----------
     @abstractmethod
@@ -244,7 +268,12 @@ class DroidAgent(ABC):
         name, arguments. The id is what this call's agent.tool_call/tool_result carry and the
         X-Tool-Use-Id of its first ledger write (`<id>:<n>` for the n-th), so a mirror of the ledger
         gate (green -> POST blue/gate) uses it as idempotency_key."""
-        reg = current_registry() or self._new_registry(None)
+        reg = current_registry()
+        if reg is None:
+            if not self.s.dry_run:
+                # a throwaway registry would hand out ids no execution can ever be linked to
+                raise RuntimeError("tool_uses() outside a live turn's permission handler: no turn registry is bound")
+            reg = self._new_registry(None)
         return reg.observe_permission(request)
 
     def record_cancelled(self, use: ToolUse, reason: str, *, registry: InvocationRegistry | None = None) -> None:
@@ -439,8 +468,26 @@ class DroidAgent(ABC):
             )
         return budget
 
-    def _begin_invocation(self, name: str, kwargs: dict[str, Any], registry: InvocationRegistry | None) -> Invocation:
+    def _begin_invocation(self, name: str, kwargs: dict[str, Any], registry: InvocationRegistry | None) -> tuple[Invocation, str | None]:
+        """The call's invocation, and a refusal reason (strict live only) when it must not run."""
         explicit = kwargs.pop("_tool_use_id", None)
+        if self._strict_live():
+            if explicit:
+                return self._refused(name, REFUSE_EXPLICIT), REFUSE_EXPLICIT
+            if registry is None:
+                return self._refused(name, REFUSE_UNVERIFIED), REFUSE_UNVERIFIED
+            use, reason = registry.claim_checked(name, kwargs, _mcp_request_hints(self.name))
+            if use is None:
+                return self._refused(name, reason or REFUSE_UNVERIFIED), reason or REFUSE_UNVERIFIED
+            return Invocation(use.tool_use_id, name, source=use.source), None
+        return self._best_effort_invocation(name, kwargs, registry, explicit), None
+
+    def _refused(self, name: str, reason: str) -> Invocation:
+        local_id = LedgerClient.new_tool_use_id()
+        log.warning("tool_identity_refused", agent=self.name, tool=name, reason=reason, local_id=local_id, detail="strict identity: the tool did not run")
+        return Invocation(local_id, name, source=SOURCE_LOCAL)
+
+    def _best_effort_invocation(self, name: str, kwargs: dict[str, Any], registry: InvocationRegistry | None, explicit: str | None) -> Invocation:
         if explicit:
             return Invocation(explicit, name, source=SOURCE_EXPLICIT)
         if registry is not None:
@@ -491,7 +538,13 @@ class DroidAgent(ABC):
             loop = asyncio.get_running_loop()
             turn, emitter = ctx.turn(), ctx.emitter()
             reg = registry if registry is not None else current_registry()
-            inv = self._begin_invocation(name, kwargs, reg)
+            inv, refused = self._begin_invocation(name, kwargs, reg)
+            if refused is not None:  # strict: never run under an id we can't vouch for; one pair, local id
+                body = json.dumps({"error": True, "identity": refused, "not_run": True, "tool": name, "detail": "no verified tool_use_id for this call"})
+                if emitter:
+                    emitter.tool_call(name, redacted_args(fn, _args_payload(args, kwargs)), inv.tool_use_id)
+                    emitter.tool_result(inv.tool_use_id, False, body)
+                return body
             budget = self._tool_budget_sec(name)
             deadline = time.monotonic() + budget
             if emitter:
@@ -582,8 +635,9 @@ class DroidAgent(ABC):
         from droid_sdk import ReasoningEffort
 
         # Bound before the Session opens: the SDK's reader and MCP server tasks are created inside it and
-        # copy this context, so the permission handler and the tool handler see this turn's registry.
-        with bind_registry(registry):
+        # copy this context, so the permission handler and the tool handler see this turn's registry (and,
+        # for a strict agent, the strict flag LedgerClient checks before every write).
+        with bind_registry(registry), bind_strict(self._strict_live()):
             try:
                 async with Session(
                     model=self.s.droid_model,
@@ -592,7 +646,7 @@ class DroidAgent(ABC):
                     interactions=InteractionHandlers(on_permission=functools.partial(self._permission_entry, registry)),
                     api_key=self.s.factory_api_key,
                 ) as session:
-                    if self._tool_ids is None:
+                    if self._tool_ids is None or self._strict_live():
                         await self._learn_tool_ids(session)
                     async with session.stream(prompt, include_partial_messages=True, timeout=self.s.turn_timeout_sec - 10) as stream:
                         async for ev in stream:
@@ -623,15 +677,31 @@ class DroidAgent(ABC):
                 raise RuntimeError(f"droid turn ended: {result.subtype}")
             return result.text, usage
 
+    def _expected_tool_ids(self) -> list[str]:
+        """Our MCP tool IDs, exactly: `<server>___<tool>` (contracts/CHANGELOG.md Findings)."""
+        return [f"{self.name}-ledger___{n}" for (n, _, _) in self.tools()]
+
     async def _learn_tool_ids(self, session: Any) -> None:
-        """Record exact tool IDs for our MCP server so restrict_tools is right from the next turn.
-        Record the observed format in contracts/CHANGELOG.md Findings."""
+        """Check the session's tool IDs for our server against the exact expected set (B-3: no suffix
+        match). best_effort: keep the exact matches for restrict_tools and log any mismatch. Strict:
+        runs every turn, and a missing or extra ID (or a failed list_tools) fails the turn here, before
+        stream(), so a call can never reach a tool we did not expect."""
+        expected = self._expected_tool_ids()
+        prefix = f"{self.name}-ledger___"
         try:
-            tools = await session.list_tools()
-            mine = {n for (n, _, _) in self.tools()}
-            ids = [t.id for t in tools if t.id.startswith(f"{self.name}-ledger___") and any(t.id.endswith(n) for n in mine)]
-            if ids:
-                self._tool_ids = ids
-                log.info("tool_ids_learned", agent=self.name, ids=ids)
-        except Exception as e:
+            listed = await session.list_tools()
+            seen = {t.id for t in listed if t.id.startswith(prefix)}
+        except Exception as e:  # best_effort (red, live): a listing we can't read never fails the turn
+            if self._strict_live():
+                raise RuntimeError(f"strict identity: list_tools failed: {e}") from e
             log.warning("list_tools_failed", error=str(e))
+            return
+        missing, extra = sorted(set(expected) - seen), sorted(seen - set(expected))
+        if missing or extra:
+            if self._strict_live():
+                raise RuntimeError(f"strict identity: tool IDs differ from expected (missing={missing}, extra={extra})")
+            log.warning("tool_ids_mismatch", agent=self.name, missing=missing, extra=extra)
+        ids = [i for i in expected if i in seen]
+        if ids:
+            self._tool_ids = ids
+            log.info("tool_ids_learned", agent=self.name, ids=ids)

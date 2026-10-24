@@ -77,6 +77,17 @@ SOURCE_EXPLICIT = "explicit"  # caller passed _tool_use_id
 SOURCE_LOCAL = "local"  # UUID4: not a Droid call, or the SDK did not reveal the id in time
 VERIFIED_SOURCES = frozenset({SOURCE_PERMISSION, SOURCE_STREAM, SOURCE_MCP_META})
 
+# Identity policies (design D7). best_effort: today's linking, UUID4 when the SDK hasn't revealed the id.
+# strict (green, blue live): an execution runs only under an SDK-reported id, unambiguously linked.
+IDENTITY_STRICT = "strict"
+IDENTITY_BEST_EFFORT = "best_effort"
+IDENTITY_POLICIES = (IDENTITY_STRICT, IDENTITY_BEST_EFFORT)
+# Why a strict claim refused an execution (the `identity` field of its not_run result).
+REFUSE_UNVERIFIED = "unverified"  # no registered tool use matches it
+REFUSE_AMBIGUOUS = "ambiguous"  # more than one equally preferred identical tool use (D8: refuse them all)
+REFUSE_CONFLICTING = "conflicting"  # an _meta hint names one of ours that the arguments don't match
+REFUSE_EXPLICIT = "explicit"  # a caller-supplied _tool_use_id
+
 
 def write_key(tool_use_id: str, n: int) -> str:
     """Idempotency key for the n-th (1-based) ledger write of an invocation."""
@@ -85,6 +96,11 @@ def write_key(tool_use_id: str, n: int) -> str:
 
 class IdempotencyKeyReused(ValueError):
     """An explicit tool_use_id= repeats a key this invocation already sent."""
+
+
+class UnverifiedInvocation(RuntimeError):
+    """Strict identity, live: a ledger write (or preparation) without a verified SDK tool_use_id. Raised
+    before anything is sent."""
 
 
 class Invocation:
@@ -159,6 +175,23 @@ _current: contextvars.ContextVar[Invocation | None] = contextvars.ContextVar("rl
 
 def current_invocation() -> Invocation | None:
     return _current.get()
+
+
+_strict: contextvars.ContextVar[bool] = contextvars.ContextVar("rl_strict_identity", default=False)
+
+
+def strict_identity() -> bool:
+    """True inside a live turn of a strict-identity agent (bound by DroidAgent; copied into tool workers)."""
+    return _strict.get()
+
+
+@contextmanager
+def bind_strict(strict: bool) -> Iterator[bool]:
+    token = _strict.set(strict)
+    try:
+        yield strict
+    finally:
+        _strict.reset(token)
 
 
 @contextmanager
@@ -369,6 +402,35 @@ class InvocationRegistry:
                 if self._claimable(entry, approved_only):
                     return self._take(entry, entry.use)
         return None
+
+    def claim_checked(self, tool: str, kwargs: Mapping[str, Any], hints: Iterable[str] = ()) -> tuple[ToolUse | None, str | None]:
+        """Strict claim: the linked tool use, or (None, reason) with reason in REFUSE_*. Never guesses
+        between candidates: a hint that names one of our ids must agree with the arguments, and more than
+        one equally preferred identical entry is ambiguous (all of them stay unclaimed, so every identical
+        execution is refused and each id is closed not_run at turn end; D8)."""
+        self._own()
+        canon = self.canonical(tool, kwargs)
+        named = {h for h in hints if (e := self._entries.get(h)) is not None and e.use.tool == tool}
+        if named:
+            if len(named) > 1:
+                return None, REFUSE_CONFLICTING
+            entry = self._entries[next(iter(named))]
+            if canon is None or entry.canon != canon or not self._claimable(entry, self.require_permission):
+                return None, REFUSE_CONFLICTING
+            return self._take(entry, ToolUse(entry.use.tool_use_id, tool, entry.use.args, SOURCE_MCP_META)), None
+        if canon is None:
+            return None, REFUSE_UNVERIFIED
+        q = list(self._pending.get((tool, canon)) or ())
+        tiers = [lambda e: e.perm == _PERM_APPROVED]
+        if not self.require_permission:
+            tiers.append(lambda e: e.perm == _PERM_NONE)
+        for tier in tiers:
+            cands = [self._entries[t] for t in q if self._entries[t].state == _PENDING and tier(self._entries[t])]
+            if len(cands) > 1:
+                return None, REFUSE_AMBIGUOUS
+            if cands:
+                return self._take(cands[0], cands[0].use), None
+        return None, REFUSE_UNVERIFIED
 
     def _take(self, entry: _Entry, use: ToolUse) -> ToolUse:
         self._drop_pending(entry, _RUNNING)

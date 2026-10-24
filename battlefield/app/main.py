@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import db, turns
-from .api import blue_writes, control, events_api, extension_points, frontend, green_writes, playbooks, reads, red_writes
+from .api import blue_writes, control, events_api, extension_points, frontend, green_writes, playbooks, preparations, reads, red_writes
 from .config import settings
 from .events import bus
 from .gate import gatekeeper
@@ -33,6 +33,7 @@ def _configure_logging() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _configure_logging()
+    gatekeeper.check_preparation_budget()  # refuse to start if an escalation hold could outlive a preparation
     await db.init_pool()
     await recover_after_restart()
     yield
@@ -48,6 +49,7 @@ async def recover_after_restart() -> None:
     lost their streaming task without the graceful shutdown that marks them failed: mark them `failed`
     with an `error {where:"replay"}` event."""
     expired = await gatekeeper.expire_orphaned_escalations()
+    preps = await preparations.sweep_pending()  # their escalation hold died with the old process: block / timeout
     rows = await db.fetch("UPDATE episodes SET status='paused' WHERE status='running' AND id NOT LIKE 'replay\\_%' RETURNING id, current_day")
     for r in rows:
         await bus.emit(r["id"], r["current_day"], "error", {"where": "orchestrator", "message": RESTART_MESSAGE})
@@ -60,10 +62,11 @@ async def recover_after_restart() -> None:
     replays = await db.fetch("UPDATE episodes SET status='failed', finished_at=now() WHERE status='running' AND id LIKE 'replay\\_%' RETURNING id, current_day")
     for r in replays:
         await bus.emit(r["id"], r["current_day"], "error", {"where": "replay", "message": REPLAY_RESTART_MESSAGE})
-    if expired or rows or replays or lineages:
+    if expired or preps or rows or replays or lineages:
         log.warning(
             "recovered_after_restart",
             escalations_expired=expired,
+            preparations_expired=preps,
             episodes_paused=[r["id"] for r in rows],
             replays_failed=[r["id"] for r in replays],
             lineages_paused=[ln["id"] for ln in lineages],
@@ -89,6 +92,7 @@ app.add_middleware(
 app.include_router(reads.router, prefix="/api", tags=["read"])
 app.include_router(red_writes.router, prefix="/api", tags=["red"])
 app.include_router(green_writes.router, prefix="/api", tags=["green"])
+app.include_router(preparations.router, prefix="/api", tags=["green"])
 app.include_router(blue_writes.router, prefix="/api", tags=["blue"])
 app.include_router(events_api.router, prefix="/api", tags=["events"])
 app.include_router(control.router, prefix="/api", tags=["control"])

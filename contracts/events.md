@@ -29,10 +29,10 @@ from the ordered stream of these; it never queries ledger tables.
 | `attack.outcome` | battlefield | `{attack_id, scheme_id, outcome, amount_extracted, detected_day?}` |
 | `agent.thinking` | agent | `{text}` — a delta; UI concatenates per `(agent, day)` |
 | `agent.tool_call` | agent | `{tool, args, tool_use_id}` |
-| `agent.tool_result` | agent | `{tool_use_id, ok, summary}` |
-| `ledger.mutation` | battlefield | `{agent, action, entity_type, entity_id, amount?, verdict_id?}` |
-| `gate.verdict` | battlefield | `{verdict_id, agent, action, entity_type?, entity_id?, amount?, verdict, reason, confidence?, rules_fired: string[], enforced}` |
-| `escalation.opened` | battlefield | `{escalation_id, verdict_id, action, entity_type?, entity_id?, amount?, reason, expires_at}` |
+| `agent.tool_result` | agent | `{tool_use_id, ok, summary}` — a green tool the permission handler cancelled has `ok: false` and a summary carrying `cause` (`control_hold`\|`escalation_timeout`\|`integration_failure`\|`invalid_state`) |
+| `ledger.mutation` | battlefield | `{agent, action, entity_type, entity_id, amount?, verdict_id?, preparation_id?}` |
+| `gate.verdict` | battlefield | `{verdict_id, agent, action, entity_type?, entity_id?, amount?, verdict, reason, confidence?, rules_fired: string[], enforced, cause?: "control"\|"gate_unavailable", preparation_id?}` — once per idempotency key: at preparation when the action was prepared, else on the gated route. `cause: gate_unavailable` = blue timed out or failed and this is the fallback verdict |
+| `escalation.opened` | battlefield | `{escalation_id, verdict_id, action, entity_type?, entity_id?, amount?, reason, expires_at, cause?, preparation_id?}` |
 | `escalation.resolved` | battlefield | `{escalation_id, decision: "approve"\|"block"\|"timeout", by}` |
 | `flag.raised` | battlefield | `{flag_id, entity_type, entity_id, severity, reason}` |
 | `vendor.frozen` / `vendor.unfrozen` | battlefield | `{vendor_id, reason?}` |
