@@ -29,21 +29,25 @@ Where droid-sdk 0.5.0 exposes the real id (read from the installed package, not 
     request; at HIGH (red) none is, and the stream ToolCall is the only source.
 
 So an execution is linked to its id by, in order: an explicit `_tool_use_id` (tests, DRY_RUN
-callers); an `_meta` value equal to a registered id; else the oldest registered, not yet executed
-tool use of the same tool with identical canonical arguments (validated through the same pydantic
-model the SDK builds, so defaults and coercions match). This argument correlation is the narrowest
-link possible without an SDK/CLI change that passes the id to the handler. Permission requests arrive *before* the CLI
-executes the call (it waits for our answer), so under `Autonomy.OFF` the registration always
-precedes the execution and the link is deterministic. Without a permission request (red at HIGH) the
-stream ToolCall is the only registration, and it races the MCP HTTP call; if it loses, the execution
-gets a UUID4 (logged `tool_use_id_unverified`) and the late ToolCall is matched to it (logged
-`tool_use_id_late`) instead of being left claimable. Two pending calls with identical tool and
-arguments are interchangeable (same action, both approved), so FIFO between them is safe. There is
-no "last seen id" anywhere.
+callers); an `_meta` value equal to a registered id; else a registered, not yet executed tool use of
+the same tool with identical canonical arguments (validated through the same pydantic model the SDK
+builds, so defaults and coercions match), preferring the oldest whose permission request was
+approved. This argument correlation is the narrowest link possible without an SDK/CLI change that
+passes the id to the handler. Permission requests arrive *before* the CLI executes the call (it
+waits for our answer), so under `Autonomy.OFF` only approved entries are claimable
+(`require_permission`) and a cancelled or still-undecided call can never lend its id to an
+execution. Without a permission request (red at HIGH) the stream ToolCall is the only registration,
+and it races the MCP HTTP call; if it loses, the execution gets a UUID4 (logged
+`tool_use_id_unverified`) and the late ToolCall gets a link pair pointing at it (logged
+`tool_use_id_late`) instead of being left claimable. Identical approved calls are interchangeable
+(same action, same verdict), so oldest-first between them is safe. There is no "last seen id"
+anywhere, and every registered id gets exactly one event pair (see InvocationRegistry).
 
 Ledger write keys inside one invocation: the first write uses the tool_use_id exactly; the n-th
 (n >= 2) uses `f"{tool_use_id}:{n}"`. `put_state` / `post_input` count as writes. A caller-supplied
-`tool_use_id=` is used verbatim, reserved, and never handed out again. Green's mirror therefore
+`tool_use_id=` is used verbatim and never handed out again; passing one this invocation already
+used (its own id after its first write, or any `<id>:<n>` it issued) raises IdempotencyKeyReused
+before anything is sent. Green's mirror therefore
 keys `POST blue/gate` on the bare tool_use_id, which equals the X-Tool-Use-Id of the call's first
 (and for every green gated tool, only) ledger write.
 """
@@ -54,7 +58,7 @@ import contextvars
 import inspect
 import json
 import threading
-from collections import Counter, deque
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -77,6 +81,10 @@ VERIFIED_SOURCES = frozenset({SOURCE_PERMISSION, SOURCE_STREAM, SOURCE_MCP_META}
 def write_key(tool_use_id: str, n: int) -> str:
     """Idempotency key for the n-th (1-based) ledger write of an invocation."""
     return tool_use_id if n == 1 else f"{tool_use_id}:{n}"
+
+
+class IdempotencyKeyReused(ValueError):
+    """An explicit tool_use_id= repeats a key this invocation already sent."""
 
 
 class Invocation:
@@ -115,10 +123,13 @@ class Invocation:
                     return key
 
     def reserve(self, key: str) -> None:
-        """A write used a caller-supplied key; never issue it again."""
+        """A write is about to use a caller-supplied key; never issue it again. Raises
+        IdempotencyKeyReused if this invocation already used it (a programming error: two different
+        writes under one key would make battlefield replay the first one's verdict for the second)."""
         with self._lock:
-            if key not in self._keys:
-                self._keys.append(key)
+            if key in self._keys:
+                raise IdempotencyKeyReused(f"X-Tool-Use-Id {key!r} was already used by this {self.tool} call; pass a new key or none")
+            self._keys.append(key)
 
     def take(self, tool: str) -> bool:
         """The ledger_tool wrapper for `tool` claims this invocation as its own (once)."""
@@ -209,7 +220,9 @@ class ToolUse:
 
 
 # entry states
-_PENDING, _RUNNING, _DONE, _CLOSED, _UNLINKED = "pending", "running", "done", "closed", "unlinked"
+_PENDING, _RUNNING, _DONE, _CLOSED = "pending", "running", "done", "closed"
+# permission state of an entry
+_PERM_NONE, _PERM_ASKED, _PERM_APPROVED, _PERM_DENIED = "none", "asked", "approved", "denied"
 
 
 @dataclass
@@ -217,23 +230,45 @@ class _Entry:
     use: ToolUse
     canon: str | None
     state: str
+    perm: str = _PERM_NONE
+
+
+@dataclass
+class _UnlinkedRun:
+    """An execution that ran under a local id because no registered tool use matched it."""
+
+    local_id: str
+    ok: bool | None = None  # set when it finishes
+    linked_to: str | None = None
 
 
 class InvocationRegistry:
     """Turn-scoped link between SDK-reported tool uses and executions of our MCP tools.
 
     Only ever touched on the turn's event-loop thread: the permission handler and the stream run as
-    tasks there, and the SDK calls our (sync) tool handler there too. No locking needed."""
+    tasks there, and the SDK calls our (sync) tool handler there too. No locking needed.
 
-    def __init__(self, server_name: str, tools: Iterable[tuple[str, Callable[..., Any]]], emitter: Any | None = None):
+    Guarantee: every registered tool_use_id gets exactly one agent.tool_call/agent.tool_result pair.
+    Executed and linked: _offload narrates it. Never ran (cancelled, rejected by the SDK, turn ended):
+    `ok=false`, `not_run`/`cancelled`. Ran under a local id before the SDK revealed its id (red's
+    stream race): a link pair `{"ran_as": <local id>}` carrying the execution's ok, so the id is
+    accounted for and points at the events/ledger writes that actually happened.
+
+    `require_permission` (the agent runs at Autonomy.OFF, where the CLI asks before every MCP call):
+    only entries whose permission request was approved can be claimed by an execution. Otherwise an
+    approved entry is still preferred over one never asked about, and an entry that was asked but not
+    (yet) approved, or denied, is never claimed."""
+
+    def __init__(self, server_name: str, tools: Iterable[tuple[str, Callable[..., Any]]], emitter: Any | None = None, *, require_permission: bool = False):
         self.server_name = server_name
         self._canon = {name: _canonicalizer(fn) for name, fn in tools}
         self._full = {f"{server_name}___{name}": name for name in self._canon}  # observed MCP tool id format
         self.emitter = emitter
+        self.require_permission = require_permission
         self._entries: dict[str, _Entry] = {}
         self._pending: dict[tuple[str, str | None], deque[str]] = {}
-        self._unlinked: Counter[tuple[str, str | None]] = Counter()
-        self._unlinked_by_tool: Counter[str] = Counter()
+        self._unlinked: dict[tuple[str, str | None], deque[_UnlinkedRun]] = {}
+        self._runs: dict[str, _UnlinkedRun] = {}
 
     # ---------- naming ----------
     def tool_name(self, raw: str | None) -> str | None:
@@ -258,20 +293,18 @@ class InvocationRegistry:
         plain = thaw(args or {})
         use = ToolUse(tool_use_id=tool_use_id, tool=tool, args=plain, source=source)
         canon = self.canonical(tool, plain)
-        key = (tool, canon)
-        if self._unlinked[key] > 0:  # it already ran under a local id before the SDK told us its id
-            self._unlinked[key] -= 1
-            self._consume_unlinked(tool)
-            self._entries[tool_use_id] = _Entry(use, canon, _UNLINKED)
+        entry = _Entry(use, canon, _PENDING)
+        self._entries[tool_use_id] = entry
+        # A permission request means the call has not run yet; only a stream sighting can be late.
+        if source != SOURCE_PERMISSION and self._link_unlinked(entry):
             log.warning("tool_use_id_late", tool=tool, tool_use_id=tool_use_id, source=source)
             return use
-        self._entries[tool_use_id] = _Entry(use, canon, _PENDING)
-        self._pending.setdefault(key, deque()).append(tool_use_id)
+        self._pending.setdefault((tool, canon), deque()).append(tool_use_id)
         return use
 
     def observe_permission(self, request: Any) -> list[ToolUse]:
         """Register every MCP action of ours in a droid_sdk PermissionRequest (duck-typed so tests and
-        DRY_RUN never need the SDK). Idempotent."""
+        DRY_RUN never need the SDK) and mark it asked. Idempotent."""
         out: list[ToolUse] = []
         for action in getattr(request, "actions", None) or ():
             if getattr(action, "confirmation_type", None) != "mcp_tool":
@@ -282,78 +315,123 @@ class InvocationRegistry:
             tool_use = getattr(action, "tool_use", None)
             name = self.tool_name(getattr(action, "actual_tool_name", None)) or self.tool_name(getattr(action, "tool_name", None))
             use = self.observe(getattr(tool_use, "id", None), name, getattr(tool_use, "input", None), SOURCE_PERMISSION)
-            if use is not None:
-                out.append(use)
+            if use is None:
+                continue
+            entry = self._entries[use.tool_use_id]
+            if entry.state in (_RUNNING, _DONE) and entry.perm == _PERM_NONE:
+                # an execution already took this id without a permission request, but the CLI is only
+                # now asking about it: that execution was a different (identical) call
+                log.error("tool_use_id_misbound", tool=use.tool, tool_use_id=use.tool_use_id)
+            if entry.perm == _PERM_NONE:
+                entry.perm = _PERM_ASKED
+            out.append(use)
         return out
 
+    def permission_resolved(self, tool_use_id: str, approved: bool) -> None:
+        entry = self._entries.get(tool_use_id)
+        if entry is not None and entry.perm in (_PERM_NONE, _PERM_ASKED):
+            entry.perm = _PERM_APPROVED if approved else _PERM_DENIED
+
     # ---------- execution ----------
+    def _claimable(self, entry: _Entry, approved_only: bool) -> bool:
+        if entry.state != _PENDING:
+            return False
+        if entry.perm == _PERM_APPROVED:
+            return True
+        return not approved_only and entry.perm == _PERM_NONE
+
     def claim(self, tool: str, kwargs: Mapping[str, Any], hints: Iterable[str] = ()) -> ToolUse | None:
-        """Link an execution of `tool` to a registered tool use, or None if the SDK hasn't told us."""
+        """Link an execution of `tool` to a registered tool use, or None if the SDK hasn't told us.
+        Preference: an `_meta` hint naming a claimable entry; the oldest approved identical entry;
+        unless require_permission, the oldest identical entry never asked about."""
         for hint in hints:
             entry = self._entries.get(hint)
-            if entry is not None and entry.state == _PENDING and entry.use.tool == tool:
-                entry.state = _RUNNING
-                return ToolUse(entry.use.tool_use_id, tool, entry.use.args, SOURCE_MCP_META)
+            if entry is not None and entry.use.tool == tool and self._claimable(entry, self.require_permission):
+                return self._take(entry, ToolUse(entry.use.tool_use_id, tool, entry.use.args, SOURCE_MCP_META))
         q = self._pending.get((tool, self.canonical(tool, kwargs)))
-        while q:
-            entry = self._entries[q.popleft()]
-            if entry.state == _PENDING:
-                entry.state = _RUNNING
-                return entry.use
+        if not q:
+            return None
+        for approved_only in (True, False) if not self.require_permission else (True,):
+            for tid in q:
+                entry = self._entries[tid]
+                if self._claimable(entry, approved_only):
+                    return self._take(entry, entry.use)
         return None
 
-    def note_unlinked(self, tool: str, kwargs: Mapping[str, Any]) -> None:
-        """An execution ran under a local id; a ToolCall seen later for it must not stay claimable."""
-        self._unlinked[(tool, self.canonical(tool, kwargs))] += 1
-        self._unlinked_by_tool[tool] += 1
+    def _take(self, entry: _Entry, use: ToolUse) -> ToolUse:
+        self._drop_pending(entry, _RUNNING)
+        return use
 
-    def finished(self, tool_use_id: str) -> None:
+    def note_unlinked(self, tool: str, kwargs: Mapping[str, Any], local_id: str) -> None:
+        """An execution runs under a local id; a ToolCall seen later for it gets linked to it."""
+        run = _UnlinkedRun(local_id)
+        self._runs[local_id] = run
+        self._unlinked.setdefault((tool, self.canonical(tool, kwargs)), deque()).append(run)
+
+    def finished(self, tool_use_id: str, ok: bool | None = None) -> None:
         entry = self._entries.get(tool_use_id)
         if entry is not None and entry.state == _RUNNING:
             entry.state = _DONE
+        run = self._runs.get(tool_use_id)
+        if run is not None:
+            run.ok = ok
 
     # ---------- calls that never ran ----------
     def cancelled(self, tool_use_id: str, reason: str) -> bool:
-        """The permission handler refused the call: emit its tool_call/tool_result pair now, once."""
+        """The permission handler refused the call: emit its tool_call/tool_result pair now, once.
+        Returns False if the id already has its pair (closed earlier, or an execution took it)."""
         entry = self._entries.get(tool_use_id)
-        if entry is None or entry.state != _PENDING:
+        if entry is None:
             return False
-        self._close_unrun(entry, {"cancelled": True, "tool": entry.use.tool, "reason": reason})
-        return True
+        if entry.perm in (_PERM_NONE, _PERM_ASKED):
+            entry.perm = _PERM_DENIED
+        if entry.state == _PENDING:
+            self._close_unrun(entry, {"cancelled": True, "tool": entry.use.tool, "reason": reason})
+            return True
+        if entry.state in (_RUNNING, _DONE):
+            # Its pair comes from the execution that took the id. Not silent: this means that execution
+            # was another identical call (only possible without require_permission).
+            log.error("permission_cancel_after_execution", tool=entry.use.tool, tool_use_id=tool_use_id, reason=reason)
+        return False
 
     def resolved(self, tool_use_id: str, is_error: bool, content: Any) -> None:
-        """Stream ToolResult for a call our handler never linked. A non-error result while some
-        execution of that tool ran under a local id means it was that one (already narrated). Anything
-        else means it never reached our handler (cancelled, arguments rejected by the SDK,
-        interrupted): close its pair."""
+        """Stream ToolResult. For a call our handler never linked: if an identical call ran under a
+        local id, this is it (link pair); otherwise it never reached our handler (cancelled, arguments
+        rejected by the SDK, interrupted): not_run pair."""
         entry = self._entries.get(tool_use_id)
         if entry is None:
             return
         if entry.state == _RUNNING:
             entry.state = _DONE
         elif entry.state == _PENDING:
-            if not is_error and self._consume_unlinked(entry.use.tool):
-                self._drop_pending(entry, _UNLINKED)
-                log.warning("tool_use_id_unlinked", tool=entry.use.tool, tool_use_id=tool_use_id)
-            else:
+            if is_error or not self._link_unlinked(entry):
                 self._close_unrun(entry, {"error": True, "not_run": True, "tool": entry.use.tool, "detail": str(content)[:300]})
 
     def close(self, reason: str = "turn ended before the tool ran") -> None:
-        """Turn end: every registered call that never executed gets its pair."""
+        """Turn end: every registered call that has no pair yet gets one."""
         for entry in list(self._entries.values()):
             if entry.state != _PENDING:
                 continue
-            tool = entry.use.tool
-            if self._consume_unlinked(tool):  # may be the one that ran unlinked: don't claim it didn't run
-                self._drop_pending(entry, _UNLINKED)
-                log.warning("tool_use_id_unlinked", tool=tool, tool_use_id=entry.use.tool_use_id)
-                continue
-            self._close_unrun(entry, {"error": True, "not_run": True, "tool": tool, "detail": reason})
+            if not self._link_unlinked(entry):
+                self._close_unrun(entry, {"error": True, "not_run": True, "tool": entry.use.tool, "detail": reason})
 
-    def _consume_unlinked(self, tool: str) -> bool:
-        if self._unlinked_by_tool[tool] <= 0:
+    # ---------- internals ----------
+    def _link_unlinked(self, entry: _Entry) -> bool:
+        """Pair `entry` with the oldest unlinked execution of the exact same tool + arguments."""
+        runs = self._unlinked.get((entry.use.tool, entry.canon))
+        if not runs:
             return False
-        self._unlinked_by_tool[tool] -= 1
+        run = runs.popleft()
+        run.linked_to = entry.use.tool_use_id
+        self._drop_pending(entry, _DONE)
+        if self.emitter is not None:
+            body = {
+                "ran_as": run.local_id,
+                "tool": entry.use.tool,
+                "detail": "executed before the SDK reported this tool_use_id; its events and ledger writes carry ran_as",
+            }
+            self.emitter.tool_call(entry.use.tool, entry.use.args, entry.use.tool_use_id)
+            self.emitter.tool_result(entry.use.tool_use_id, bool(run.ok), json.dumps(body))
         return True
 
     def _drop_pending(self, entry: _Entry, state: str) -> None:

@@ -3,7 +3,7 @@
 from .config import AgentSettings
 from .droid_agent import DroidAgent
 from .events import EventEmitter
-from .invocation import Invocation, ToolUse, current_invocation, write_key
+from .invocation import IdempotencyKeyReused, Invocation, ToolUse, current_invocation, write_key
 from .ledger_client import GateBlocked, LedgerClient, LedgerError
 from .models import (
     GATED_ACTIONS,
@@ -26,6 +26,7 @@ __all__ = [
     "AgentSettings",
     "DroidAgent",
     "EventEmitter",
+    "IdempotencyKeyReused",
     "Invocation",
     "ToolUse",
     "current_invocation",

@@ -6,7 +6,8 @@ the verdict reason so the agent (or its prompt) can react.
 
 X-Tool-Use-Id, in order of precedence: the `tool_use_id=` you pass; else, inside a tool call, the
 current invocation's key (the Droid tool_use_id for the call's first write, `<id>:<n>` for the n-th;
-see agentkit.invocation); else a fresh UUID4.
+see agentkit.invocation); else a fresh UUID4. An explicit key that the current invocation already
+sent raises agentkit.invocation.IdempotencyKeyReused before the request goes out.
 
 Usage inside a turn:
 

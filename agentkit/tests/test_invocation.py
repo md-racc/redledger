@@ -157,6 +157,12 @@ class _Agent(DroidAgent):
         return request.respond(Outcome.PROCEED_ONCE)
 
 
+class _High(_Agent):
+    """Red-like: Autonomy.HIGH, so the CLI never asks permission and the stream is the only id source."""
+
+    autonomy = "high"
+
+
 class _Fast(_Agent):
     def _tool_timeout_sec(self) -> float:
         return 0.2
@@ -267,7 +273,7 @@ async def test_permission_id_reaches_events_and_ledger_header_through_offload():
 @respx.mock
 async def test_stream_tool_call_links_execution_when_there_is_no_permission_request():
     route = ledger_routes()
-    agent, rec = _Agent(S), Recorder()
+    agent, rec = _High(S), Recorder()
     reg = agent._new_registry(rec)
     reg.observe("toolu_S", "green-ledger___pay_invoice", {"invoice_id": "inv_2"}, SOURCE_STREAM)
     await offloaded(agent, pay_invoice, rec, registry=reg, invoice_id="inv_2", memo="", amount=0.0)
@@ -278,18 +284,102 @@ async def test_stream_tool_call_links_execution_when_there_is_no_permission_requ
 
 
 @respx.mock
-async def test_unregistered_execution_gets_a_uuid_and_a_late_tool_call_is_not_left_claimable():
+async def test_unregistered_execution_gets_a_uuid_and_a_late_tool_call_gets_one_link_pair():
     route = ledger_routes()
-    agent, rec = _Agent(S), Recorder()
+    agent, rec = _High(S), Recorder()
     reg = agent._new_registry(rec)
     await offloaded(agent, pay_invoice, rec, registry=reg, invoice_id="inv_3", memo="", amount=0.0)
     (local,) = keys(route)
     assert len(local) == 32  # UUID4 hex: never a guessed id
     reg.observe("toolu_late", "green-ledger___pay_invoice", {"invoice_id": "inv_3"}, SOURCE_STREAM)
-    assert reg.claim("pay_invoice", {"invoice_id": "inv_3"}) is None
+    assert reg.claim("pay_invoice", {"invoice_id": "inv_3"}) is None  # not left claimable
     reg.resolved("toolu_late", False, "ok")
     reg.close()
-    assert rec.kinds() == ["tool_call", "tool_result"]  # no phantom "never ran" pair
+    assert [(e[0], e[1]) for e in rec.events] == [("tool_call", local), ("tool_result", local), ("tool_call", "toolu_late"), ("tool_result", "toolu_late")]
+    link = rec.events[3]
+    assert link[2] is True and json.loads(link[3])["ran_as"] == local  # the registered id points at what ran
+
+
+@respx.mock
+async def test_p3_an_unlinked_run_never_swallows_a_different_calls_pair():
+    ledger_routes()
+    agent, rec = _High(S), Recorder()
+    reg = agent._new_registry(rec)
+    await offloaded(agent, pay_invoice, rec, registry=reg, invoice_id="inv_A", memo="", amount=0.0)  # before any ToolCall
+    reg.observe("idC", "green-ledger___pay_invoice", {"invoice_id": "inv_C"}, SOURCE_STREAM)  # a different call, never runs
+    reg.close()
+    (pair_c,) = [e for e in rec.events if e[0] == "tool_result" and e[1] == "idC"]
+    assert pair_c[2] is False and json.loads(pair_c[3])["not_run"] is True
+    assert [e[0] for e in rec.events if e[1] == "idC"] == ["tool_call", "tool_result"]
+
+
+@respx.mock
+async def test_p1_execution_takes_the_approved_id_not_the_older_unasked_one():
+    route = ledger_routes()
+    agent, rec = _Agent(S), Recorder()  # Autonomy.OFF
+    reg = agent._new_registry(rec)
+    reg.observe("id1", "green-ledger___pay_invoice", {"invoice_id": "inv_1"}, SOURCE_STREAM)
+    reg.observe("id2", "green-ledger___pay_invoice", {"invoice_id": "inv_1"}, SOURCE_STREAM)
+    await agent._permission_entry(reg, FakeRequest(actions=(mcp_action("id2", "pay_invoice", {"invoice_id": "inv_1"}),)))  # CLI asks for id2 first
+    await offloaded(agent, pay_invoice, rec, registry=reg, invoice_id="inv_1", memo="", amount=0.0)
+    assert keys(route) == ["id2"]
+    agent.verdict = "block"
+    await agent._permission_entry(reg, FakeRequest(actions=(mcp_action("id1", "pay_invoice", {"invoice_id": "inv_1"}),)))
+    reg.close()
+    by_id = {e[1]: e for e in rec.events if e[0] == "tool_result"}
+    assert by_id["id2"][2] is True and by_id["id1"][2] is False and json.loads(by_id["id1"][3])["cancelled"] is True
+    assert rec.kinds().count("tool_call") == rec.kinds().count("tool_result") == 2
+
+
+@respx.mock
+async def test_off_mode_never_claims_an_unapproved_or_cancelled_entry():
+    route = ledger_routes()
+    agent, rec = _Agent(S), Recorder()
+    agent.verdict = "block"
+    reg = agent._new_registry(rec)
+    reg.observe("c0", "green-ledger___pay_invoice", {"invoice_id": "inv_9"}, SOURCE_STREAM)  # never asked
+    await agent._permission_entry(reg, FakeRequest(actions=(mcp_action("c1", "pay_invoice", {"invoice_id": "inv_9"}),)))  # cancelled
+    await offloaded(agent, pay_invoice, rec, registry=reg, invoice_id="inv_9", memo="", amount=0.0)
+    (key,) = keys(route)
+    assert key not in {"c0", "c1"} and len(key) == 32  # unverified UUID4, logged; never a borrowed id
+    reg.close()
+    results = [e for e in rec.events if e[0] == "tool_result"]
+    assert sorted(e[1] for e in results) == sorted(["c1", key, "c0"])
+    assert json.loads(next(e for e in results if e[1] == "c0")[3])["ran_as"] == key  # c0's pair links to the run
+
+
+async def test_cancel_for_an_id_an_execution_already_took_is_logged_and_keeps_one_pair(monkeypatch):
+    import agentkit.invocation as invmod
+
+    errors: list[str] = []
+    monkeypatch.setattr(invmod.log, "error", lambda ev, **kw: errors.append(ev))
+    rec = Recorder()
+    reg = InvocationRegistry("green-ledger", [("pay_invoice", pay_invoice)], rec)  # no require_permission (mixed autonomy)
+    reg.observe("idM", "green-ledger___pay_invoice", {"invoice_id": "i"}, SOURCE_STREAM)
+    assert reg.claim("pay_invoice", {"invoice_id": "i"}).tool_use_id == "idM"  # the execution narrates idM itself
+    agent = _High(S)
+    agent.verdict = "block"
+    await agent._permission_entry(reg, FakeRequest(actions=(mcp_action("idM", "pay_invoice", {"invoice_id": "i"}),)))
+    reg.close()
+    assert errors == ["tool_use_id_misbound", "permission_cancel_after_execution"]
+    assert rec.events == []  # no second pair: the execution's own pair is idM's one pair
+
+
+@respx.mock
+async def test_p2_an_explicit_key_the_invocation_already_used_is_refused_before_sending():
+    route = ledger_routes()
+
+    @ledger_tool("approve_then_reuse", "x")
+    async def approve_then_reuse(invoice_id: str) -> str:
+        await ctx.ledger().approve_invoice(invoice_id)
+        await ctx.ledger().pay_invoice(invoice_id, tool_use_id=ctx.invocation().tool_use_id)
+        return "ok"
+
+    agent, rec = _Agent(S), Recorder()
+    out = json.loads(await offloaded(agent, approve_then_reuse, rec, invoice_id="inv_2", _tool_use_id="idX"))
+    assert keys(route) == ["idX"]  # the pay never went out under a duplicate key
+    assert out["error"] is True and "IdempotencyKeyReused" in out["detail"]
+    assert rec.kinds() == ["tool_call", "tool_result"] and rec.events[1][2] is False
 
 
 def test_identical_calls_are_fifo_and_a_meta_hint_wins_when_it_names_a_registered_id():
@@ -367,7 +457,7 @@ async def test_unoffered_response_counts_as_cancel_because_the_sdk_will_cancel_i
 
 
 async def test_calls_that_never_run_are_closed_by_error_result_or_turn_end_but_ran_ones_are_not():
-    agent, rec = _Agent(S), Recorder()
+    agent, rec = _High(S), Recorder()
     reg = agent._new_registry(rec)
     for tid, inv in (("toolu_X", "a"), ("toolu_Y", "b"), ("toolu_Z", "c")):
         reg.observe(tid, "green-ledger___pay_invoice", {"invoice_id": inv}, SOURCE_STREAM)

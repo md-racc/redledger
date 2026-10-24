@@ -285,7 +285,7 @@ class DroidAgent(ABC):
         return {"off": Autonomy.OFF, "low": Autonomy.LOW, "medium": Autonomy.MEDIUM, "high": Autonomy.HIGH}[self.autonomy]
 
     def _new_registry(self, emitter: EventEmitter | None) -> InvocationRegistry:
-        return InvocationRegistry(f"{self.name}-ledger", [(n, fn) for (n, _, fn) in self.tools()], emitter)
+        return InvocationRegistry(f"{self.name}-ledger", [(n, fn) for (n, _, fn) in self.tools()], emitter, require_permission=self.autonomy == "off")
 
     def _mcp_server(self, registry: InvocationRegistry | None = None) -> Any:
         from droid_sdk.mcp import create_sdk_mcp_server, tool
@@ -311,6 +311,9 @@ class DroidAgent(ABC):
             reason = getattr(response, "comment", None) or "cancelled by the permission handler"
             for use in uses:
                 self.record_cancelled(use, reason, registry=registry)
+        else:
+            for use in uses:
+                registry.permission_resolved(use.tool_use_id, approved=True)
         return response
 
     def _flush_budget_sec(self) -> float:
@@ -340,8 +343,16 @@ class DroidAgent(ABC):
             use = registry.claim(name, kwargs, _mcp_request_hints(self.name))
             if use is not None:
                 return Invocation(use.tool_use_id, name, source=use.source)
-            registry.note_unlinked(name, kwargs)
-            log.warning("tool_use_id_unverified", agent=self.name, tool=name, detail="the SDK reported no matching tool use before execution; using a UUID4")
+            local_id = LedgerClient.new_tool_use_id()
+            registry.note_unlinked(name, kwargs, local_id)
+            log.warning(
+                "tool_use_id_unverified",
+                agent=self.name,
+                tool=name,
+                tool_use_id=local_id,
+                detail="the SDK reported no matching approved tool use; using a UUID4",
+            )
+            return Invocation(local_id, name, source=SOURCE_LOCAL)
         return Invocation(LedgerClient.new_tool_use_id(), name, source=SOURCE_LOCAL)
 
     def _offload(self, fn: ToolFn, *, registry: InvocationRegistry | None = None) -> Callable[..., str]:
@@ -429,7 +440,7 @@ class DroidAgent(ABC):
             if emitter:
                 emitter.tool_result(inv.tool_use_id, ok, summary)
             if reg is not None:
-                reg.finished(inv.tool_use_id)
+                reg.finished(inv.tool_use_id, ok)
             return out
 
         return sync_tool
