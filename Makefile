@@ -10,7 +10,7 @@ SHELL := /bin/bash
 MODE ?= shadow
 DAYS ?= 10
 SEED ?= 42
-unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG
+unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG LN GENS REVEAL_DAYS
 COMPOSE := docker compose
 DEV := -f docker-compose.yml -f docker-compose.dev.yml
 MOCK := -f docker-compose.yml -f docker-compose.mock.yml
@@ -23,8 +23,13 @@ env_get = $(shell grep -E '^$(1)=' .env 2>/dev/null | tail -n 1 | cut -d= -f2- |
 TOKEN ?= $(call env_get,OPERATOR_TOKEN)
 TOKEN := $(if $(TOKEN),$(TOKEN),change-me)
 AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
+# `make evolve` defaults follow the lineage config (docs/EVOLUTION-DESIGN.md E-D8), not the episode
+# targets': MODE/DAYS count only when given on the command line.
+LN_MODE = $(if $(filter command line,$(origin MODE)),$(MODE),enforce)
+LN_DAYS = $(if $(filter command line,$(origin DAYS)),$(DAYS),6)
 
 .PHONY: help up up-dry mock-agents down logs ps db-reset db-shell seed episode step toggle attack escalations score record replay \
+        evolve lineage-status lineage-pause lineage-resume \
         prod-health prod-ps prod-logs prod-episode prod-step prod-pause prod-resume prod-toggle prod-attack prod-escalations \
         prod-resolve prod-score prod-wait prod-record prod-credits \
         install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog devlog-show
@@ -70,6 +75,18 @@ record: ## dump $(EP) events to battlefield/fixtures/episodes/$(EP).jsonl
 	@wc -l battlefield/fixtures/episodes/$(EP).jsonl
 replay: ## stream a fixture to connected UIs: make replay FILE=ep_abc SPEED=4
 	curl -s $(AUTH) -X POST $(API)/api/replays/$(FILE)/play -d '{"speed":$(or $(SPEED),4)}'; echo
+
+# ---------- lineages: headless generations (docs/EVOLUTION-DESIGN.md) ----------
+evolve: ## create + start a headless lineage: make evolve GENS=3 DAYS=6 MODE=enforce SEED=42 REVEAL_DAYS=3
+	@curl -s $(AUTH) -X POST $(API)/api/lineages -d '{"base_seed":$(SEED),"config":{"generations":$(or $(GENS),3),"days":$(LN_DAYS),"controller_mode":"$(LN_MODE)","reveal_days":$(or $(REVEAL_DAYS),3)}}' | tee /tmp/rl_ln.json; echo
+	@LN=$$(python3 -c 'import json;print(json.load(open("/tmp/rl_ln.json"))["id"])'); echo "lineage $$LN"; \
+	 curl -s $(AUTH) -X POST $(API)/api/lineages/$$LN/start; echo; echo "export LN=$$LN"
+lineage-status: ## generations, scores and playbook versions of $(LN)
+	curl -s $(AUTH) $(API)/api/lineages/$(LN); echo
+lineage-pause: ## pause $(LN) (its running generation pauses too)
+	curl -s $(AUTH) -X POST $(API)/api/lineages/$(LN)/pause; echo
+lineage-resume: ## resume $(LN) at the same generation
+	curl -s $(AUTH) -X POST $(API)/api/lineages/$(LN)/resume; echo
 
 # ---------- prod operator (runs ON the VM over ssh; OPERATOR_TOKEN never leaves the VM) ----------
 # Thin wrappers over deploy/prod.sh; guide: deploy/PROD-OPS.md. Host/key/timeouts: PROD_* env vars

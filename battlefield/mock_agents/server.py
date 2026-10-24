@@ -12,10 +12,11 @@ import hmac
 import os
 import time
 
+import httpx
 from fastapi import FastAPI, Header, HTTPException
 
 from agentkit import AgentSettings, AttackCreate, EventEmitter, GateBlocked, LedgerClient, LedgerError
-from agentkit.models import AuditRequest, AuditResponse, GateRequest, GateResponse, TurnRequest, TurnResponse
+from agentkit.models import AuditRequest, AuditResponse, GateRequest, GateResponse, ReflectRequest, ReflectResponse, TurnRequest, TurnResponse
 
 s = AgentSettings(AGENT_NAME=os.environ.get("AGENT_NAME", "red"))
 app = FastAPI(title=f"mock-{s.agent_name}")
@@ -101,8 +102,92 @@ async def schemes(authorization: str | None = Header(default=None)):
     return SCHEMES
 
 
+# ---------------- evolution (lineage episodes) ----------------
+# Deterministic stand-ins for what real agents learn. They read only what contracts/agent-service.md
+# hands an agent: `attack` items from the daily debrief or the /reflect review, plus their own playbook
+# (GET/PUT /api/playbook). Never origin, never battlefield internals. Each attack counts once (`seen`):
+# daily items reappear while in the window, and the review repeats them.
+SCHEME_IDS = [x["id"] for x in SCHEMES]
+CAUGHT, WON = ("blocked", "flagged"), ("extracted", "partial")
+# blue's answer to a scheme that got past it
+LEARNED_FOR = {
+    "ghost_vendor": "learned:young_vendor_any_amount",
+    "duplicate_invoice": "learned:duplicate_amount_loose",
+    "bank_swap": "learned:bank_change_any_amount",
+    "threshold_split": "learned:near_threshold_wide",
+}
+NEAR_BAND, NEAR_BAND_MIN = 0.95, 0.80
+
+
+def _new_attacks(pb: dict, items: list[dict]) -> tuple[list[str], list[dict]]:
+    seen = list(pb.get("seen", []))
+    fresh = [it for it in items if it.get("kind") == "attack" and it.get("attack_id") not in seen]
+    return (seen + [it["attack_id"] for it in fresh])[-200:], fresh
+
+
+def red_adapt(pb: dict, items: list[dict]) -> tuple[dict, str]:
+    """Drop schemes caught twice that never paid; favour schemes that extracted. Returns (content, rationale)."""
+    seen, fresh = _new_attacks(pb, items)
+    caught, won = dict(pb.get("caught", {})), dict(pb.get("won", {}))
+    for it in fresh:
+        sid, out = it.get("scheme_id", ""), it.get("outcome")
+        if out in CAUGHT:
+            caught[sid] = caught.get(sid, 0) + 1
+        elif out in WON:
+            won[sid] = won.get(sid, 0) + 1
+    dropped = sorted(sid for sid in SCHEME_IDS if caught.get(sid, 0) >= 2 and not won.get(sid))
+    if len(dropped) == len(SCHEME_IDS):  # never give up entirely: keep the least-caught scheme
+        dropped.remove(min(SCHEME_IDS, key=lambda sid: (caught.get(sid, 0), SCHEME_IDS.index(sid))))
+    content = {**pb, "seen": seen, "caught": caught, "won": won, "dropped": dropped}
+    favoured = [sid for sid in SCHEME_IDS if won.get(sid)]
+    return content, f"dropped {dropped or 'none'}; favouring {favoured or 'none'} ({len(fresh)} new attack results)"
+
+
+def red_choose(pb: dict, day: int) -> str:
+    """Deterministic: each live scheme weighted 1 + times it extracted. An empty playbook is the plain rotation."""
+    won = pb.get("won", {})
+    weighted = [sid for sid in SCHEME_IDS if sid not in pb.get("dropped", []) for _ in range(1 + won.get(sid, 0))]
+    return weighted[day % len(weighted)]
+
+
+def blue_adapt(pb: dict, items: list[dict]) -> tuple[dict, str]:
+    """For each attack that got past blue (caught_by empty), learn that scheme's rule; a missed split widens the band."""
+    seen, fresh = _new_attacks(pb, items)
+    learned, band = set(pb.get("learned", [])), float(pb.get("near_band", NEAR_BAND))
+    missed = [it.get("scheme_id", "") for it in fresh if not it.get("caught_by")]
+    for sid in missed:
+        if sid in LEARNED_FOR:
+            learned.add(LEARNED_FOR[sid])
+        if sid == "threshold_split":
+            band = round(max(NEAR_BAND_MIN, band - 0.05), 2)
+    content = {**pb, "seen": seen, "learned": sorted(learned), "near_band": band}
+    return content, f"missed {missed or 'none'}; rules {sorted(learned) or 'none'}; near band {band}"
+
+
+async def adapt_playbook(ledger: LedgerClient, debrief: dict | None, adapt) -> dict:
+    """Read the playbook; fold in today's debrief inside the turn; {} outside lineages (404)."""
+    pb = await ledger.get_playbook()
+    if pb is None:
+        return {}
+    content, rationale = adapt(pb.get("content") or {}, (debrief or {}).get("items", []))
+    if content != (pb.get("content") or {}):
+        await ledger.put_playbook(content, rationale, pb["version"])
+    return content
+
+
+@app.post("/reflect", response_model=ReflectResponse)
+async def reflect(req: ReflectRequest, authorization: str | None = Header(default=None)):
+    _auth(authorization)
+    adapt = {"red": red_adapt, "blue": blue_adapt}.get(s.agent_name)
+    if adapt is None:  # mock green has nothing to learn
+        return ReflectResponse(ok=True, rationale="dry run")
+    content, rationale = adapt(req.playbook.content, req.review.get("items", []))
+    return ReflectResponse(ok=True, playbook=content if content != req.playbook.content else None, rationale=rationale)
+
+
 async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> str:
-    scheme_id = req.options.get("scheme_id") or SCHEMES[req.day % len(SCHEMES)]["id"]
+    pb = await adapt_playbook(ledger, req.options.get("debrief"), red_adapt)
+    scheme_id = req.options.get("scheme_id") or red_choose(pb, req.day)
     scheme = next(x for x in SCHEMES if x["id"] == scheme_id)
     em.thinking(f"Day {req.day}. Reviewing the books for an opening. Going with: {scheme['display_name']}.")
     if scheme_id == "ghost_vendor":
@@ -198,6 +283,41 @@ async def green_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -
 
 
 # ---------------- BLUE ----------------
+_learned: dict[str, tuple[int, dict]] = {}  # episode_id -> (playbook version, content), refreshed when the version moves
+
+
+async def blue_playbook(req: GateRequest) -> dict:
+    if req.playbook_version is None:  # plain episode
+        return {}
+    cached = _learned.get(req.episode_id)
+    if cached is None or cached[0] != req.playbook_version:
+        try:
+            async with LedgerClient(s, episode_id=req.episode_id, day=req.day) as ledger:  # a read: allowed outside turns
+                pb = await ledger.get_playbook() or {}
+        except (LedgerError, httpx.HTTPError):  # never fail the gate over a playbook read: keep what we had
+            return cached[1] if cached else {}
+        cached = _learned[req.episode_id] = (req.playbook_version, pb.get("content") or {})
+    return cached[1]
+
+
+def learned_rules(pb: dict, req: GateRequest, age: int, inv: dict) -> list[str]:
+    """The learned rules in blue's playbook that fire on an invoice action."""
+    learned, amount, ctx, fired = set(pb.get("learned", [])), req.amount or 0, req.context, []
+    if "learned:young_vendor_any_amount" in learned and age < 7:
+        fired.append("learned:young_vendor_any_amount")
+    band = float(pb.get("near_band", NEAR_BAND))
+    if "learned:near_threshold_wide" in learned and THRESHOLD * band <= amount < THRESHOLD * NEAR_BAND:
+        fired.append("learned:near_threshold_wide")
+    if "learned:duplicate_amount_loose" in learned:
+        if any(abs(float(p["amount"]) - amount) <= 1.0 and p["invoice_number"] != inv.get("invoice_number") for p in ctx.get("vendor_paid_invoices", [])):
+            fired.append("learned:duplicate_amount_loose")
+    if "learned:bank_change_any_amount" in learned:
+        recent = [ch for ch in ctx.get("vendor_recent_changes", []) if ch["field"] == "bank_account" and ch["status"] == "approved"]
+        if any(req.day - int(ch.get("resolved_day") or ch["requested_day"]) <= 14 for ch in recent):
+            fired.append("learned:bank_change_any_amount")
+    return fired
+
+
 @app.post("/gate", response_model=GateResponse)
 async def gate(req: GateRequest, authorization: str | None = Header(default=None)):
     _auth(authorization)
@@ -210,7 +330,7 @@ async def gate(req: GateRequest, authorization: str | None = Header(default=None
         age = req.day - int(vendor.get("created_day", -999))
         if age < 7 and (req.amount or 0) > 1000:
             rules.append("vendor_age_lt_7d")
-        if req.amount and THRESHOLD * 0.95 <= req.amount < THRESHOLD:
+        if req.amount and THRESHOLD * NEAR_BAND <= req.amount < THRESHOLD:
             rules.append("near_threshold")
         for p in ctx.get("vendor_paid_invoices", []):
             if abs(float(p["amount"]) - (req.amount or 0)) <= 0.05 and p["invoice_number"] != inv.get("invoice_number"):
@@ -224,6 +344,7 @@ async def gate(req: GateRequest, authorization: str | None = Header(default=None
                 and (req.amount or 0) > 2500
             ):
                 rules.append("recent_bank_change")
+        rules += [r for r in learned_rules(await blue_playbook(req), req, age, inv) if r not in rules]
     if req.action == "vendor_changes.approve":
         if (ctx.get("vendor_change") or {}).get("field") == "bank_account":
             rules.append("bank_change_requested")
@@ -247,6 +368,7 @@ async def audit(req: AuditRequest, authorization: str | None = Header(default=No
     _auth(authorization)
     flags = 0
     async with LedgerClient(s, episode_id=req.episode_id, day=req.day) as ledger:
+        await adapt_playbook(ledger, req.debrief.model_dump() if req.debrief else None, blue_adapt)
         for v in await ledger.list_vendors(status="active"):
             if v["created_day"] == req.day:
                 await ledger.raise_flag("vendor", v["id"], "medium", "Vendor created today; verify before paying.")
