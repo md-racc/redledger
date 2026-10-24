@@ -5,7 +5,12 @@ COMPOSE := docker compose
 DEV := -f docker-compose.yml -f docker-compose.dev.yml
 MOCK := -f docker-compose.yml -f docker-compose.mock.yml
 API ?= http://localhost:8000
-TOKEN ?= $(shell grep -E '^INTERNAL_TOKEN=' .env 2>/dev/null | cut -d= -f2)
+# Operator-scope token for the curl targets. Reads OPERATOR_TOKEN from .env, else the compose
+# default `change-me`. No INTERNAL_TOKEN fallback: compose's battlefield doesn't read it, so a
+# stale .env with only INTERNAL_TOKEN would send a token battlefield never sees (401). Quotes are
+# stripped because deploy/render-env.sh writes NAME='value'.
+env_get = $(shell grep -E '^$(1)=' .env 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d "'\"")
+TOKEN ?= $(call env_get,OPERATOR_TOKEN)
 TOKEN := $(if $(TOKEN),$(TOKEN),change-me)
 AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
 
