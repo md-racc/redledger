@@ -93,6 +93,20 @@ async def create_generation(lineage_id: str, generation: int, *, seed: int, days
     return eid
 
 
+async def discard_unannounced(ep: Any) -> bool:
+    """A generation episode still `created` with no `generation.started` was interrupted between its insert
+    and its announcement (possibly mid-seed). Nothing ran on it: delete it (ledger rows cascade) and its
+    events, and step current_generation back so it is created afresh. True if it was discarded."""
+    if ep["status"] != "created" or await db.fetchval("SELECT 1 FROM events WHERE episode_id=$1 AND type='generation.started' LIMIT 1", ep["id"]):
+        return False
+    async with db.pool().acquire() as conn, conn.transaction():
+        await conn.execute("DELETE FROM events WHERE episode_id=$1", ep["id"])
+        await conn.execute("DELETE FROM episodes WHERE id=$1", ep["id"])
+        await conn.execute("UPDATE lineages SET current_generation=$2 WHERE id=$1", ep["lineage_id"], ep["generation"] - 1)
+    log.warning("generation_discarded_unannounced", lineage_id=ep["lineage_id"], episode_id=ep["id"], generation=ep["generation"])
+    return True
+
+
 async def announce(episode_id: str) -> None:
     """Day 0 prefix of a generation's episode (events.md): playbook.updated(reflect)* → generation.started.
     Once per episode; episode.started follows when the runner starts it."""
@@ -101,6 +115,13 @@ async def announce(episode_id: str) -> None:
     ep = await db.fetchrow("SELECT lineage_id, generation, seed FROM episodes WHERE id=$1", episode_id)
     lid, g = ep["lineage_id"], ep["generation"]
     for p in await db.fetch("SELECT * FROM playbooks WHERE lineage_id=$1 AND source='reflect' AND generation=$2 ORDER BY agent, version", lid, g - 1):
+        if await db.fetchval(
+            "SELECT 1 FROM events WHERE episode_id=$1 AND type='playbook.updated' AND payload->>'agent'=$2 AND (payload->>'version')::int=$3 LIMIT 1",
+            episode_id,
+            p["agent"],
+            p["version"],
+        ):
+            continue  # emitted before an interruption: once per version
         await bus.emit(
             episode_id,
             0,
@@ -124,37 +145,75 @@ async def announce(episode_id: str) -> None:
 
 
 # ---------- control (called by api/control.py) ----------
+#
+# Status transitions are conditional UPDATEs under one process-wide lock (battlefield is a single
+# worker), so two concurrent starts/resumes can never spawn two loops or run two lineages at once.
+
+_control = asyncio.Lock()
+_ONLY_ONE = "AND NOT EXISTS (SELECT 1 FROM lineages o WHERE o.status='running' AND o.id<>$1)"
 
 
-async def start(lineage_id: str) -> None:
-    await db.execute("UPDATE lineages SET status='running' WHERE id=$1", lineage_id)
-    _spawn(lineage_id)
-
-
-async def pause(lineage_id: str) -> None:
-    st = state(lineage_id)
-    st.gate.clear()
-    ln = await db.fetchrow("UPDATE lineages SET status='paused' WHERE id=$1 RETURNING current_generation", lineage_id)
-    ep = await episode_of(lineage_id, ln["current_generation"])
-    if ep is not None:
-        await bus.emit(ep["id"], ep["current_day"], "lineage.paused", {"lineage_id": lineage_id, "generation": ln["current_generation"]})
-        if ep["status"] == "running":
-            await runner.pause(ep["id"])
-
-
-async def resume(lineage_id: str) -> None:
-    _armed[lineage_id] = True  # an explicit human action re-arms the lineage credit guard
-    ln = await db.fetchrow("UPDATE lineages SET status='running' WHERE id=$1 RETURNING current_generation", lineage_id)
-    ep = await episode_of(lineage_id, ln["current_generation"])
-    if ep is not None:
-        await bus.emit(ep["id"], ep["current_day"], "lineage.resumed", {"lineage_id": lineage_id, "generation": ln["current_generation"]})
-        if ep["status"] == "paused":
-            await _arm_episode(lineage_id, ep["id"])
-            await runner.resume(ep["id"])
-    st = state(lineage_id)
-    st.gate.set()
-    if st.task is None or st.task.done():
+async def start(lineage_id: str) -> bool:
+    """created → running and spawn the loop. False (→ 409) if not created or another lineage runs."""
+    async with _control:
+        if await db.fetchval(f"UPDATE lineages SET status='running' WHERE id=$1 AND status='created' {_ONLY_ONE} RETURNING id", lineage_id) is None:
+            return False
         _spawn(lineage_id)
+    return True
+
+
+async def pause(lineage_id: str) -> bool:
+    """running → paused, and pause its running generation episode. False (→ 409) if not running."""
+    async with _control:
+        ln = await db.fetchrow("UPDATE lineages SET status='paused' WHERE id=$1 AND status='running' RETURNING current_generation", lineage_id)
+        if ln is None:
+            return False
+        state(lineage_id).gate.clear()
+        ep = await episode_of(lineage_id, ln["current_generation"])
+        if ep is not None:
+            await bus.emit(ep["id"], ep["current_day"], "lineage.paused", {"lineage_id": lineage_id, "generation": ln["current_generation"]})
+            if ep["status"] == "running":
+                await runner.pause(ep["id"])
+    return True
+
+
+async def resume(lineage_id: str) -> bool:
+    """paused → running. Resumes the generation episode only if the lineage paused it (§ paused_by_lineage);
+    an episode paused by MAX_CREDITS_PER_EPISODE or by hand stays paused until POST /episodes/{id}/resume."""
+    async with _control:
+        ln = await db.fetchrow(f"UPDATE lineages SET status='running' WHERE id=$1 AND status='paused' {_ONLY_ONE} RETURNING current_generation", lineage_id)
+        if ln is None:
+            return False
+        _armed[lineage_id] = True  # an explicit human action re-arms the lineage credit guard
+        ep = await episode_of(lineage_id, ln["current_generation"])
+        if ep is not None:
+            await bus.emit(ep["id"], ep["current_day"], "lineage.resumed", {"lineage_id": lineage_id, "generation": ln["current_generation"]})
+            if ep["status"] == "paused" and await paused_by_lineage(ep["id"]):
+                await _arm_episode(lineage_id, ep["id"])
+                await runner.resume(ep["id"])
+        st = state(lineage_id)
+        st.gate.set()
+        if st.task is None or st.task.done():
+            _spawn(lineage_id)
+    return True
+
+
+async def paused_by_lineage(episode_id: str) -> bool:
+    """Did the lineage (its pause or credit guard, both emitting `lineage.paused` first) or restart recovery
+    (`error {where: orchestrator}` first) cause the episode's latest `episode.paused`? Deduced from the events
+    between the last `episode.started`/`episode.resumed` and that pause."""
+    return bool(
+        await db.fetchval(
+            """
+            WITH p AS (SELECT MAX(id) AS id FROM events WHERE episode_id=$1 AND type='episode.paused'),
+                 r AS (SELECT COALESCE(MAX(e.id), 0) AS id FROM events e, p
+                       WHERE e.episode_id=$1 AND e.type IN ('episode.started','episode.resumed') AND e.id < p.id)
+            SELECT 1 FROM events e, p, r WHERE e.episode_id=$1 AND e.id > r.id AND e.id < p.id
+              AND (e.type='lineage.paused' OR (e.type='error' AND e.payload->>'where'='orchestrator')) LIMIT 1
+            """,
+            episode_id,
+        )
+    )
 
 
 def _spawn(lineage_id: str) -> None:
@@ -184,6 +243,10 @@ async def _loop(lineage_id: str) -> None:
                 return
             cfg, g = config(ln), ln["current_generation"]
             ep = await episode_of(lineage_id, g) if g else None
+            if ep is not None and await discard_unannounced(ep):
+                eid = await create_generation(lineage_id, g, seed=ep["seed"], days=ep["days"], mode=ep["controller_mode"], attack_plan=ep["attack_plan"])
+                await _arm_episode(lineage_id, eid)
+                continue
             if ep is not None and ep["status"] != "finished":
                 if ep["status"] == "failed":
                     await db.execute("UPDATE lineages SET status='failed', finished_at=now() WHERE id=$1", lineage_id)

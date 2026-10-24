@@ -122,10 +122,6 @@ async def _lineage_row(lineage_id: str) -> Any:
     return row
 
 
-async def _other_running(lineage_id: str) -> bool:
-    return bool(await db.fetchval("SELECT 1 FROM lineages WHERE status='running' AND id<>$1", lineage_id))
-
-
 @router.post("/lineages", status_code=201)
 async def create_lineage(body: LineageCreate):
     try:
@@ -154,26 +150,25 @@ async def get_lineage(lineage_id: str):
 
 @router.post("/lineages/{lineage_id}/start", status_code=202)
 async def start_lineage(lineage_id: str):
-    row = await _lineage_row(lineage_id)
-    if row["status"] != "created" or await _other_running(lineage_id):
+    await _lineage_row(lineage_id)
+    if not await lineage.start(lineage_id):  # conditional transition: concurrent starts get exactly one 202
         raise HTTPException(409, "another lineage is running, or this one is not in status created")
-    await lineage.start(lineage_id)
     return {"ok": True}
 
 
 @router.post("/lineages/{lineage_id}/pause")
 async def pause_lineage(lineage_id: str):
-    if (await _lineage_row(lineage_id))["status"] != "running":
+    await _lineage_row(lineage_id)
+    if not await lineage.pause(lineage_id):
         raise HTTPException(409, "not running")
-    await lineage.pause(lineage_id)
     return {"ok": True}
 
 
 @router.post("/lineages/{lineage_id}/resume")
 async def resume_lineage(lineage_id: str):
-    if (await _lineage_row(lineage_id))["status"] != "paused" or await _other_running(lineage_id):
+    await _lineage_row(lineage_id)
+    if not await lineage.resume(lineage_id):
         raise HTTPException(409, "not paused, or another lineage is running")
-    await lineage.resume(lineage_id)
     return {"ok": True}
 
 
@@ -207,6 +202,10 @@ async def pause_episode(episode_id: str):
 @router.post("/episodes/{episode_id}/resume")
 async def resume_episode(episode_id: str):
     await _must_exist(episode_id, live=True)
+    if await db.fetchval(
+        "SELECT 1 FROM episodes e JOIN lineages l ON l.id=e.lineage_id WHERE e.id=$1 AND l.status='paused' AND e.generation=l.current_generation", episode_id
+    ):
+        raise HTTPException(409, "its lineage is paused: POST /lineages/{id}/resume instead")
     await runner.resume(episode_id)
     return {"ok": True}
 

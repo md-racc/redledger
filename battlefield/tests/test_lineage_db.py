@@ -261,3 +261,130 @@ async def test_restart_pauses_lineage_and_resume_finishes_the_interrupted_reflec
         assert "lineage.resumed" in await _types(e1)
     finally:
         await _cleanup(lid)
+
+
+_FAST = {"fetchval": db.fetchval, "fetchrow": db.fetchrow}
+
+
+async def _slow_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Widen every check-then-act window: each fetchval/fetchrow yields first."""
+    for name in _FAST:
+        orig = getattr(db, name)
+
+        async def slow(*a: Any, _orig: Any = orig, **k: Any) -> Any:
+            await asyncio.sleep(0.02)
+            return await _orig(*a, **k)
+
+        monkeypatch.setattr(db, name, slow)
+
+
+async def test_concurrent_starts_and_resumes_spawn_exactly_one_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub(monkeypatch, _Agents())
+    async with _client() as c:
+        a, b = (await _create(c))["id"], (await _create(c))["id"]
+        await _slow_db(monkeypatch)
+        same = await asyncio.gather(*(c.post(f"/api/lineages/{a}/start", headers=f.auth()) for _ in range(3)))
+        assert sorted(r.status_code for r in same) == [202, 409, 409]
+        assert (await c.post(f"/api/lineages/{b}/start", headers=f.auth())).status_code == 409  # a is running
+        assert (await c.post(f"/api/lineages/{a}/pause", headers=f.auth())).status_code == 200
+        resumes = await asyncio.gather(*(c.post(f"/api/lineages/{a}/resume", headers=f.auth()) for _ in range(3)))
+        assert sorted(r.status_code for r in resumes) == [200, 409, 409]
+        for name, fn in _FAST.items():
+            monkeypatch.setattr(db, name, fn)
+        await asyncio.wait_for(lineage.state(a).task, 60)
+        assert await db.fetchval("SELECT status FROM lineages WHERE id=$1", a) == "finished"
+        assert await db.fetchval("SELECT COUNT(*) FROM episodes WHERE lineage_id=$1", a) == 2
+    await _cleanup(a)
+
+    async with _client() as c:  # two different lineages started at once: one runs
+        x, y = (await _create(c))["id"], (await _create(c))["id"]
+        await _slow_db(monkeypatch)
+        two = await asyncio.gather(c.post(f"/api/lineages/{x}/start", headers=f.auth()), c.post(f"/api/lineages/{y}/start", headers=f.auth()))
+    try:
+        assert sorted(r.status_code for r in two) == [202, 409]
+        assert await db.fetchval("SELECT COUNT(*) FROM lineages WHERE id = ANY($1::text[]) AND status='running'", [x, y]) <= 1
+    finally:
+        await _cleanup(x)
+        await _cleanup(y)
+        await db.execute("UPDATE lineages SET status='failed' WHERE id = ANY($1::text[])", [x, y])
+
+
+async def _paused_generation(c: httpx.AsyncClient, *events: tuple[str, dict[str, Any]]) -> tuple[str, str]:
+    """A paused lineage whose generation-1 episode is paused after `events` (then episode.paused)."""
+    lid = (await _create(c))["id"]
+    eid = await lineage.create_generation(lid, 1, seed=9001, days=2, mode="enforce")
+    await db.execute("UPDATE episodes SET status='paused' WHERE id=$1", eid)
+    await db.execute("UPDATE lineages SET status='paused' WHERE id=$1", lid)
+    for type_, payload in (("episode.started", {}), *events, ("episode.paused", {})):
+        await db.execute("INSERT INTO events (episode_id, day, type, agent, payload) VALUES ($1,0,$2,'battlefield',$3)", eid, type_, payload)
+    return lid, eid
+
+
+@pytest.mark.parametrize(
+    ("events", "resumed"),
+    [
+        ([("lineage.paused", {})], True),  # lineage pause / lineage credit guard
+        ([("error", {"where": "orchestrator", "message": "battlefield restarted mid-episode; resume to continue"})], True),  # restart
+        ([("error", {"where": "credit_guard", "message": "episode paused at 9 credits (limit 5)"})], False),  # MAX_CREDITS_PER_EPISODE
+        ([], False),  # by hand
+    ],
+)
+async def test_lineage_resume_resumes_only_episodes_it_paused(monkeypatch: pytest.MonkeyPatch, events: list, resumed: bool) -> None:
+    _stub(monkeypatch, _Agents())
+    async with _client() as c:
+        lid, eid = await _paused_generation(c, *events)
+        if not resumed:  # the lineage was paused after the episode had already stopped
+            await db.execute("INSERT INTO events (episode_id, day, type, agent, payload) VALUES ($1,0,'lineage.paused','battlefield','{}')", eid)
+        assert (await c.post(f"/api/episodes/{eid}/resume", headers=f.auth())).status_code == 409  # its lineage is paused
+        assert (await c.post(f"/api/lineages/{lid}/resume", headers=f.auth())).status_code == 200
+        status = await db.fetchval("SELECT status FROM episodes WHERE id=$1", eid)
+        try:
+            assert (status == "running") is resumed
+            if not resumed:  # the lineage runs again; the episode resumes only by hand
+                assert "episode.resumed" not in await _types(eid)
+                assert (await c.post(f"/api/episodes/{eid}/resume", headers=f.auth())).status_code == 200
+        finally:
+            await _cleanup(lid)
+            await db.execute("UPDATE lineages SET status='failed' WHERE id=$1", lid)
+
+
+async def test_demo_episode_emits_generation_ended(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub(monkeypatch, _Agents())
+    async with _client() as c:
+        lid = (await _create(c))["id"]
+        await db.execute("UPDATE lineages SET status='finished' WHERE id=$1", lid)
+        eid = (await c.post("/api/episodes", json={"controller_mode": "enforce", "lineage_id": lid, "days": 1}, headers=f.auth())).json()["id"]
+        await runner.step(eid)
+    t = await _types(eid)
+    assert t[0] == "generation.started" and t[-2:] == ["episode.ended", "generation.ended"]
+    ended = await db.fetchval("SELECT payload FROM events WHERE episode_id=$1 AND type='generation.ended'", eid)
+    assert ended == {"lineage_id": lid, "generation": 1, "score": await score.compute(eid)}
+
+
+async def test_interrupted_generation_creation_is_redone_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _stub(monkeypatch, _Agents())
+    async with _client() as c:
+        lid = (await _create(c, generations=1))["id"]
+        await db.execute(
+            "INSERT INTO playbooks (lineage_id, agent, version, parent_version, generation, source, content) VALUES ($1,'red',1,0,0,'reflect','{}')", lid
+        )
+        # a process died after inserting generation 1 and part of its seed, before generation.started
+        dead = f.uid("ep")
+        await db.execute("INSERT INTO episodes (id, seed, controller_mode, days, lineage_id, generation) VALUES ($1,9001,'enforce',2,$2,1)", dead, lid)
+        await db.execute("UPDATE lineages SET current_generation=1, status='paused' WHERE id=$1", lid)
+        await f.vendor(dead)
+        await db.execute(
+            "INSERT INTO events (episode_id, day, type, agent, payload) VALUES ($1,0,'playbook.updated','battlefield','{\"agent\":\"red\",\"version\":1}')",
+            dead,
+        )
+        assert (await c.post(f"/api/lineages/{lid}/resume", headers=f.auth())).status_code == 200
+        await asyncio.wait_for(lineage.state(lid).task, 60)
+    try:
+        assert await db.fetchval("SELECT 1 FROM episodes WHERE id=$1", dead) is None
+        assert await db.fetchval("SELECT COUNT(*) FROM events WHERE episode_id=$1", dead) == 0
+        eid = await db.fetchval("SELECT id FROM episodes WHERE lineage_id=$1 AND generation=1", lid)
+        t = await _types(eid)
+        assert t[:3] == ["playbook.updated", "generation.started", "episode.started"] and t.count("playbook.updated") == 1
+        assert await db.fetchval("SELECT status FROM lineages WHERE id=$1", lid) == "finished" and stub.reflects
+    finally:
+        await _cleanup(lid)
