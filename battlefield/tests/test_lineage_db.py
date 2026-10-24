@@ -27,6 +27,7 @@ async def _fresh(pg: None, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Non
     monkeypatch.setattr(settings, "day_pause_sec", 0.0)
     monkeypatch.setattr(lineage, "_control", asyncio.Lock())  # module-level lock binds to the first test's loop
     monkeypatch.setattr(lineage, "_demo_locks", {})
+    monkeypatch.setattr(lineage, "_demo_tasks", {})
     yield
     await asyncio.gather(*list(lineage._background), return_exceptions=True)  # demo reflections started by _finish
 
@@ -441,7 +442,15 @@ async def test_a_demo_generation_reflects_so_the_next_demo_starts_from_it(monkey
 
 async def test_demo_reflection_lost_to_a_restart_is_finished_by_the_next_demo(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = _stub(monkeypatch, _Agents())
-    monkeypatch.setattr(lineage, "reflect_demo_later", lambda lid, g: None)  # the process died before the task ran
+    real, lost_once = lineage.reflect_demo_later, []
+
+    def lost(lid: str, g: int) -> Any:
+        if g == 1 and not lost_once:  # runner._finish's call for the demo: the process died before it ran
+            lost_once.append(g)
+            return None
+        return real(lid, g)
+
+    monkeypatch.setattr(lineage, "reflect_demo_later", lost)
     async with _client() as c:
         lid = (await _create(c))["id"]
         await db.execute("UPDATE lineages SET status='finished' WHERE id=$1", lid)
@@ -460,7 +469,7 @@ async def test_demo_reflection_stops_at_the_lineage_credit_cap(monkeypatch: pyte
         r = await c.post("/api/lineages", json={"base_seed": 9100, "config": {"generations": 1, "days": 1, "max_credits": 5}}, headers=f.auth())
         lid = r.json()["id"]
     await db.execute("UPDATE lineages SET status='finished' WHERE id=$1", lid)
-    monkeypatch.setitem(lineage._credits, lid, 5.0)  # the lineage already spent its cap
+    monkeypatch.setitem(lineage._reflect_spent, lid, 5.0)  # the lineage already spent its cap (earlier reflections)
     eid = await lineage.create_generation(lid, 1, seed=9101, days=1, mode="enforce")
     await runner.step(eid)
     await asyncio.gather(*list(lineage._background))
@@ -477,3 +486,37 @@ async def test_the_loops_own_generations_are_not_reflected_twice(monkeypatch: py
     await asyncio.gather(*list(lineage._background))
     assert len(stub.reflects) == 6  # 2 generations × 3 agents, all by the loop
     await _cleanup(lid)
+
+
+async def test_demo_creation_waits_at_most_the_cap_for_a_slow_reflection(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _stub(monkeypatch, _Agents())
+    stub.block = asyncio.Event()  # blue's reflection hangs (a slow model)
+    monkeypatch.setattr(lineage, "DEMO_REFLECT_WAIT_SEC", 0.2)
+    async with _client() as c:
+        lid = (await _create(c))["id"]
+        await db.execute("UPDATE lineages SET status='finished' WHERE id=$1", lid)
+        body = {"controller_mode": "enforce", "lineage_id": lid, "days": 1}
+        e1 = (await c.post("/api/episodes", json=body, headers=f.auth())).json()["id"]
+        await runner.step(e1)
+        r = await asyncio.wait_for(c.post("/api/episodes", json=body, headers=f.auth()), 5)
+        assert r.status_code == 201 and r.json()["generation"] == 2  # created from the playbooks as they were
+        pending = lineage._demo_tasks[(lid, 1)]
+        assert not pending.done()  # the reflection keeps going in the background, not cancelled by the timeout
+        stub.block.set()
+        await asyncio.wait_for(pending, 5)
+    assert [a for a, _ in stub.reflects] == ["red", "green", "blue"]  # nobody asked twice
+
+
+async def test_demo_turn_credits_count_toward_the_lineage_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _stub(monkeypatch, _Agents(credits=3.0))
+    async with _client() as c:
+        r = await c.post("/api/lineages", json={"base_seed": 9200, "config": {"generations": 1, "days": 1, "max_credits": 5}}, headers=f.auth())
+        lid = r.json()["id"]
+        await db.execute("UPDATE lineages SET status='finished' WHERE id=$1", lid)
+        lineage._credits[lid] = 0.0  # a stale per-process total from before the demo
+        eid = (await c.post("/api/episodes", json={"controller_mode": "enforce", "lineage_id": lid, "days": 1}, headers=f.auth())).json()["id"]
+        await runner.step(eid)  # red + green turns at 3 credits each: 6 ≥ 5
+        await asyncio.gather(*list(lineage._background))
+    assert stub.reflects == []  # the demo's own turns used the cap up: no reflection
+    assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", eid) == "finished"  # the demo itself was never stopped
+    assert not await db.fetchval("SELECT 1 FROM events WHERE episode_id=$1 AND type='lineage.paused'", eid)

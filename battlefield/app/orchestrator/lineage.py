@@ -50,6 +50,8 @@ _reflect_spent: dict[str, float] = {}  # reflect usage has no event to re-seed f
 _reflect_done: set[tuple[str, int, str]] = set()  # (lineage, generation, agent) answered in this process
 _demo_locks: dict[str, asyncio.Lock] = {}  # one demo reflection at a time per lineage
 _background: set[asyncio.Task] = set()  # demo reflections started from runner._finish (kept referenced)
+_demo_tasks: dict[tuple[str, int], asyncio.Task] = {}  # (lineage, generation) → its demo reflection
+DEMO_REFLECT_WAIT_SEC = 60.0  # how long POST /episodes {lineage_id} waits for the previous demo's reflection
 
 
 def state(lineage_id: str) -> LineageState:
@@ -78,9 +80,21 @@ async def episode_of(lineage_id: str, generation: int) -> Any:
 async def create_generation(lineage_id: str, generation: int, *, seed: int, days: int, mode: str, attack_plan: Any = None) -> str:
     """Insert generation `generation`'s episode, seed its company, bump current_generation, announce it.
 
-    A demo (the lineage is finished or failed) first completes the previous demo's reflection if its
-    background task was lost (restart) or is still running, so it starts from reflected playbooks."""
-    await reflect_demo(lineage_id, generation - 1)
+    A demo (the lineage is finished or failed) first waits, up to DEMO_REFLECT_WAIT_SEC, for the previous
+    demo's reflection (restarted if a restart lost it), so it starts from reflected playbooks. Past that it
+    starts from the current playbooks and the reflection finishes in the background (its versions then
+    apply to the next demo): the request must stay well under the edge's 100 s timeout."""
+    try:
+        await asyncio.wait_for(asyncio.shield(reflect_demo_later(lineage_id, generation - 1)), DEMO_REFLECT_WAIT_SEC)
+    except TimeoutError:
+        prev = await episode_of(lineage_id, generation - 1)
+        log.warning(
+            "demo_reflect_still_running",
+            lineage_id=lineage_id,
+            episode_id=prev["id"] if prev else None,
+            generation=generation - 1,
+            wait_sec=DEMO_REFLECT_WAIT_SEC,
+        )
     eid = db.new_id("ep")
     async with db.pool().acquire() as conn, conn.transaction():
         await conn.execute(
@@ -311,12 +325,25 @@ async def _reflected(lineage_id: str, g: int, cfg: LineageConfig) -> bool:
     return bool(await db.fetchval("SELECT 1 FROM episodes WHERE lineage_id=$1 AND generation=$2", lineage_id, g + 1))
 
 
-def reflect_demo_later(lineage_id: str, generation: int) -> None:
+def reflect_demo_later(lineage_id: str, generation: int) -> asyncio.Task:
     """runner._finish hook for every lineage episode: reflect a demo generation in the background (the
-    loop reflects its own generations; `reflect_demo` returns at once for those)."""
+    loop reflects its own generations; `reflect_demo` returns at once for those). Reuses a task still
+    running for the same generation; a finished one is cheap to re-run (stored reviews, skipped agents)."""
+    key = (lineage_id, generation)
+    t = _demo_tasks.get(key)
+    if t is not None and not t.done():
+        return t
     t = asyncio.create_task(reflect_demo(lineage_id, generation), name=f"demo-reflect-{lineage_id}-{generation}")
+    _demo_tasks[key] = t
     _background.add(t)
-    t.add_done_callback(_background.discard)
+    t.add_done_callback(_reflect_task_done)
+    return t
+
+
+def _reflect_task_done(t: asyncio.Task) -> None:
+    _background.discard(t)
+    if not t.cancelled() and (e := t.exception()) is not None:
+        log.error("demo_reflect_task_failed", task=t.get_name(), error=repr(e), exc_info=e)
 
 
 async def reflect_demo(lineage_id: str, generation: int) -> None:
@@ -337,6 +364,9 @@ async def reflect_demo(lineage_id: str, generation: int) -> None:
 
 
 async def _over_cap(lineage_id: str, cfg: LineageConfig) -> bool:
+    """The lineage's spend so far, re-counted from events: demo turns are not charged by the runner (only the
+    loop's generations are), and the cap stops a demo's reflection, never the demo itself."""
+    _credits.pop(lineage_id, None)
     await _seed_credits(lineage_id)
     return runner.credit_guard_tripped(_credits[lineage_id], cfg.max_credits)
 
