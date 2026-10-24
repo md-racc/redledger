@@ -38,39 +38,56 @@ def _json(value: Any) -> str:
 
 
 def blue_tool(name: str, description: str) -> Callable:
-    """Do not use the shared decorator: it does not propagate invocation IDs to writes."""
+    """Bind verified shared identity to private receipts; only deterministic calls narrate here."""
 
     def decorate(fn):
         @functools.wraps(fn)
         async def wrapped(*args, **kwargs):
             session = current()
-            invocation = INVOCATION.get()
+            shared = ctx.invocation()
+            invocation = INVOCATION.get() if session.dry_run and shared is None else None
+            if shared is not None:
+                # A copied private marker (or a local/explicit shared fallback) is not SDK identity.
+                # Claim before any provider work, including snapshot tools and future integrations.
+                if shared.verified and shared.tool_use_id and shared.take(name):
+                    invocation = shared.tool_use_id
+                else:
+                    shared.record(False, f"{name}: not confirmed"[:300])
             if not invocation:
                 return _json({"ok": False, "error": "Verified tool invocation metadata is unavailable; no action taken."})
-            async with session.tool_lock:
-                emitter = ctx.emitter()
-                # Only safe scalar IDs enter narration; never forward user-supplied prose.
-                safe_args = {}
-                for key, value in kwargs.items():
-                    if key == "finding_ids" and isinstance(value, list):
-                        safe_args[key] = [v for v in value[:20] if valid_id(v)]
-                    elif valid_id(value):
-                        safe_args[key] = value
-                if emitter:
-                    emitter.tool_call(name, safe_args, invocation)
-                ok = False
-                try:
-                    output = await fn(*args, **kwargs)
-                    ok = bool(output.get("ok", True))
-                    return _json(output)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    session.gaps.append(f"{name}: verification unavailable")
-                    return _json({"ok": False, "error": "Verification unavailable; no unsupported action authorized."})
-                finally:
+            token = INVOCATION.set(invocation)
+            ok = False
+            try:
+                async with session.tool_lock:
+                    # Shared offload owns its outer pair. Do not duplicate it or record source prose.
+                    emitter = None if shared is not None else ctx.emitter()
+                    safe_args = {}
+                    for key, value in kwargs.items():
+                        if key == "finding_ids" and isinstance(value, list):
+                            safe_args[key] = [v for v in value[:20] if valid_id(v)]
+                        elif valid_id(value):
+                            safe_args[key] = value
                     if emitter:
-                        emitter.tool_result(invocation, ok, f"{name}: {'completed' if ok else 'not confirmed'}")
+                        emitter.tool_call(name, safe_args, invocation)
+                    try:
+                        output = await fn(*args, **kwargs)
+                        result = _json(output)
+                        ok = bool(output.get("ok", True))
+                        return result
+                    finally:
+                        if emitter:
+                            emitter.tool_result(invocation, ok, f"{name}: {'completed' if ok else 'not confirmed'}")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                session.gaps.append(f"{name}: verification unavailable")
+                return _json({"ok": False, "error": "Verification unavailable; no unsupported action authorized."})
+            finally:
+                try:
+                    if shared is not None:
+                        shared.record(ok, f"{name}: {'completed' if ok else 'not confirmed'}"[:300])
+                finally:
+                    INVOCATION.reset(token)
 
         wrapped._rl_tool = (name, description)
         # Shared MCP tools return JSON text, while the private implementations return dictionaries.

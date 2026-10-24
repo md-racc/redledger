@@ -1,0 +1,1 @@
+- 2026-10-24T08:09Z · M · blue: bind private audit receipts to verified shared invocations; offline integration covers exact IDs, one narration pair, failures and cancellation; live audit stays disabled pending Ad nonblocking/owner-loop safety and authenticated SDK acceptance
