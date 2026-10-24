@@ -1,0 +1,1 @@
+- 2026-10-24T07:08Z · Ad · docs: integration (Ad) approves contracts PRs, owners are notified not gating; evolution decisions E-D5/E-D6/E-D8 accepted, E-D7 mailroom deferred; next: contracts/evolution (E1); blocked: none

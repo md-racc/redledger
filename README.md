@@ -392,7 +392,7 @@ ownership guard allows exactly these paths for your prefix.
 | New table | `contracts/ext/<area>/<nn>_<name>.sql`, `CREATE TABLE IF NOT EXISTS <area>_...`. Applied after the core schema on startup | your branch |
 | New HTTP routes on battlefield (reads, writes to your tables, public endpoints) | `battlefield/extensions/<area>_<name>.py` exporting `router = APIRouter()`; auto-mounted at `/api/x/<area>/...`. `fe_*` may expose no-token routes | your branch |
 | Ad-hoc data for the frontend | `POST /api/fe/query {sql}` — single SELECT, 5 s timeout, 5000-row cap. Or write an `fe_*` extension route when the query stabilizes | nothing to edit |
-| New gated action, new core column, new Ledger API route for agents | contracts PR | Ad + affected owners |
+| New gated action, new core column, new Ledger API route for agents | contracts PR | Ad (integration); affected owners notified, never blocking |
 
 Rules: extensions never write core tables (that's what the Ledger API is for); extension
 tables carry your prefix; a broken extension logs and is skipped, it cannot take battlefield

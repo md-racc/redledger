@@ -1,6 +1,6 @@
 # Evolution design: lineages, playbooks, debriefs, headless generations (Ad)
 
-Status: **decisions accepted by Ad 2026-10-24** (§10); contracts not yet edited. Baseline: main
+Status: **decided — Ad accepted E-D1–E-D6 and E-D8 on 2026-10-24; E-D7 deferred** (§10); contracts land in E1. Baseline: main
 `0e62024`. Companion to [`AD-INTEGRATION-DESIGN.md`](AD-INTEGRATION-DESIGN.md) (packages A/B),
 which this does not replace. Ad scaffolds battlefield/agentkit/contracts; what each agent *learns*
 is Al's (red), M's (green, blue) and R's (frontend) to build on top.
@@ -319,17 +319,17 @@ watches agents react within seconds. Already supported. On top:
 | E-D2 | One generic, lineage-scoped, versioned playbook store; content owned by each team | Accepted |
 | E-D3 | Build and verify keyless now; real generations wait for the live hold to lift, with a credit cap | Accepted |
 | E-D4 | Order: integration-design docs PR → this doc → contracts E1 → battlefield/agentkit work alongside package A | Accepted |
-| E-D5 | Only resolved attacks revealed mid-episode; revealed outcomes frozen; fresh seed per generation (§3.2–3.4) | Proposed (follows from E-D1; flag if not) |
-| E-D6 | No agent sees an opponent's playbook | Proposed |
-| E-D7 | Mailroom (§5) | Open, phase 2 |
-| E-D8 | Defaults `reveal_days 3`, `reveal_generations 2`, training mode `enforce` | Proposed |
+| E-D5 | Only resolved attacks revealed mid-episode; revealed outcomes frozen; fresh seed per generation (§3.2–3.4) | Accepted |
+| E-D6 | No agent sees an opponent's playbook | Accepted |
+| E-D7 | Mailroom (§5) | Deferred to phase 2 (own contracts PR if revived) |
+| E-D8 | Defaults `reveal_days 3`, `reveal_generations 2`, training mode `enforce` | Accepted |
 
 ## 11. Implementation plan
 
 | PR | Branch | Files (exclusive while open) | Tests | Needs |
 |---|---|---|---|---|
 | E0 | `docs/evolution-design` | this doc | — | — |
-| E1 | `contracts/evolution` | `contracts/{schema.sql,ledger-api.yaml,agent-service.md,events.md,CHANGELOG.md}`, `agentkit/agentkit/models.py` | schema applies twice cleanly; frontend `gen:api` compiles | E0; reviewers Ad, Al, M, R. Serialised with integration PR1 (same files): E1 first |
+| E1 | `contracts/evolution` | `contracts/{schema.sql,ledger-api.yaml,agent-service.md,events.md,CHANGELOG.md}`, `agentkit/agentkit/models.py` | schema applies twice cleanly; frontend `gen:api` compiles | E0; verifier; owners notified (non-blocking). Serialised with integration PR1 (same files): E1 first |
 | E2a | `battlefield/playbooks-debrief` | new `app/api/playbooks.py`, new `app/evolution/debrief.py`, `scoring/score.py` (resolved/revealed), `orchestrator/runner.py` (debrief hook), `main.py` (mount), tests | DB: playbook CRUD + stale 409 + guard 409 + 413; each agent's debrief contents per §3.1; unresolved never revealed; revealed outcome frozen; no disclosure outside lineages; every disclosure in `debriefs` | E1 |
 | E2b | `battlefield/agentkit-reflect` | `agentkit/agentkit/{server,droid_agent,ledger_client}.py`, `agentkit/tests/*` | unit: `/reflect` route + auth, default `reflect()` → null, DRY_RUN no model calls, `get/put_playbook` | E1; parallel with E2a |
 | E3 | `battlefield/lineage-runner` | new `app/orchestrator/lineage.py`, `api/control.py` (lineage routes, `lineage_id` on episodes), `mock_agents/server.py` (`/reflect` + adaptation), `Makefile` (`evolve`, `lineage-*`), `main.py` (recovery), tests; headless escalation hook in `gate/gatekeeper.py` **after integration 2a merges** (2a owns that file) | DB: 3-generation mock lineage end to end, seeds distinct, reflect versions written, restart → paused → resume, credit cap; `make mock-agents && make evolve GENS=3` | E2a, E2b |
