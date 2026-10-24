@@ -1,0 +1,1 @@
+- 2026-10-24T16:02Z · M · contracts: record the bounded Blue OFF permission/identity observation and inconclusive replays in contracts/CHANGELOG.md Findings; next: integration review; blocked: repeatable SDK and real Ledger/CRS/shadow acceptance; no guard lift
