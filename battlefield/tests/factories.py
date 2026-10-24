@@ -50,8 +50,10 @@ async def vendor(ep: str, *, origin: str = "sim", bank_account: str = "ACCT-OLD"
     )
 
 
-async def attack(ep: str, *, day: int = 1, scheme_id: str = "bank_swap", target_amount: float = 10_000.0) -> str:
-    return await insert("attacks", episode_id=ep, scheme_id=scheme_id, display_name=scheme_id, story="test", day_launched=day, target_amount=target_amount)
+async def attack(ep: str, *, day: int = 1, scheme_id: str = "bank_swap", target_amount: float = 10_000.0, **cols: Any) -> str:
+    return await insert(
+        "attacks", episode_id=ep, scheme_id=scheme_id, display_name=scheme_id, story="test", day_launched=day, target_amount=target_amount, **cols
+    )
 
 
 async def invoice(
@@ -92,9 +94,11 @@ async def change(
     resolved_day: int | None = None,
     new_value: str = "ACCT-RED",
     field: str = "bank_account",
+    attack_id: str | None = None,
 ) -> str:
     return await insert(
         "vendor_changes",
+        attack_id=attack_id,
         episode_id=ep,
         vendor_id=vendor_id,
         field=field,

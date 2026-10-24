@@ -65,24 +65,26 @@ Goal for this session: <fill in>
 
 ## Known gaps left for Ad (from the scaffold smoke run)
 
-- `bank_swap` scoring (done, heuristic): `score._attribute` gives each attack the
-  `origin='red'` vendor_changes whose `requested_day` equals its `day_launched`. An approved
-  red `bank_account` change is live from its `resolved_day` until the vendor's next approved
-  `bank_account` change. While live, non-red payments to `new_value` are extracted, and the
-  vendor's non-red invoices that get a block/escalate verdict or end blocked/rejected count as
-  caught at pay time. Those invoices count for detection and toward `dollars_blocked`, mark the
-  change blocked (partial if money already left), and are excluded from the false-positive
-  numbers; diverted payments are excluded from `legit_processed`. Blocked/rejected change or
-  frozen vendor = blocked; change-only attacks stopped at the change get their target credited
-  to `dollars_blocked`. Detection only counts verdicts/flags on or after `day_launched`. Limits:
-  with several attacks on one day, changes go to the attacks that day with no invoice/expense
-  rows (or to all of them if every one has rows), so two change-only attacks on the same day
-  share each other's changes; a red change on a day with no attack scores no dollars (it still
-  clears false positives); any block of that vendor's invoice while a swap is live is credited,
-  whatever the rule that fired. Real fix: `attack_id` on `vendor_changes` (contracts change).
-- `red_writes._current_attack` links new rows to `ORDER BY id DESC LIMIT 1` of today's
-  attacks, but attack ids are random uuids, so with more than one attack per red turn rows
-  may be linked to the wrong attack. Fix needs `attacks.created_at` (contracts change).
+- `bank_swap` scoring (done): red `vendor_changes` carry `attack_id` (set by `POST
+  /vendor_changes` to red's latest attack that day, hidden from agents like invoices/expenses),
+  and `score._attribute` credits each change to that attack. An approved red `bank_account`
+  change is live from its `resolved_day` until the vendor's next approved `bank_account` change.
+  While live, non-red payments to `new_value` are extracted, and the vendor's non-red invoices
+  that get a block/escalate verdict or end blocked/rejected count as caught at pay time. Those
+  invoices count for detection and toward `dollars_blocked`, mark the change blocked (partial if
+  money already left), and are excluded from the false-positive numbers; diverted payments are
+  excluded from `legit_processed`. Blocked/rejected change or frozen vendor = blocked;
+  change-only attacks stopped at the change get their target credited to `dollars_blocked`.
+  Detection only counts verdicts/flags on or after `day_launched`. Remaining limits: rows with
+  NULL `attack_id` (legacy rows from before the column, or a change red made before declaring
+  any attack that day) still use the old same-day heuristic (attacks launched on its
+  `requested_day`, preferring ones with no invoice/expense rows; a NULL change on a day with no
+  attack scores no dollars but still clears false positives); any block of that vendor's
+  invoice while a swap is live is credited, whatever the rule that fired.
+- `red_writes._current_attack` (fixed): links new rows to today's attack with the latest
+  `attacks.created_at` (`id` only breaks ties), so several attacks in one red turn link
+  correctly as long as red declares each attack before submitting its rows. Rows submitted
+  before any declaration that day stay unlinked.
 - `legit_traffic` doesn't yet produce legit bank-detail changes or legit new vendors, so blue
   has no false-positive bait for those rules. Dev M will want that.
 - Replays broadcast via `bus._broadcast` under a virtual episode id and are not persisted.
