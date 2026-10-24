@@ -21,7 +21,9 @@ PAID = [
 ]
 OPEN_POS = [
     {"id": "po_small", "vendor_id": "ven_b", "amount": 2000.0, "description": "paper", "status": "open"},
-    {"id": "po_big", "vendor_id": "ven_a", "amount": 8000.0, "description": "freight", "status": "open"},
+    {"id": "po_big", "vendor_id": "ven_a", "amount": 4400.0, "description": "freight", "status": "open"},
+    # bigger, but 0.99x lands over the $5k auto-pay line, so it must lose to po_big
+    {"id": "po_huge", "vendor_id": "ven_a", "amount": 8000.0, "description": "freight", "status": "open"},
 ]
 
 
@@ -67,7 +69,7 @@ async def test_plan_picks_largest_open_po_vendor():
         plan = await BankSwap().plan(L, {})
     assert plan["vendor_id"] == "ven_a" and plan["vendor_name"] == "Harbor Logistics LLC"
     assert plan["po_id"] == "po_big"
-    assert plan["target_amount"] == 7920.0  # 0.99 * 8000
+    assert plan["target_amount"] == 4356.0  # 0.99 * 4400: largest PO that still auto-pays under the line
     assert plan["invoice_number"] == "INV-54328"  # existing format, bumped by 7
     assert len(plan["new_account"]) == 10 and plan["new_account"].isdigit() and plan["new_account"] != "1111111111"
     assert plan["justification"]
@@ -144,9 +146,9 @@ async def test_execute_requests_bank_change_then_invoices():
     assert change == {"vendor_id": "ven_a", "field": "bank_account", "new_value": plan["new_account"], "justification": plan["justification"]}
 
     body = json.loads(inv.calls[0].request.content)
-    assert body["vendor_id"] == "ven_a" and body["amount"] == 7920.0 and body["po_id"] == "po_big"
+    assert body["vendor_id"] == "ven_a" and body["amount"] == 4356.0 and body["po_id"] == "po_big"
     assert body["invoice_number"] == "INV-54328"
-    assert body["line_items"] == [{"desc": "freight — monthly", "amount": 7920.0}]
+    assert body["line_items"] == [{"desc": "freight — monthly", "amount": 4356.0}]
 
     # order: vendor change strictly before the invoice
     order = [c.request.url.path for c in respx.calls if c.request.method == "POST"]

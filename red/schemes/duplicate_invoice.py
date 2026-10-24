@@ -68,18 +68,21 @@ class DuplicateInvoice(SchemeBase):
     async def viable(self, ledger: LedgerClient) -> bool:
         return bool(await ledger.list_invoices(status="paid"))
 
-    async def _pick_source(self, ledger: LedgerClient, params: dict[str, Any]) -> dict[str, Any]:
+    async def _pick_source(self, ledger: LedgerClient, params: dict[str, Any], drift_pct: float) -> dict[str, Any]:
         if params.get("invoice_id"):
             return await ledger.get_invoice(str(params["invoice_id"]))
         paid = await ledger.list_invoices(status="paid")
         if not paid:
             raise ValueError("duplicate_invoice: no paid invoices to duplicate")
-        recent = sorted(paid, key=lambda inv: (-int(inv.get("received_day", 0)), str(inv.get("id", ""))))[:RECENT_WINDOW]
-        return max(recent, key=lambda inv: float(inv["amount"]))
+        recent = sorted(paid, key=lambda inv: (-int(inv.get("received_day") or 0), str(inv.get("id", ""))))[:RECENT_WINDOW]
+        # Green auto-pays under the approval line: prefer the biggest copy that still lands under blue's
+        # near_threshold band after drift; only if nothing qualifies take the biggest outright.
+        under = [inv for inv in recent if float(inv["amount"]) * (1.0 + drift_pct) < THRESHOLD_LO]
+        return max(under or recent, key=lambda inv: (float(inv["amount"]), str(inv.get("id", ""))))
 
     async def plan(self, ledger: LedgerClient, params: dict[str, Any]) -> dict[str, Any]:
-        source = await self._pick_source(ledger, params)
         drift_pct = min(max(float(params.get("drift_pct", DEFAULT_DRIFT_PCT)), MIN_DRIFT_PCT), MAX_DRIFT_PCT)
+        source = await self._pick_source(ledger, params, drift_pct)
         reuse_po = bool(params.get("reuse_po", True))
 
         source_amount = float(source["amount"])
