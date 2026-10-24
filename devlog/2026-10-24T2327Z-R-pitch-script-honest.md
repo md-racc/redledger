@@ -1,0 +1,1 @@
+- 2026-10-24T23:27Z · R · frontend: reword the pitch script to match what the real agents do (blue escalates a bank swap, learned controls are pre-written, the show is a recording, red's live five-generation finding) per docs/devpost and #137 item 4; next: re-read it against the box on the day; blocked: none
