@@ -492,11 +492,11 @@ paths:
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/VendorChange' } } } } }
   /vendor_changes/{id}/approve:
     post: { x-agents: [green], x-gated: vendor_changes.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
-            responses: { '200': { description: approved }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
+            responses: { '200': { description: approved }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /vendor_changes/{id}/reject:
     post: { x-agents: [green], x-gated: vendor_changes.reject, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
             requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } },
-            responses: { '200': { description: rejected }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
+            responses: { '200': { description: rejected }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
 
   /employees:
     get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Employee' } } } } } } }
@@ -527,14 +527,14 @@ paths:
   /invoices/{id}/match:
     post: { x-agents: [green], x-gated: invoices.match, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
             requestBody: { content: { application/json: { schema: { type: object, required: [po_id], properties: { po_id: { type: string } } } } } },
-            responses: { '200': { description: matched }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
+            responses: { '200': { description: matched }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /invoices/{id}/approve:
     post: { x-agents: [green], x-gated: invoices.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
-            responses: { '200': { description: approved }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
+            responses: { '200': { description: approved }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /invoices/{id}/reject:
     post: { x-agents: [green], x-gated: invoices.reject, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
             requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } },
-            responses: { '200': { description: rejected }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
+            responses: { '200': { description: rejected }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /invoices/{id}/pay:
     post:
       summary: The money-moving call.
@@ -545,7 +545,7 @@ paths:
       responses:
         '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
         '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }
-        '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (invoice not payable, vendor frozen, idempotency key conflict, no active turn)', content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } }
+        '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (invoice not payable, vendor frozen, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } }
 
   /payments:
     get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: day, in: query, schema: { type: integer } } ],
@@ -561,10 +561,10 @@ paths:
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Expense' } } } } }
   /expenses/{id}/approve:
     post: { x-agents: [green], x-gated: expenses.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
-            responses: { '200': { description: ok }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
+            responses: { '200': { description: ok }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
   /expenses/{id}/pay:
     post: { x-agents: [green], x-gated: expenses.pay, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
-            responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
+            responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }, '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } } } }
 
   /bank/transactions:
     get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: from_day, in: query, schema: { type: integer } }, { name: to_day, in: query, schema: { type: integer } } ],
@@ -581,7 +581,7 @@ paths:
       responses:
         '201': { content: { application/json: { schema: { $ref: '#/components/schemas/GlEntry' } } } }
         '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } }
-        '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { oneOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } }
+        '409': { description: 'PreparationRejected (stale/expired/consumed/pending preparation), or ConflictError (entity state, idempotency key conflict, no active turn)', content: { application/json: { schema: { anyOf: [ { $ref: '#/components/schemas/PreparationRejected' }, { $ref: '#/components/schemas/ConflictError' } ] } } } }
 
   /preparations:
     post:
