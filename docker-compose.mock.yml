@@ -3,7 +3,8 @@
 # Lets backend + frontend run full episodes with zero LLM calls, and lets an agent dev run their
 # own service locally against real battlefield + two stubs.
 # `environment` here merges key-by-key with the base file, so each stub still gets the base
-# x-agent-env (AGENT_TOKEN, BATTLEFIELD_URL, BLUE_URL, ...); only AGENT_NAME is overridden.
+# x-agent-env (BATTLEFIELD_URL, BLUE_URL, ...) and its own AGENT_TOKEN (AGENT_TOKEN_<AGENT>, else the
+# shared AGENT_TOKEN) from the base service; only AGENT_NAME is overridden.
 services:
   red:
     build: { context: ., dockerfile: battlefield/Dockerfile }

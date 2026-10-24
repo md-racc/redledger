@@ -11,7 +11,7 @@ The stage lives in the zustand store (`lib/arena/store.ts`, `stage`). Who moves 
 | Transition | Done by | Condition |
 |---|---|---|
 | `loading → intro` | `ArenaExperience.tsx` | the sim exists and the model has resolved (real glb or fallback), after a 1.8 s floor so the title card is seen; a 35 s ceiling so it can never hang |
-| `intro → scroll` | `CameraRig.tsx` | the 12.5 s flight finished (`INTRO_SECONDS`), or the visitor pressed *Skip intro*, or `prefers-reduced-motion` |
+| `intro → scroll` | `CameraRig.tsx` | the flight finished (`timeline.introLen`: 7.5 s, 5.8 s in the show), or the visitor pressed *Skip intro*, or `prefers-reduced-motion` |
 | `scroll → arena` | `CameraRig.tsx` | smoothed scroll > 0.994 and raw scroll > 0.99 |
 | `arena → scroll` | `CameraRig.tsx` | raw scroll < 0.96 (scrolling back up, or *Back to tour*); `ArenaExperience` also sends the agents back to their spawn lawns, and sends them in again on the next arrival |
 

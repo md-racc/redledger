@@ -13,7 +13,7 @@ const Letters = ({ text, base }: { text: string; base: number }) => (
   </>
 );
 
-export function TitleOverlay() {
+export function TitleOverlay({ onShow }: { onShow: () => void }) {
   const stage = useArena((s) => s.stage);
   const skip = useArena((s) => s.setSkipIntro);
   const root = useRef<HTMLElement>(null);
@@ -56,16 +56,22 @@ export function TitleOverlay() {
       </h1>
       <p className="title-kicker">Adversarial sandbox for autonomous finance</p>
       <p className="title-serif">Three agents. One ledger.<br />A rotunda to fight over.</p>
-      <button
-        className="pill"
-        onClick={() => {
-          if (stage === "intro") skip(true);
-          else window.scrollTo({ top: window.innerHeight * 1.4, behavior: "smooth" });
-        }}
-      >
-        <span>{stage === "intro" ? "Skip intro" : "Discover"}</span>
-        <i className="pill-dot" aria-hidden>↓</i>
-      </button>
+      <div className="pills">
+        <button
+          className="pill"
+          onClick={() => {
+            if (stage === "intro") skip(true);
+            else window.scrollTo({ top: window.innerHeight * 1.4, behavior: "smooth" });
+          }}
+        >
+          <span>{stage === "intro" ? "Skip intro" : "Discover"}</span>
+          <i className="pill-dot" aria-hidden>↓</i>
+        </button>
+        <button className="pill alt" onClick={onShow} title="The whole site in 90 seconds (S)">
+          <span>90-second show</span>
+          <i className="pill-dot" aria-hidden>▶</i>
+        </button>
+      </div>
     </section>
   );
 }

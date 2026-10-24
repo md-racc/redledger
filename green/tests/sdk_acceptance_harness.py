@@ -29,6 +29,12 @@ CASES = (*TOOLS, "cancel", "granularity", "restriction")
 ATTESTATION = "operator-approved-account-cap-or-in-flight-overrun-confirmed"
 
 
+def _isolated_cwd() -> bool:
+    """True only while running inside this harness's own disposable working directory."""
+    cwd = Path(os.path.realpath(Path.cwd()))
+    return cwd.parent == Path(os.path.realpath(tempfile.gettempdir())) and cwd.name.startswith("green-acceptance-")
+
+
 def failure_codes(e: dict) -> list[str]:
     """Evaluate observations strictly; missing evidence is never a positive receipt."""
     if any(key not in e for key in ("case", "permissions", "preparations", "writes", "calls", "results")):
@@ -83,10 +89,12 @@ def failure_codes(e: dict) -> list[str]:
     for prep in preps:
         if prep.get("id") not in ids or prep != {"id": prep.get("id"), "binding": True} or prep.get("binding") is not True:
             codes.append("preparation_binding")
-    for index, write in enumerate(writes):
+    if writes and {write.get("id") for write in writes} != set(ids):
+        codes.append("write_binding")
+    for write in writes:
         if (
-            index >= len(ps)
-            or write != {"id": ps[index].get("id"), "binding": True, "verified": True}
+            write.get("id") not in ids
+            or write != {"id": write.get("id"), "binding": True, "verified": True}
             or write.get("verified") is not True
             or write.get("binding") is not True
         ):
@@ -105,7 +113,7 @@ def failure_codes(e: dict) -> list[str]:
 async def run_case(case: str) -> dict:
     """Internal runner; callers must pass the CLI approval gates before invoking this."""
     e = {k: [] for k in ("permissions", "preparations", "writes", "calls", "results", "shape")}
-    e.update(case=case, turn_ok=False, listed=False, isolated=True, credits=None, mutated=False, nonce_delivered=False, batch=False)
+    e.update(case=case, turn_ok=False, listed=False, isolated=_isolated_cwd(), credits=None, mutated=False, nonce_delivered=False, batch=False)
     if case == "restriction":
         # No observable negative-control receipt exists yet. Do not spend on an unqualifiable case.
         return {**e, "passed": False, "failure_codes": ["restriction_inconclusive_no_observable_sdk_refusal"]}

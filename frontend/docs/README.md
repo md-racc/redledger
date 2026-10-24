@@ -8,6 +8,8 @@ data-path dashboard still lives at `/ops`.
 |---|---|
 | [architecture.md](architecture.md) | the stage machine, the render loop, the file map, how state flows without re-rendering at 60 Hz |
 | [agents-and-events.md](agents-and-events.md) | who the 30 agents are, the backend ids they answer to, event → animation mapping, the sim's state machine |
+| [show-mode.md](show-mode.md) | the 90-second show, its beats and data sources, the focus spotlight, and what a judge can do |
+| [backstage.md](backstage.md) | the hidden consoles for the other laptops: red, green, blue and battlefield, live |
 | [agent-design.md](agent-design.md) | what each of the 30 figures looks like (team base + role kit), how it is built and animated, how to add one |
 | [dossier-modal.md](dossier-modal.md) | the click-to-open modal: placeholders, live data, catalogs, host overrides, every field key |
 | [camera-and-tour.md](camera-and-tour.md) | the intro flight, the scroll rail, chapters, the arena orbit, how to edit waypoints |

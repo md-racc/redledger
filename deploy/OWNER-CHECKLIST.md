@@ -27,6 +27,7 @@ Repo → Settings → Environments → **New environment** `production`:
 - [ ] ⚑ Deployment protection: **required reviewer = Ad**. Deployment branches: `main` only.
 - [ ] Environment **secrets**:
   - `AGENT_TOKEN`, `OPERATOR_TOKEN`: `openssl rand -hex 32` each, two different values (render-env refuses equal or empty tokens).
+  - `AGENT_TOKEN_RED`, `AGENT_TOKEN_GREEN`, `AGENT_TOKEN_BLUE` (per-agent tokens, #108/#109): create all three at once — `for a in RED GREEN BLUE; do openssl rand -hex 32 | gh secret set AGENT_TOKEN_$a --env production; done` — then redeploy. All three or none: render-env refuses a partial or duplicate set; none → shared `AGENT_TOKEN` (separation off). Rollback: delete all three and redeploy.
   - `FACTORY_API_KEY`: the dedicated prod key. ⚑ It goes here and nowhere else: not in a teammate's `.env`, not in chat. Each dev uses their own key locally.
   - `BLUE_GATE_LLM_API_KEY`, `CRS_API_KEY`, `CARTESIA_API_KEY` (leave unset if unused).
   - `CRS_USERNAME`, `CRS_PASSWORD`: optional CRS **sandbox** login, entered by a human later.

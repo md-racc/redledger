@@ -235,7 +235,7 @@ async def crs_identity_check() -> dict[str, Any]:
                 attempted += 1
                 try:
                     async with asyncio.timeout(2):
-                        profile = await ctx.ledger()._get(f"/x/blue/crs/employees/{employee['id']}")
+                        profile = await ctx.ledger().get_extension("blue", f"crs/employees/{employee['id']}")
                     if isinstance(profile, dict) and isinstance(profile.get("persona_id"), str):
                         result["status"] = (await client.verify(profile["persona_id"], employee.get("name"), dry_run=False)).status
                 except Exception:

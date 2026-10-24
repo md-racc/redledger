@@ -210,20 +210,29 @@ async def test_demo_episode_is_the_next_generation_of_a_finished_lineage() -> No
 
 async def test_lineage_credit_cap_pauses_lineage_and_episode(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub(monkeypatch, _Agents(credits=0.6))
+    # Wait on the event, not on polled state: the lineage row flips to `paused` before runner.pause has
+    # written the episode's status and emitted `episode.paused`, so polling either one alone races.
+    parked: dict[str, asyncio.Event] = {}
+    real_pause = runner.pause
+
+    async def pause(episode_id: str) -> None:
+        await real_pause(episode_id)
+        parked.setdefault(episode_id, asyncio.Event()).set()
+
+    monkeypatch.setattr(runner, "pause", pause)
     async with _client() as c:
         lid = (await _create(c, max_credits=1.0))["id"]
         await c.post(f"/api/lineages/{lid}/start", headers=f.auth())
-        for _ in range(500):
-            if await db.fetchval("SELECT status FROM lineages WHERE id=$1", lid) == "paused":
-                break
-            await asyncio.sleep(0.02)
     try:
-        assert await db.fetchval("SELECT status FROM lineages WHERE id=$1", lid) == "paused"
-        eid = await db.fetchval("SELECT id FROM episodes WHERE lineage_id=$1 AND generation=1", lid)
-        for _ in range(200):  # the tripping day still runs to day.ended before the episode parks
-            if runner.state(eid).task is None or not runner.state(eid).pause.is_set():
+        eid = None
+        for _ in range(1500):  # bounded: only to learn generation 1's id once it exists
+            eid = await db.fetchval("SELECT id FROM episodes WHERE lineage_id=$1 AND generation=1", lid)
+            if eid:
                 break
             await asyncio.sleep(0.02)
+        assert eid is not None
+        await asyncio.wait_for(parked.setdefault(eid, asyncio.Event()).wait(), 60)
+        assert await db.fetchval("SELECT status FROM lineages WHERE id=$1", lid) == "paused"
         rows = await db.fetch("SELECT type, payload FROM events WHERE episode_id=$1 AND type IN ('error','lineage.paused','episode.paused') ORDER BY id", eid)
         assert [r["type"] for r in rows][:3] == ["error", "lineage.paused", "episode.paused"]
         assert rows[0]["payload"] == {"where": "credit_guard", "message": "lineage paused at 1.2 credits (limit 1)"}

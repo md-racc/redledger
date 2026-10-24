@@ -1,0 +1,1 @@
+- 2026-10-24T18:13Z · Ad · battlefield: make local-stack runs pgserver Postgres 16 + battlefield + mock/real agents as processes (no Docker; mixed mode e.g. BLUE=real); unblocks M's blue acceptance (#102); next: per-agent tokens; blocked: none

@@ -8,6 +8,7 @@
 //
 // It only talks to `ArenaSim`, so the same code drives the live socket, the mock fixture and the demo loop.
 import { blueIdForRule, greenIdFor, GREEN_ROSTER, guardForRule, RED_ROSTER, redIdForScheme } from "./roster";
+import { focus } from "./focus";
 import type { ArenaSim } from "./sim";
 import type { AttackOutcome } from "./types";
 import type { RLEvent } from "../types";
@@ -28,6 +29,7 @@ interface BlockNote { guardId: string; day: number }
 
 export class Director {
   private verdictGuard = new Map<string, string>(); // verdict_id → guard id
+  private escalationGuard = new Map<string, string>(); // escalation_id → guard id
   private blocks: BlockNote[] = [];
   private attackScheme = new Map<string, string>();
   private lastAllowAt = 0;
@@ -38,6 +40,9 @@ export class Director {
     const p = e.payload as Record<string, any>;
     switch (e.type) {
       case "episode.started":
+        this.sim.reset(); // a new episode (the show's rewind, or Run again) clears the previous one's scenes
+        this.sim.converge();
+        break;
       case "day.started":
         this.sim.converge();
         break;
@@ -70,7 +75,16 @@ export class Director {
 
       case "escalation.opened": {
         const g = this.verdictGuard.get(p.verdict_id);
-        if (g) this.sim.pulse(g, "amber", "ESCALATED");
+        if (g) { this.escalationGuard.set(p.escalation_id, g); focus.pinned.add(g); this.sim.pulse(g, "amber", "NEEDS A DECISION"); }
+        break;
+      }
+
+      case "escalation.resolved": {
+        const g = this.escalationGuard.get(p.escalation_id);
+        if (g) {
+          this.sim.pulse(g, p.decision === "approve" ? "red" : "blue", p.decision === "approve" ? "APPROVED" : p.decision === "timeout" ? "TIMED OUT" : "HUMAN BLOCK");
+          setTimeout(() => focus.pinned.delete(g), 2200); // let the decision land before the rest of the arena lights up again
+        }
         break;
       }
 

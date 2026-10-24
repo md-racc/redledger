@@ -320,7 +320,7 @@ async def _ask_blue(
         body["playbook_version"] = playbook_version
     try:
         async with httpx.AsyncClient(timeout=settings.gate_timeout_sec) as client:
-            r = await client.post(f"{settings.blue_url}/gate", json=body, headers={"Authorization": f"Bearer {settings.agent_token}"})
+            r = await client.post(f"{settings.blue_url}/gate", json=body, headers={"Authorization": f"Bearer {settings.token_for('blue')}"})
             r.raise_for_status()
             j = r.json()
             return j["verdict"], j.get("reason", ""), j.get("confidence"), list(j.get("rules_fired", []))
