@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Values droid_sdk.ReasoningEffort accepts (droid-sdk 0.5.0). Kept here so a bad DROID_REASONING
+# fails at startup instead of raising inside every turn, and so DRY_RUN needs no droid_sdk.
+REASONING_EFFORTS = ("none", "off", "minimal", "low", "medium", "high", "xhigh", "max")
 
 
 class AgentSettings(BaseSettings):
@@ -27,3 +31,17 @@ class AgentSettings(BaseSettings):
     log_level: str = Field("info", alias="LOG_LEVEL")
 
     port: int = Field(8001, alias="PORT")
+
+    @field_validator("droid_reasoning", mode="before")
+    @classmethod
+    def _check_reasoning(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            raise ValueError(f"DROID_REASONING must be a string, one of {'|'.join(REASONING_EFFORTS)}")
+        v = v.strip().lower()
+        if not v:
+            return None  # blank = model default (compose passes DROID_REASONING_<AGENT>:-)
+        if v not in REASONING_EFFORTS:
+            raise ValueError(f"DROID_REASONING={v!r} is not one of {'|'.join(REASONING_EFFORTS)} (or blank)")
+        return v
