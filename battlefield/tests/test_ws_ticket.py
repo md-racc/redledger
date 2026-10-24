@@ -66,7 +66,7 @@ def test_star_scope_matches_any_episode() -> None:
 
 def test_tampered_ticket_is_rejected() -> None:
     t, exp = issue_ws_ticket("ep_1", now=NOW)
-    scope, exp_s, sig = t.rsplit(".", 2)
+    scope, exp_s, sig = t.split(".")
     flipped = sig[:-1] + ("0" if sig[-1] != "0" else "1")
     assert not verify_ws_ticket(f"{scope}.{exp_s}.{flipped}", "ep_1", now=NOW)
     assert not verify_ws_ticket(f"*.{exp_s}.{sig}", "ep_1", now=NOW)  # widened scope
@@ -89,9 +89,43 @@ def test_malformed_ticket_is_rejected(junk: str | None) -> None:
 def test_used_set_is_pruned_of_expired_tickets() -> None:
     t, exp = issue_ws_ticket("ep_1", now=NOW)
     assert verify_ws_ticket(t, "ep_1", now=NOW)
-    assert t in auth_mod._used_tickets
+    assert f"ep_1|{exp}" in auth_mod._used_tickets
     verify_ws_ticket(None, "ep_1", now=exp + 1)
-    assert t not in auth_mod._used_tickets
+    assert f"ep_1|{exp}" not in auth_mod._used_tickets
+
+
+@pytest.mark.parametrize("spell", ["0{e}", "00{e}", "+{e}", " {e}", "{e} ", "\t{e}", "{e}\n", "{s}_{r}"])
+def test_noncanonical_exp_cannot_replay(spell: str) -> None:
+    t, exp = issue_ws_ticket("ep_1", now=NOW)
+    scope, exp_s, sig = t.split(".")
+    spelled = spell.format(e=exp_s, s=exp_s[:2], r=exp_s[2:])
+    assert int(spelled) == exp  # a naive int() parse sees the same, validly signed, exp
+    alt = f"{scope}.{spelled}.{sig}"
+    assert not verify_ws_ticket(alt, "ep_1", now=NOW)  # rejected even before first use
+    assert verify_ws_ticket(t, "ep_1", now=NOW)
+    assert not verify_ws_ticket(alt, "ep_1", now=NOW)  # and cannot replay after it
+
+
+@pytest.mark.parametrize("bad", [lambda s: s.upper(), lambda s: " " + s, lambda s: s + "00", lambda s: s[:-1]])
+def test_noncanonical_sig_is_rejected(bad: Any) -> None:
+    t, _ = issue_ws_ticket("ep_1", now=NOW)
+    scope, exp_s, sig = t.split(".")
+    assert not verify_ws_ticket(f"{scope}.{exp_s}.{bad(sig)}", "ep_1", now=NOW)
+    assert verify_ws_ticket(t, "ep_1", now=NOW)
+
+
+@pytest.mark.parametrize("scope", ["ep 1", "ep.1", "ep|1", "x" * 65, "**", " ep_1"])
+def test_bad_scope_is_rejected(scope: str) -> None:
+    with pytest.raises(ValueError):
+        issue_ws_ticket(scope, now=NOW)
+    exp = NOW + WS_TICKET_TTL_SEC
+    assert not verify_ws_ticket(f"{scope}.{exp}.{auth_mod._ticket_sig(scope, exp)}", scope, now=NOW)
+
+
+def test_scope_charset_allows_real_ids() -> None:
+    for eid in ("ep_0123456789ab", "replay_sample-enforce-4d", "x" * 64):
+        t, _ = issue_ws_ticket(eid, now=NOW)
+        assert verify_ws_ticket(t, eid, now=NOW)
 
 
 # ---------- POST /api/ws/ticket ----------
@@ -115,6 +149,10 @@ def test_ticket_route_issues_verifiable_ticket() -> None:
     assert verify_ws_ticket(body["ticket"], "ep_1")
 
 
+def test_ticket_route_rejects_bad_episode_id() -> None:
+    assert client.post("/api/ws/ticket", json={"episode_id": "ep.1"}, headers=auth()).status_code == 422
+
+
 def test_ticket_route_null_or_missing_body_is_star_scope() -> None:
     assert client.post("/api/ws/ticket", json={"episode_id": None}, headers=auth()).json()["ticket"].startswith("*.")
     assert client.post("/api/ws/ticket", headers=auth()).json()["ticket"].startswith("*.")
@@ -136,8 +174,9 @@ def history(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
 
 
 def _rejected(url: str) -> int:
-    with pytest.raises(WebSocketDisconnect) as e, client.websocket_connect(url):
-        pass
+    # the server accepts, then closes with 4401 (a pre-accept close would be an HTTP 403)
+    with client.websocket_connect(url) as ws, pytest.raises(WebSocketDisconnect) as e:
+        ws.receive_text()
     return e.value.code
 
 

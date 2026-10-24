@@ -42,17 +42,22 @@ async def post_events(items: list[AgentEventCreate], c: Caller = Depends(allow("
 
 @router.post("/ws/ticket", dependencies=[Depends(bearer)])
 async def ws_ticket(body: WsTicketRequest | None = None):
-    ticket, exp = issue_ws_ticket(body.episode_id if body else None)
+    try:
+        ticket, exp = issue_ws_ticket(body.episode_id if body else None)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
     return {"ticket": ticket, "expires_at": datetime.fromtimestamp(exp, UTC).isoformat()}
 
 
 @router.websocket("/ws")
 async def ws(websocket: WebSocket, episode_id: str | None = None, token: str | None = None, ticket: str | None = None, after_id: int = 0):
     # operator token (curl/debug) first so a redundant ticket is not burned; else a single-use ticket
+    # accept first, then close: a close before accept is an HTTP 403 handshake rejection and the
+    # browser only sees 1006; the contract promises close code 4401.
+    await websocket.accept()
     if not (token_matches(token, settings.operator_token) or verify_ws_ticket(ticket, episode_id)):
         await websocket.close(code=4401)
         return
-    await websocket.accept()
     q = bus.subscribe(episode_id)
     try:
         if episode_id and after_id is not None:

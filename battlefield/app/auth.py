@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import time
 from dataclasses import dataclass
 
@@ -110,8 +111,15 @@ def agent_episode(c: Caller, episode_id_query: str | None = None) -> str:
 # ---------- WebSocket tickets ----------
 # `<scope>.<exp>.<sig>`: scope = episode_id or "*", exp = unix seconds, sig = hex
 # HMAC-SHA256(key=OPERATOR_TOKEN, msg=f"{scope}|{exp}"). Single use, in-process only.
+# Every part must be in canonical form (no leading zeros/sign/whitespace/underscores in exp,
+# lowercase hex sig), and the used-set is keyed by the canonical `scope|exp`, so one ticket has
+# exactly one spelling and cannot be replayed under another.
 
-_used_tickets: dict[str, int] = {}  # ticket -> exp, pruned on every check
+TICKET_SCOPE_RE = re.compile(r"\*|[A-Za-z0-9_-]{1,64}")
+_TICKET_EXP_RE = re.compile(r"[1-9][0-9]{0,11}")
+_TICKET_SIG_RE = re.compile(r"[0-9a-f]{64}")
+
+_used_tickets: dict[str, int] = {}  # canonical f"{scope}|{exp}" -> exp, pruned on every check
 
 
 def _ticket_sig(scope: str, exp: int) -> str:
@@ -119,8 +127,13 @@ def _ticket_sig(scope: str, exp: int) -> str:
 
 
 def issue_ws_ticket(episode_id: str | None, *, now: float | None = None) -> tuple[str, int]:
-    """Mint a ticket for one WS connection to `episode_id` (None = every episode). Returns (ticket, exp)."""
+    """Mint a ticket for one WS connection to `episode_id` (None = every episode). Returns (ticket, exp).
+
+    Raises ValueError if `episode_id` is not a valid ticket scope (it could never verify).
+    """
     scope = episode_id or "*"
+    if not TICKET_SCOPE_RE.fullmatch(scope):
+        raise ValueError(f"episode_id must match {TICKET_SCOPE_RE.pattern}")
     exp = int(now if now is not None else time.time()) + WS_TICKET_TTL_SEC
     return f"{scope}.{exp}.{_ticket_sig(scope, exp)}", exp
 
@@ -132,19 +145,19 @@ def verify_ws_ticket(ticket: str | None, episode_id: str | None, *, now: float |
         del _used_tickets[k]
     if not ticket:
         return False
-    parts = ticket.rsplit(".", 2)
+    parts = ticket.split(".")
     if len(parts) != 3:
         return False
     scope, exp_s, sig = parts
-    try:
-        exp = int(exp_s)
-    except ValueError:
+    if not (TICKET_SCOPE_RE.fullmatch(scope) and _TICKET_EXP_RE.fullmatch(exp_s) and _TICKET_SIG_RE.fullmatch(sig)):
         return False
+    exp = int(exp_s)
     if not hmac.compare_digest(sig.encode(), _ticket_sig(scope, exp).encode()):
         return False
-    if exp < t or ticket in _used_tickets:
+    key = f"{scope}|{exp}"
+    if exp < t or key in _used_tickets:
         return False
     if scope != "*" and scope != episode_id:
         return False
-    _used_tickets[ticket] = exp
+    _used_tickets[key] = exp
     return True
