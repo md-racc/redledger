@@ -101,7 +101,11 @@ class AuditAgent(DroidAgent):
             "then post_report with a short markdown report: what you reviewed, what you flagged, what needs a human tomorrow."
         )
 
+    async def _droid_turn(self, req, emitter):
+        raise RuntimeError("Blue live audit invocation/context binding is unverified; no stream or write attempted.")
+
     async def dry_run_turn(self, req: TurnRequest) -> str:
+        raise RuntimeError("Blue guarded audit upgrade pending; no write attempted.")
         L = ctx.ledger()
         flags = 0
         for v in await L.list_vendors(status="active"):
