@@ -6,13 +6,18 @@ import { emitShowClock, showClock } from "@/lib/arena/showClock";
 import { useArena } from "@/lib/arena/store";
 import { SHOW_INTRO_SECONDS, INTRO_SECONDS, timeline } from "@/lib/arena/timeline";
 import type { Feed } from "@/lib/arena/useFeed";
+import { isAdmin } from "@/lib/role";
 
 /** how long each act of recorded story plays, and how long an escalation waits for a human before it blocks */
 const ACT_MS = { off: 15_000, on: 16_500 } as const;
 const HOLD_MS = 4_800;
 
-/** The show runs on the battlefield when one is up and its agents are keyless (free and fast); `?show=live` or `?show=recorded` forces it. */
+/**
+ * The show runs on the battlefield when one is up and its agents are keyless (free and fast); `?show=live` or `?show=recorded` forces it.
+ * A viewer's show is always the recording: running it live creates episodes, and only admins do that.
+ */
 function wantLive(feed: Feed): boolean {
+  if (!isAdmin()) return false;
   const forced = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("show") : null;
   if (forced === "recorded") return false;
   if (forced === "live") return feed.backend.state === "live";
@@ -120,8 +125,12 @@ export function useShow(feed: Feed): ShowController {
   // outside the show the intro keeps its normal length (ArenaExperience locks the page scroll while the show runs)
   useEffect(() => { if (status === "off" || status === "done") timeline.introLen = INTRO_SECONDS; }, [status]);
 
+  // while the show plays, the feed does not jump to the run going on the battlefield; before and after it, it does
+  useEffect(() => { feedRef.current.setFollow(status !== "playing" && status !== "paused"); }, [status]);
+
   const start = useCallback(() => {
     if (useArena.getState().stage === "loading") return;
+    feedRef.current.setFollow(false);
     feedRef.current.clearRuns();
     feedRef.current.setPaused(false);
     director.start();

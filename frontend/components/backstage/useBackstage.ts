@@ -14,6 +14,7 @@ import { loadFixture } from "@/lib/mock";
 import { initialState, reduce } from "@/lib/reducer";
 import type { ControllerMode, RLEvent, UIState } from "@/lib/types";
 import { connect } from "@/lib/ws";
+import { isUnreachable } from "@/lib/arena/activeRun";
 import { loadLineageReport, type LineageReport } from "@/lib/arena/lineage";
 import { ScriptRunner } from "@/lib/arena/script";
 import { buildOnAct } from "@/lib/arena/showScripts";
@@ -129,8 +130,9 @@ export function useBackstage(want: Want[] = []): Backstage {
         setHealth(h);
         setEpisodes(list as EpisodeRow[]);
         setMode("live");
-      } catch {
-        if (dead) return;
+      } catch (e) {
+        // only a backend that is really gone (network, timeout, 5xx) means the recorded loop; a 429 or 403 is an answer: ask again
+        if (dead || !isUnreachable(e)) return;
         setHealth(null);
         setHealthMs(null);
         setMode("recorded");

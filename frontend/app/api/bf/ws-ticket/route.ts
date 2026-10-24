@@ -2,7 +2,10 @@
 // Exchanges the server-held OPERATOR_TOKEN for a 60 s, single-use, episode-scoped WS ticket
 // (battlefield `POST /api/ws/ticket`). `ws_url` is NEXT_PUBLIC_WS_URL read at request time, so
 // one image serves every environment (client code would get it inlined at build instead).
+// The stream is read-only, so viewers get tickets too; like the proxy they are rate limited per address (admins are not).
+import { clientIp, requestRole } from "@/lib/admin";
 import { isTimeout, jsonError, runtimeEnv, upstreamConfig, upstreamUrl } from "@/lib/proxy";
+import { limiter, tooMany } from "@/lib/ratelimit";
 import { hub } from "@/lib/sync/hub";
 import { wsBaseUrl } from "@/lib/wsurl";
 
@@ -10,6 +13,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request): Promise<Response> {
+  const admin = requestRole(req.headers) === "admin";
+  if (!admin) {
+    const rl = limiter("viewer").take(clientIp(req.headers));
+    if (!rl.ok) return tooMany(rl.retryAfterSec);
+  }
   const cfg = upstreamConfig();
   if (!cfg) return jsonError(502, "battlefield proxy is not configured");
   const target = upstreamUrl(cfg.battlefieldUrl, "/api/ws/ticket", "");
@@ -30,7 +38,7 @@ export async function GET(req: Request): Promise<Response> {
   } catch (err) {
     return isTimeout(err) ? jsonError(504, "battlefield timed out") : jsonError(502, "battlefield unreachable");
   }
-  hub().recordTraffic({ method: "POST", path: "/ws/ticket", status: upstream.status, ms: performance.now() - t0, client: req.headers.get("x-rl-client") ?? "" });
+  if (admin) hub().recordTraffic({ method: "POST", path: "/ws/ticket", status: upstream.status, ms: performance.now() - t0, client: req.headers.get("x-rl-client") ?? "" });
   if (!upstream.ok) return jsonError(upstream.status >= 500 ? 502 : upstream.status, `ticket request failed (${upstream.status})`);
 
   let data: { ticket?: unknown; expires_at?: unknown };
