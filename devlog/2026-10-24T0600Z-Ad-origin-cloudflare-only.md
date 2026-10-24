@@ -1,0 +1,1 @@
+- 2026-10-24T06:00Z · Ad · battlefield: Caddy serves only Cloudflare edge IPs (403 otherwise) so direct-to-origin requests cannot skip Cloudflare Access; prod live in DRY_RUN at app.redledger.us behind Access; next: live keys; blocked: FACTORY_API_KEY + DROID_MODEL_*
