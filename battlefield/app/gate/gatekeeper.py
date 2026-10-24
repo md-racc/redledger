@@ -340,11 +340,7 @@ async def _apply(
     # escalate. A replay of an escalated key (a retry, or a parallel call with the same key) gets the
     # same human decision: it joins the open escalation or reuses the finished one, never a second card.
     joined = await _join_escalation(vid) if replay else None
-    if joined is None:
-        cause = verdict_cause(await db.fetchval("SELECT rules_fired FROM verdicts WHERE id=$1", vid))
-        esc_id, decision = await _escalate(vid, c, action, et, eid, amount, reason, cause=cause)
-    else:
-        esc_id, decision = joined
+    esc_id, decision = joined if joined is not None else await _escalate(vid, c, action, et, eid, amount, reason)
     if decision == "approve":
         return Decision(allowed=True, verdict_id=vid, verdict="escalate", reason="escalated; human approved", enforced=True)
     raise GateBlockedError(f"escalated; {decision}", vid, esc_id)
@@ -411,8 +407,9 @@ async def _escalate(
             "reason": reason,
             "expires_at": expires.isoformat(),
         }
-        if cause is not None:
-            payload["cause"] = cause
+        if cause is None:  # an inline escalation: read it off the verdict, as a prepared one passes it
+            cause = verdict_cause(await db.fetchval("SELECT rules_fired FROM verdicts WHERE id=$1", vid))
+        payload["cause"] = cause
         if preparation_id is not None:
             payload["preparation_id"] = preparation_id
             await db.execute("UPDATE preparations SET escalation_id=$2 WHERE id=$1", preparation_id, esc_id)
