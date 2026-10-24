@@ -27,6 +27,9 @@ interface ArenaState {
   setSkipIntro: (v: boolean) => void;
   modelState: "pending" | "real" | "fallback";
   setModelState: (m: ArenaState["modelState"]) => void;
+  /** auto-cam: the arena camera frames each fraud attempt as it plays out */
+  cinematic: boolean;
+  setCinematic: (v: boolean) => void;
 }
 
 export const useArena = create<ArenaState>((set) => ({
@@ -44,6 +47,8 @@ export const useArena = create<ArenaState>((set) => ({
   setSkipIntro: (skipIntro) => set({ skipIntro }),
   modelState: "pending",
   setModelState: (modelState) => set({ modelState }),
+  cinematic: true,
+  setCinematic: (cinematic) => set({ cinematic }),
 }));
 
 /** Public handle for host code and the browser console: `window.redledger.converge()`. */

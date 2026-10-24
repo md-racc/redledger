@@ -2,9 +2,12 @@
 // Scroll chapters: a caption per stop on the rail, plus a progress rail on the right edge.
 import { useEffect, useRef } from "react";
 import { useArena } from "@/lib/arena/store";
+import { scrollOf } from "@/lib/arena/pacing";
 import { CHAPTERS, subscribeTimeline } from "@/lib/arena/timeline";
 
-const WINDOW = 0.095;
+/** a caption is fully shown while the camera is within HOLD of its chapter and gone by FADE (rail units) */
+const HOLD = 0.03;
+const FADE = 0.075;
 
 export function Chapters() {
   const stage = useArena((s) => s.stage);
@@ -18,15 +21,16 @@ export function Chapters() {
         CHAPTERS.forEach((c, i) => {
           const el = refs.current[i];
           if (!el) return;
-          let o = Math.max(0, 1 - Math.abs(t.scroll - c.at) / WINDOW);
-          if (i === 0) o *= Math.min(1, t.scroll / 0.035) ; // the title owns the very top
+          const d = Math.abs(t.rail - c.at);
+          let o = d <= HOLD ? 1 : Math.max(0, 1 - (d - HOLD) / (FADE - HOLD));
+          if (i === 0) o *= Math.min(1, t.scroll / 0.035); // the title owns the very top
           if (i === CHAPTERS.length - 1) o *= 1 - t.arena; // the HUD takes over once the orbit is live
           const e = o * o * (3 - 2 * o);
           el.style.opacity = e.toFixed(3);
           el.style.transform = `translate3d(0, ${((1 - e) * 22).toFixed(1)}px, 0)`;
           el.style.visibility = e < 0.01 ? "hidden" : "visible";
           const tick = ticks.current[i];
-          if (tick) tick.dataset.on = Math.abs(t.scroll - c.at) < WINDOW * 0.75 ? "1" : "0";
+          if (tick) tick.dataset.on = d < FADE * 0.7 ? "1" : "0";
         });
         root.current?.style.setProperty("--p", t.scroll.toFixed(3));
       }),
@@ -50,9 +54,9 @@ export function Chapters() {
             key={c.no}
             ref={(el) => { ticks.current[i] = el; }}
             className="rail-tick"
-            style={{ top: `${c.at * 100}%` }}
+            style={{ top: `${scrollOf(c.at) * 100}%` }}
             aria-label={`Go to ${c.title}`}
-            onClick={() => window.scrollTo({ top: c.at * (document.documentElement.scrollHeight - window.innerHeight), behavior: "smooth" })}
+            onClick={() => window.scrollTo({ top: scrollOf(c.at) * (document.documentElement.scrollHeight - window.innerHeight), behavior: "smooth" })}
           >
             <span>{c.no}</span>
           </button>

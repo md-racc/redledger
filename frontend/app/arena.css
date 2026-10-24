@@ -13,7 +13,7 @@
   --ease: cubic-bezier(0.16, 0.84, 0.24, 1);
   --display: var(--font-display), "Anton", Impact, sans-serif;
   --serif: var(--font-serif), "Instrument Serif", Georgia, serif;
-  --mono: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --mono: var(--font-small), Georgia, "Times New Roman", serif; /* all the small text: a sturdy, only slightly roman serif */
 }
 
 html, body { background: var(--bg); color: var(--ink); margin: 0; }

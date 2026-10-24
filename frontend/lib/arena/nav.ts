@@ -139,6 +139,7 @@ export function forColumnsNear(x: number, z: number, r: number, fn: (cx: number,
       if (!a) continue;
       for (const i of a) {
         const [kind, cx, cz] = COLUMNS[i];
+        if (kind === "i") continue; // the inner piers fade out in the arena; agents walk through where they stood
         fn(cx, cz, COLUMN_RADIUS[kind]);
       }
     }

@@ -5,10 +5,11 @@
 // Host integration:
 //   <ArenaExperience agentDetails={{ "red:ghost_vendor": { story: "...", fields: { targeted: 4920 } } }} />
 //   window.redledger.converge() / .disperse() / .select(id) / .run(mode)
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentDetailOverrides } from "@/lib/arena/types";
 import type { ArenaSim } from "@/lib/arena/sim";
 import { useArena } from "@/lib/arena/store";
+import { tallyDays } from "@/lib/arena/ledgerStats";
 import { useFeed } from "@/lib/arena/useFeed";
 import Scene from "./Scene";
 import { AgentModal } from "./overlays/AgentModal";
@@ -25,7 +26,8 @@ interface Props {
   autoConverge?: boolean;
 }
 
-const SCROLL_VH = 640;
+/** long enough that each chapter's reading zone is a couple of wheel flicks (see lib/arena/pacing.ts) */
+const SCROLL_VH = 780;
 
 export default function ArenaExperience({ agentDetails, autoConverge = true }: Props) {
   const feed = useFeed();
@@ -34,6 +36,7 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
   const [progress, setProgress] = useState(0);
   const [sim, setSim] = useState<ArenaSim | null>(null);
   const boot = useRef(0);
+  const tallies = useMemo(() => tallyDays(feed.state), [feed.state]);
 
   const onProgress = useCallback((p: { progress: number }) => setProgress(p.progress), []);
   const onSim = useCallback((s: ArenaSim) => setSim(s), []);
@@ -64,9 +67,20 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
     const t = setTimeout(() => {
       arrived.current = true;
       useArena.getState().actions.converge();
-    }, 1400);
+    }, 800);
     return () => clearTimeout(t);
   }, [stage, autoConverge]);
+
+  // leaving the arena for the tour sends everyone back to their spawn lawns (the chapters show them there);
+  // coming back sends them in again
+  const prevStage = useRef(stage);
+  useEffect(() => {
+    if (prevStage.current === "arena" && stage === "scroll") {
+      useArena.getState().actions.disperse();
+      arrived.current = false;
+    }
+    prevStage.current = stage;
+  }, [stage]);
 
   // public handle
   const runRef = useRef(feed.run);
@@ -85,7 +99,7 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
   return (
     <div className="arena" data-stage={stage}>
       <div className="arena-canvas">
-        <Scene subscribe={feed.subscribe} feedActive={feed.running} onSim={onSim} onProgress={onProgress} />
+        <Scene subscribe={feed.subscribe} feedActive={feed.running} onSim={onSim} onProgress={onProgress} tallies={tallies} />
       </div>
       <TitleOverlay />
       <Chapters />

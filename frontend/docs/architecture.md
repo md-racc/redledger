@@ -13,11 +13,12 @@ The stage lives in the zustand store (`lib/arena/store.ts`, `stage`). Who moves 
 | `loading → intro` | `ArenaExperience.tsx` | the sim exists and the model has resolved (real glb or fallback), after a 1.8 s floor so the title card is seen; a 35 s ceiling so it can never hang |
 | `intro → scroll` | `CameraRig.tsx` | the 12.5 s flight finished (`INTRO_SECONDS`), or the visitor pressed *Skip intro*, or `prefers-reduced-motion` |
 | `scroll → arena` | `CameraRig.tsx` | smoothed scroll > 0.994 and raw scroll > 0.99 |
-| `arena → scroll` | `CameraRig.tsx` | raw scroll < 0.96 (scrolling back up, or *Back to tour*) |
+| `arena → scroll` | `CameraRig.tsx` | raw scroll < 0.96 (scrolling back up, or *Back to tour*); `ArenaExperience` also sends the agents back to their spawn lawns, and sends them in again on the next arrival |
 
 The page does not scroll while `loading` or `intro` (`ArenaExperience` locks `overflow`). In `scroll` and `arena` the
-document is a 640vh spacer (`div.arena-scroll`) under a fixed canvas, so wheel and touch scroll work everywhere, and
-`window.scrollY / (scrollHeight - innerHeight)` is the tour progress. In the arena the orbit controls have zoom disabled
+document is a 780vh spacer (`div.arena-scroll`) under a fixed canvas, so wheel and touch scroll work everywhere, and
+`window.scrollY / (scrollHeight - innerHeight)` is the scroll fraction (which the pacing curve turns into a camera position, see
+[camera-and-tour.md](camera-and-tour.md)). In the arena the orbit controls have zoom disabled
 on purpose, so the wheel still scrolls the page and can take the visitor back to the tour.
 
 ## Layers
