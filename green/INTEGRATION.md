@@ -18,12 +18,17 @@ Unknown/empty permission requests and multi-use batches fail closed without prep
 the SDK's response applies to the whole batch, so callers must request tools individually.
 Callback granularity remains part of Green acceptance, not an asserted SDK finding.
 
-Next, prove exact first-session restrictions, OFF callbacks, CANCEL comment delivery,
+Finding #96 records the nine observed AP IDs from a list-only Session on canonical #94.
+`AP_TOOL_IDS` pins them before the first Session; expected-ID lists are fresh copies.
+This is discovery/configuration evidence, not restriction-enforcement or live acceptance.
+See [SDK-ACCEPTANCE.md](SDK-ACCEPTANCE.md) for the unexecuted, explicitly budgeted proposal.
+
+Next, prove exact first-session restriction enforcement, OFF callbacks, CANCEL comment delivery,
 identity/header/event parity, bounded escalation holds, and no duplicate gating or
 writes in isolated acceptance. Mocked HTTP is not real SDK or database evidence.
 Phase C still needs Ad's three-day all-real-agent shadow run; Bright Data is not cleared.
 This follow-up is stacked on preparation foundation #93. Keyless TurnLoop #92 and
-reflection #82 remain separate; preserve both when integrating, including reflection hooks
+merged reflection #82 remain separate concerns; preserve both, including reflection hooks
 and explicit playbook API guidance. No active-turn memory consumption is added here.
 
 ## Historical baseline (superseded where it conflicts with the checkpoint above)

@@ -10,14 +10,24 @@ from preparation import PreparationDecision, decide_preparation, preparation_for
 from workflow import Key, clerk_scope, run_clerk, state
 
 import tools as green_tools
-from agentkit import DroidAgent, EventEmitter, TurnRequest, TurnResponse, collect_tools, ctx
+from agentkit import AgentSettings, DroidAgent, EventEmitter, TurnRequest, TurnResponse, collect_tools, ctx
 from agentkit.invocation import VERIFIED_SOURCES, ToolUse, current_registry
 from agentkit.models import ReflectRequest, ReflectResponse, Usage
 from agentkit.tools import ToolFn
 
-PREREQUISITE = (
-    "Green live integration prerequisite: merged shared preflight protocol, verified "
-    "invocation identity and exact tool restrictions are required before Droid execution."
+PREREQUISITE = "Green live integration prerequisite: SDK permission, restriction, identity and cancellation acceptance are required before Droid execution."
+
+# Observed on canonical #94 with SDK 0.5.0 / MCP 1.30.0; contracts Finding #96.
+AP_TOOL_IDS = (
+    "green-ledger___ap_queue",
+    "green-ledger___approve_expense",
+    "green-ledger___approve_invoice",
+    "green-ledger___approve_vendor_change",
+    "green-ledger___match_invoice",
+    "green-ledger___pay_expense",
+    "green-ledger___pay_invoice",
+    "green-ledger___reject_invoice",
+    "green-ledger___reject_vendor_change",
 )
 
 
@@ -35,7 +45,15 @@ def permission_key(use: ToolUse) -> Key | None:
 class GreenAgent(DroidAgent):
     name = "green"
     autonomy = "off"  # Do not change without an SDK experiment and shared integration.
+    identity = "strict"
     system_prompt = (Path(__file__).parent / "prompts" / "system.md").read_text()
+
+    def __init__(self, settings: AgentSettings):
+        super().__init__(settings)
+        self._tool_ids = list(AP_TOOL_IDS)  # Restrict the first Session, before list_tools.
+
+    def _expected_tool_ids(self) -> list[str]:
+        return list(AP_TOOL_IDS)
 
     async def health(self) -> dict[str, Any]:
         if self.s.dry_run:
