@@ -288,35 +288,64 @@ async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> 
 
 
 # ---------------- GREEN ----------------
+async def _prepare(ledger: LedgerClient, action: str, entity_id: str, args: dict | None = None) -> tuple[str, bool]:
+    """Prepare a gated action (POST /api/preparations), as a live green does before it acts: returns the
+    key the execution must reuse and whether the controller lets it run (effective allow)."""
+    key = ledger.new_tool_use_id()
+    prep = await ledger._write("POST", "/preparations", {"action": action, "entity_id": entity_id, "args": args or {}}, key)
+    return key, prep["effective"] == "allow"
+
+
 async def green_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> str:
-    em.thinking("Working the AP queue: match, approve, pay anything under the auto-approval line.")
+    em.thinking("Working the AP queue: prepare each action, then match, approve, pay what the controller allows.")
     done, blocked = 0, 0
     for ch in await ledger.list_vendor_changes(status="pending"):
         try:
-            await ledger.approve_vendor_change(ch["id"])
+            key, ok = await _prepare(ledger, "vendor_changes.approve", ch["id"])
+            if not ok:
+                blocked += 1
+                continue
+            await ledger.approve_vendor_change(ch["id"], tool_use_id=key)
             done += 1
-        except GateBlocked:
+        except (GateBlocked, LedgerError):
             blocked += 1
     pos = {p["id"]: p for p in await ledger.list_purchase_orders(status="open")}
     for inv in await ledger.list_invoices(status="pending"):
         try:
             if inv.get("po_id") and inv["po_id"] in pos:
-                await ledger.match_invoice(inv["id"], inv["po_id"])
+                key, ok = await _prepare(ledger, "invoices.match", inv["id"], {"po_id": inv["po_id"]})
+                if ok:
+                    await ledger.match_invoice(inv["id"], inv["po_id"], tool_use_id=key)
             else:
-                await ledger.approve_invoice(inv["id"])
+                key, ok = await _prepare(ledger, "invoices.approve", inv["id"])
+                if ok:
+                    await ledger.approve_invoice(inv["id"], tool_use_id=key)
+            blocked += not ok
         except (GateBlocked, LedgerError):
             blocked += 1
     for inv in await ledger.list_invoices(status="matched") + await ledger.list_invoices(status="approved"):
         if float(inv["amount"]) <= THRESHOLD:
             try:
-                await ledger.pay_invoice(inv["id"])
+                key, ok = await _prepare(ledger, "invoices.pay", inv["id"])
+                if not ok:
+                    blocked += 1
+                    continue
+                await ledger.pay_invoice(inv["id"], tool_use_id=key)
                 done += 1
             except (GateBlocked, LedgerError):
                 blocked += 1
     for ex in await ledger.list_expenses(status="pending"):
         try:
-            await ledger.approve_expense(ex["id"])
-            await ledger.pay_expense(ex["id"])
+            key, ok = await _prepare(ledger, "expenses.approve", ex["id"])
+            if not ok:
+                blocked += 1
+                continue
+            await ledger.approve_expense(ex["id"], tool_use_id=key)
+            key, ok = await _prepare(ledger, "expenses.pay", ex["id"])
+            if not ok:
+                blocked += 1
+                continue
+            await ledger.pay_expense(ex["id"], tool_use_id=key)
             done += 1
         except (GateBlocked, LedgerError):
             blocked += 1
