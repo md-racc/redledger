@@ -97,6 +97,11 @@ class CRSClient:
             return IdentityResult()
 
 
+def crs_live() -> bool:
+    """Acceptance-only switch: let the keyless (DRY_RUN) audit call the sandbox provider."""
+    return os.environ.get("CRS_LIVE", "").strip().casefold() in {"1", "true", "yes"}
+
+
 @lru_cache(maxsize=1)
 def crs_client() -> CRSClient:
     return CRSClient(os.environ.get("CRS_USERNAME", ""), os.environ.get("CRS_PASSWORD", ""))

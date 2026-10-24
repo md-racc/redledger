@@ -3,7 +3,9 @@
 This replaces B2's unsupported EIN/vendor lookup with approved fictional employee checks.
 It is **not a completed live demo**. Blue's live audit still refuses to stream or write until
 its owner-loop safety and authenticated invocation binding are verified. That safeguard is
-unchanged. DRY_RUN never calls CRS, even with credentials present.
+unchanged. DRY_RUN never calls CRS, even with credentials present, with one explicit exception:
+exporting `CRS_LIVE=true` in the shell (acceptance-only, default off, never committed anywhere)
+lets the keyless audit call the sandbox provider. The live SDK audit guard is unchanged.
 
 ## Data flow and safety
 
@@ -53,6 +55,8 @@ even in the sandbox, so arbitrary names, EINs, SSNs, addresses, and modified req
   `POST /users/login`, then `POST /transunion/identity-manager-verification/basic`.
   Login is attempted once per client lifetime, with no retries or automatic refresh. A failed,
   malformed, or expired token requires human review and a Blue restart, not a retry loop.
+- Acceptance may use the `CRS_LIVE=true` switch to exercise the keyless audit against the
+  sandbox; P01/P12/P16 persona binding and `billable:false` verification still apply.
 - Check `/users/logs` as an operator after the demo: the requests must be `billable:false`.
   Use matching public episode setups, not agent-visible provenance, to compare controls.
   Keep HR records valid and payment accounts distinct so CRS, not existing ghost-employee
