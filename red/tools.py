@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 
+from evolution import RATIONALE, fold, lineage_info, view
+
 from agentkit import ctx, ledger_tool
 from schemes import SCHEMES
 
@@ -25,8 +27,22 @@ async def inspect_books() -> str:
     pending = await L.list_invoices(status="pending")
     paid = await L.list_invoices(status="paid")
     changes = await L.list_vendor_changes(status="pending")
+    learned = {}
+    req = ctx.turn()
+    info = lineage_info(req.options)
+    if info is not None:
+        playbook = await L.get_playbook()
+        content = playbook["content"] if playbook else {}
+        debrief = req.options.get("debrief")
+        items = debrief.get("items") if isinstance(debrief, dict) else None
+        updated = fold(content, items, info.generation, req.episode_id)
+        if updated is not None and playbook is not None:
+            # The decorator owns this invocation; LedgerClient supplies its current write key.
+            await L.put_playbook(updated, RATIONALE, playbook["version"])
+        learned["lineage"] = view(updated if updated is not None else content, req.day)
     return json.dumps(
         {
+            **learned,
             "active_vendors": len(vendors),
             "vendors_sample": [{"id": v["id"], "name": v["name"], "category": v["category"], "created_day": v["created_day"]} for v in vendors[:15]],
             "pending_invoices": [{"id": i["id"], "vendor_id": i["vendor_id"], "amount": i["amount"], "po_id": i.get("po_id")} for i in pending[:20]],
