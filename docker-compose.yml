@@ -25,6 +25,8 @@ x-agent-env: &agent-env
   GATE_TIMEOUT_SEC: ${GATE_TIMEOUT_SEC:-8}
   # agentkit warns at startup if its tool cap (TURN_TIMEOUT_SEC - 20) can't cover an escalation hold
   ESCALATION_TIMEOUT_SEC: ${ESCALATION_TIMEOUT_SEC:-90}
+  # the auto-approve line, same value battlefield uses (agentkit AgentSettings.approval_threshold)
+  APPROVAL_THRESHOLD: ${APPROVAL_THRESHOLD:-5000}
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
 services:
