@@ -47,6 +47,8 @@ def failure_codes(e: dict) -> list[str]:
     calls, results = e["calls"], e["results"]
     if case == "restriction":
         return codes + ["restriction_inconclusive_no_observable_sdk_refusal"]
+    if case != "granularity" and e.get("shape") != [(1, 1)]:
+        codes.append("unexpected_permission_callback")
     targets = ["pay_invoice", "approve_expense"] if case == "granularity" else ["pay_invoice" if case == "cancel" else case]
     n = len(targets)
     if not len(ps) == len(calls) == len(results) == n:
@@ -161,9 +163,17 @@ async def run_case(case: str) -> dict:
             e["shape"].append((actions, len(uses)))
             e["batch"] = e["batch"] or actions > 1 or len(uses) > 1
             start = len(e["permissions"])
+            seen = {p["id"] for p in e["permissions"]}
+            if not uses or actions != len(uses) or any(u.tool not in specs or u.args != specs[u.tool] or digest(u.tool_use_id) in seen for u in uses):
+                e["error"] = "unexpected_permission_callback"
             for u in uses:
                 e["permissions"].append({"id": digest(u.tool_use_id), "tool": u.tool, "source": u.source, "args_match": u.args == specs.get(u.tool)})
-            response = await super().on_permission(request)
+            if e.get("error"):
+                from droid_sdk import ToolConfirmationOutcome
+
+                response = request.respond(ToolConfirmationOutcome.CANCEL, comment="Acceptance harness stopped.")
+            else:
+                response = await super().on_permission(request)
             for p in e["permissions"][start:]:
                 p["outcome"] = getattr(getattr(response, "selected_option", None), "value", getattr(response, "selected_option", None))
             return response

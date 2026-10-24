@@ -51,6 +51,8 @@ def install_fake(monkeypatch, *, batch=False, echo=True, fault=None):
                 raise TimeoutError("private credential")
             specs = json.loads(prompt.split("once each, and no others: ")[1].split(". Stop afterwards.")[0]) if "once each" in prompt else {}
             requests = [permission(tool, "sdk-" + tool, args) for tool, args in specs.items()]
+            if fault == "unknown_callback":
+                requests.insert(0, permission("unknown", "sdk-unknown", {}))
             if batch and requests:
                 requests[0].actions += requests[1].actions
                 requests = requests[:1]
@@ -130,6 +132,14 @@ async def test_restriction_empty_trace_is_inconclusive(monkeypatch):
     assert not observations  # No billable Session for a case that cannot establish acceptance.
 
 
+async def test_unknown_callback_refuses_later_execution_and_cannot_pass(monkeypatch):
+    install_fake(monkeypatch, fault="unknown_callback")
+    e = await h.run_case("pay_invoice")
+    assert e["shape"] == [(1, 0), (1, 1)]
+    assert not e["passed"] and "unexpected_permission_callback" in e["failure_codes"]
+    assert not e["preparations"] and not e["writes"] and not e["mutated"]
+
+
 async def test_parallel_evidence_correlates_by_id_not_arrival_order(monkeypatch):
     install_fake(monkeypatch)
     e = await h.run_case("granularity")
@@ -150,7 +160,9 @@ async def test_runner_failures_never_pass_or_disclose_exception(monkeypatch, fau
         assert not e["writes"]
 
 
-@pytest.mark.parametrize("tamper", ["missing", "field", "duplicate", "wrongid", "unverified", "truthy", "wrongtool", "failed", "nan", "binding", "mutation"])
+@pytest.mark.parametrize(
+    "tamper", ["missing", "field", "duplicate", "wrongid", "unverified", "truthy", "wrongtool", "failed", "nan", "binding", "mutation", "callback"]
+)
 async def test_evaluator_rejects_tampered_evidence(monkeypatch, tamper):
     install_fake(monkeypatch)
     valid = await h.run_case("pay_invoice")
@@ -178,6 +190,8 @@ async def test_evaluator_rejects_tampered_evidence(monkeypatch, tamper):
         e["permissions"][0]["args_match"] = False
     elif tamper == "mutation":
         e["mutated"] = False
+    elif tamper == "callback":
+        e["shape"].insert(0, (1, 0))
     assert h.failure_codes(e)
 
 
