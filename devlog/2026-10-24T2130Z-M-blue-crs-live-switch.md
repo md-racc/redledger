@@ -1,0 +1,1 @@
+- 2026-10-24T2130Z · M · blue: CRS_LIVE=true acceptance switch lets the keyless audit call the CRS sandbox (default off, live guard unchanged); next: independent verification + Ad fixture route for synthetic employees/expenses (#102); blocked: paid SDK sessions and CRS calls wait for Ad runtime/credentials
