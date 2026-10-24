@@ -120,16 +120,21 @@ async def test_put_outside_the_active_turn_is_409(turn_guard: None) -> None:
     assert await db.fetchval("SELECT count(*) FROM playbooks WHERE lineage_id=$1 AND version > 0", ln) == 1
 
 
-async def test_audit_rows_are_written_and_hidden_from_agents() -> None:
+async def test_audit_rows_are_written_and_hidden_from_agents(turn_guard: None) -> None:
     _, ep = await _lineage_episode()
     async with _client() as c:
-        await c.put("/api/playbook", json={"content": {"k": "v"}, "base_version": 0}, headers=_put("green", ep, "tu_a"))
+        refused = await c.put("/api/playbook", json={"content": {"k": "early"}, "base_version": 0}, headers=_put("green", ep, "tu_r"))
+        with turns.turn(ep, "green", 1):
+            await c.put("/api/playbook", json={"content": {"k": "v"}, "base_version": 0}, headers=_put("green", ep, "tu_a"))
         agent_rows = (await c.get("/api/audit_log", headers=f.auth("blue", episode=ep, day=1))).json()
         op_rows = (await c.get("/api/audit_log", params={"episode_id": ep}, headers=f.auth())).json()
-    assert not [r for r in agent_rows if r["action"].startswith("playbook.")]
+    assert refused.status_code == 409
+    assert agent_rows == []  # neither the write nor the guard's refusal of it
     [row] = [r for r in op_rows if r["action"] == "playbook.put"]
     assert row["agent"] == "green" and row["http_status"] == 201 and row["tool_use_id"] == "tu_a"
     assert row["result"] == {"version": 1} and "content" not in row["args"]
+    [no_turn] = [r for r in op_rows if r["http_status"] == 409]
+    assert no_turn["action"] == "PUT /playbook" and no_turn["tool_use_id"] == "tu_r"
 
 
 async def test_event_payload() -> None:
@@ -141,13 +146,44 @@ async def test_event_payload() -> None:
     assert ev["payload"] == {"agent": "blue", "version": 1, "parent_version": 0, "generation": 3, "source": "turn", "rationale": "why"}
 
 
-async def test_concurrent_puts_on_the_same_base_make_exactly_one_version() -> None:
+async def test_concurrent_puts_on_the_same_base_make_exactly_one_version() -> None:  # no prior read: v0 is written in the race too
     ln, ep = await _lineage_episode()
     async with _client() as c:
-        await c.get("/api/playbook", headers=f.auth("red", episode=ep, day=1))  # seed v0 first, so the race is only on v1
         rs = await asyncio.gather(
             *(c.put("/api/playbook", json={"content": {"n": i}, "base_version": 0}, headers=_put("red", ep, f"tu_c{i}")) for i in range(8))
         )
     codes = sorted(r.status_code for r in rs)
     assert codes.count(201) == 1 and codes.count(409) == 7, codes
     assert await db.fetchval("SELECT max(version) FROM playbooks WHERE lineage_id=$1 AND agent='red'", ln) == 1
+
+
+async def test_reads_never_write() -> None:
+    ln, ep = await _lineage_episode()
+    async with _client() as c:
+        g = (await c.get("/api/playbook", headers=f.auth("blue", episode=ep, day=1))).json()
+        h = (await c.get("/api/playbook/history", headers=f.auth("blue", episode=ep, day=1))).json()
+    assert (g["version"], g["generation"], g["source"], g["content"]) == (0, 0, "seed", {})
+    assert [x["version"] for x in h] == [0]
+    assert await db.fetchval("SELECT count(*) FROM playbooks WHERE lineage_id=$1", ln) == 0
+
+
+async def test_two_concurrent_first_puts_make_exactly_one_version() -> None:
+    ln, ep = await _lineage_episode()
+    async with _client() as c:
+        rs = await asyncio.gather(
+            *(c.put("/api/playbook", json={"content": {"n": i}, "base_version": 0}, headers=_put("green", ep, f"tu_f{i}")) for i in range(2))
+        )
+    assert sorted(r.status_code for r in rs) == [201, 409]
+    assert [r["version"] for r in await db.fetch("SELECT version FROM playbooks WHERE lineage_id=$1 AND agent='green' ORDER BY version", ln)] == [0, 1]
+
+
+async def test_content_that_postgres_renders_over_64_kib_is_413() -> None:
+    # 1e300 is 6 bytes in JSON but 301 digits in jsonb's text form: under the up-front size check,
+    # over the schema's octet_length CHECK.
+    ln, ep = await _lineage_episode()
+    content = {"x": [1e300] * 250}
+    async with _client() as c:
+        r = await c.put("/api/playbook", json={"content": content, "base_version": 0}, headers=_put("red", ep, "tu_num"))
+    assert r.status_code == 413
+    assert await db.fetchval("SELECT count(*) FROM playbooks WHERE lineage_id=$1 AND version > 0", ln) == 0
+    assert await db.fetchval("SELECT count(*) FROM audit_log WHERE episode_id=$1 AND action='playbook.put' AND http_status=413", ep) == 1

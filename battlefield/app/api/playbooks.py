@@ -60,8 +60,13 @@ async def _lineage(c: Caller) -> tuple[str, int] | None:
     return row["lineage_id"], row["generation"] or 0
 
 
+def _seed_out() -> dict[str, Any]:
+    """Version 0 as reads report it when no row exists yet (reads never write)."""
+    return {k: None for k in FIELDS} | {"version": 0, "generation": 0, "source": "seed", "content": {}, "rationale": ""}
+
+
 async def _ensure_seed(conn: Any, lineage_id: str, agent: str) -> None:
-    """Version 0 is written by `POST /lineages`; a lineage made before that (or by hand) gets it lazily."""
+    """Version 0 is written by `POST /lineages`; until then the first PUT writes it, under the write lock."""
     await conn.execute(
         "INSERT INTO playbooks (lineage_id, agent, version, generation, source, content) VALUES ($1,$2,0,0,'seed','{}'::jsonb)"
         " ON CONFLICT (lineage_id, agent, version) DO NOTHING",
@@ -75,10 +80,8 @@ async def get_playbook(c: Caller = Depends(AGENT)):
     ln = await _lineage(c)
     if ln is None:
         return _error(404, NOT_LINEAGE)
-    async with db.pool().acquire() as conn:
-        await _ensure_seed(conn, ln[0], c.agent)  # type: ignore[arg-type]
-        row = await conn.fetchrow("SELECT * FROM playbooks WHERE lineage_id=$1 AND agent=$2 ORDER BY version DESC LIMIT 1", ln[0], c.agent)
-    return _out(row)
+    row = await db.fetchrow("SELECT * FROM playbooks WHERE lineage_id=$1 AND agent=$2 ORDER BY version DESC LIMIT 1", ln[0], c.agent)
+    return _out(row) if row is not None else _seed_out()
 
 
 @router.get("/playbook/history")
@@ -86,10 +89,11 @@ async def playbook_history(limit: int = Query(20, ge=1, le=100), c: Caller = Dep
     ln = await _lineage(c)
     if ln is None:
         return _error(404, NOT_LINEAGE)
-    async with db.pool().acquire() as conn:
-        await _ensure_seed(conn, ln[0], c.agent)  # type: ignore[arg-type]
-        rows = await conn.fetch("SELECT * FROM playbooks WHERE lineage_id=$1 AND agent=$2 ORDER BY version DESC LIMIT $3", ln[0], c.agent, limit)
-    return [_out(r) for r in rows]
+    rows = await db.fetch("SELECT * FROM playbooks WHERE lineage_id=$1 AND agent=$2 ORDER BY version DESC LIMIT $3", ln[0], c.agent, limit)
+    out = [_out(r) for r in rows]
+    if len(out) < limit and (not out or out[-1]["version"] != 0):
+        out.append(_seed_out())  # no v0 row yet: nothing was ever written
+    return out
 
 
 @router.put("/playbook")
