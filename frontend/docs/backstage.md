@@ -56,8 +56,9 @@ that from the battlefield itself.
 
 (`components/backstage/useBackstage.ts`)
 
-1. `GET /api/health` and `GET /api/episodes` every 2.5 s through the `/api/bf` proxy. The newest episode is followed, whoever
-   made it (the arena's show, a curl, the battlefield console). A selector pins another one.
+1. `GET /api/health` and `GET /api/episodes` every 2.5 s through the `/api/bf` proxy. The episode that is *running* is followed
+   (battlefield allows one active run), else the newest, whoever made it (the arena's show, a curl, the battlefield console). A
+   selector pins another one.
 2. When the followed episode changes, the ticketed WebSocket (`lib/ws.ts`) is opened with `after_id=0`, so a laptop that joins
    late still receives the whole episode, then the live tail. The socket address is derived from the page host when
    `NEXT_PUBLIC_WS_URL` is unset (`lib/wsurl.ts`), which is what keeps the whole thing on one domain behind Caddy.

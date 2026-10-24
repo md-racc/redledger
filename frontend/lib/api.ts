@@ -5,6 +5,13 @@ import { clientId } from "./sync/client";
 
 const BASE = "/api/bf";
 
+/** A non-2xx answer from battlefield: the status and the body text travel with it (a 409 "another run is active" names the run to watch). */
+export class ApiError extends Error {
+  constructor(readonly method: string, readonly path: string, readonly status: number, readonly body: string) {
+    super(`${method} ${path} → ${status}: ${body}`);
+  }
+}
+
 async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
     signal,
@@ -13,7 +20,7 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
-  if (!r.ok) throw new Error(`${method} ${path} → ${r.status}: ${await r.text()}`);
+  if (!r.ok) throw new ApiError(method, path, r.status, await r.text());
   return r.status === 204 ? (undefined as T) : r.json();
 }
 
@@ -37,6 +44,7 @@ export const api = {
   playReplay: (id: string, speed = 4, episode_id?: string) => call<any>("POST", `/replays/${id}/play`, { speed, episode_id }),
   // lineages (evolution runs): chains of generations whose agents carry versioned playbooks
   lineages: () => call<any[]>("GET", "/lineages"),
+  lineage: (id: string) => call<any>("GET", `/lineages/${id}`),
   createLineage: (b: { name?: string; base_seed?: number; config?: Record<string, unknown> }) => call<any>("POST", "/lineages", b),
   startLineage: (id: string) => call<void>("POST", `/lineages/${id}/start`),
   // frontend read API (/api/fe/…)

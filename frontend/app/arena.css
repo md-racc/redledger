@@ -171,6 +171,7 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .escalation-why li { position: relative; padding-left: 16px; font-size: 14px; line-height: 1.4; color: var(--ink-2); }
 .escalation-why li::before { content: ""; position: absolute; left: 1px; top: 0.55em; width: 6px; height: 6px; background: var(--amber); transform: rotate(45deg); }
 .escalation-act { display: grid; grid-template-columns: 1fr 1fr; }
+.escalation .escalation-foot { font-family: var(--figures); font-style: italic; font-size: 13px; line-height: 1.35; color: var(--ink-3); }
 .esc-btn { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; text-align: left; padding: 12px 14px 13px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); transition: background 0.12s, color 0.12s, border-color 0.12s; }
 .esc-btn + .esc-btn { margin-left: -1px; }
 .esc-btn b { font-family: var(--caps); font-weight: 600; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; }

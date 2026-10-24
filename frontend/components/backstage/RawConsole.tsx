@@ -8,7 +8,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
-import { ROSTER_BY_ID } from "@/lib/arena/roster";
+import { blueIdForRule, ROSTER_BY_ID } from "@/lib/arena/roster";
 import { clientId, useSync } from "@/lib/sync/client";
 import { liveClients } from "@/lib/sync/hub";
 import type { ControllerMode } from "@/lib/types";
@@ -196,8 +196,19 @@ function BlueState({ bs, selected }: { bs: BS; selected: string | null }) {
           <button onClick={() => void api.resolve(e.escalation_id, "approve").catch(() => {})}>approve</button> <button onClick={() => void api.resolve(e.escalation_id, "block").catch(() => {})}>block</button>
         </div>
       ))}
+      <div className="dim">latest verdicts, newest first, each with its reason:</div>
+      {s.verdicts.length === 0 && <div className="dim">  none yet</div>}
+      {s.verdicts.slice(-8).reverse().map((v) => {
+        const hit = !!selected && (v.rules_fired ?? []).some((r) => (blueIdForRule(r) ?? `blue:${r}`) === selected);
+        return (
+          <div key={v.verdict_id}>
+            <Line hl={hit}>{`d${v.day} ${v.verdict.toUpperCase().padEnd(8)} ${v.action.padEnd(20)} ${usd(v.amount).padStart(8)}  ${(v.rules_fired ?? []).map(ruleName).join(" + ") || "no rule fired"}`}</Line>
+            <Line hl={hit}>{`   "${v.reason}"`}</Line>
+          </div>
+        );
+      })}
       <div className="dim">rules fired:</div>
-      {rules.map((r) => <Line key={r.rule} hl={selected === `blue:${r.rule}`}>{`  ${r.rule.padEnd(34)} total ${String(r.total).padStart(3)}  block ${String(r.block).padStart(3)}  review ${String(r.escalate).padStart(3)}`}</Line>)}
+      {rules.map((r) => <Line key={r.rule} hl={!!selected && (blueIdForRule(r.rule) ?? `blue:${r.rule}`) === selected}>{`  ${ruleName(r.rule).padEnd(20)} ${r.rule.padEnd(32)} total ${String(r.total).padStart(3)}  block ${String(r.block).padStart(3)}  review ${String(r.escalate).padStart(3)}`}</Line>)}
       {s.flags.slice(-5).reverse().map((f) => <div key={f.flag_id}>{`flag d${f.day} ${f.severity} ${f.entity_type}: ${f.reason}`}</div>)}
       {think.map((t) => <div key={t.key} className="dim">{`thinking d${t.day}: ${t.text.slice(0, 240)}`}</div>)}
     </Sec>

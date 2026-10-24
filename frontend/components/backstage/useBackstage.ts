@@ -144,7 +144,9 @@ export function useBackstage(want: Want[] = []): Backstage {
   const episode = useMemo<EpisodeRow | null>(() => {
     if (mode !== "live") return null;
     if (pinned) return episodes.find((e) => e.id === pinned) ?? null;
-    return episodes[0] ?? null; // newest first
+    // battlefield allows one active run: while one is running that is the one on stage (a site that lost the race leaves an empty,
+    // newer episode behind, which must not steal the screen). Otherwise the newest episode.
+    return episodes.find((e) => e.status === "running") ?? episodes[0] ?? null; // newest first
   }, [mode, episodes, pinned]);
 
   // follow it: a fresh socket (catch-up from event 0) whenever the followed episode changes
