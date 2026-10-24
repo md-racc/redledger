@@ -85,7 +85,8 @@ async def _turn(agent: _Agent, events: list) -> str:
     return "done"
 
 
-async def test_real_mcp_call_on_the_turn_loop_keeps_the_service_loop_free():
+async def test_real_mcp_call_on_the_turn_loop_keeps_the_service_loop_free(caplog):
+    caplog.set_level("ERROR", logger="asyncio")
     seen.clear()
     events: list = []
     gaps: list[float] = []
@@ -117,3 +118,10 @@ async def test_real_mcp_call_on_the_turn_loop_keeps_the_service_loop_free():
     assert call["tool_use_id"] == "toolu_L" and call["args"] == {"x": "a"}  # SDK id, redacted on the wire
     assert events[2][2]["tool_use_id"] == "toolu_L" and events[2][2]["ok"] is True
     assert max(gaps) - 0.01 <= 0.05, f"service loop stalled {max(gaps):.3f}s"
+    # the SDK server's leftover tasks (sse_starlette's _shutdown_watcher) are cancelled at teardown, not
+    # destroyed while pending when the turn loop closes (seen on prod red before this fix)
+    import gc
+
+    await asyncio.sleep(0.05)
+    gc.collect()
+    assert not [r for r in caplog.records if "Task was destroyed but it is pending" in r.getMessage()]
