@@ -42,7 +42,7 @@ from the ordered stream of these; it never queries ledger tables.
 | `generation.started` | battlefield | `{lineage_id, generation, seed, playbook_versions: {red, green, blue}}` — lineage episodes only |
 | `generation.ended` | battlefield | `{lineage_id, generation, score: Score}` |
 | `playbook.updated` | battlefield | `{agent, version, parent_version, generation, source: "turn"\|"reflect"\|"operator", rationale}` — content via `GET /api/fe/lineages/{id}/timeline` |
-| `debrief.delivered` | battlefield | `{agent, day, revealed_attacks, new_items, window_days}` — counts only, never the items |
+| `debrief.delivered` | battlefield | `{agent, day, revealed_attacks, new_items, window_days}` — counts only, never the items. `revealed_attacks` = distinct attacks the agent's items belong to (for green: the attacks behind its `fraud` items) |
 | `lineage.paused` / `lineage.resumed` | battlefield | `{lineage_id, generation}` |
 | `x.<area>.<name>` | anyone | team-defined; payload is whatever the team says it is (document it in your AGENTS.md) |
 
