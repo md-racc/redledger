@@ -147,7 +147,11 @@ Rules:
 - A key is bound to the action it was first judged for: (action, entity_type, entity_id, amount);
   for `gl.post`, the posted fields. Battlefield answers the same key on a *different* action with
   `409 {"error": "idempotency key reused for a different action", "verdict_id": …}`, audited, and
-  never replays the earlier verdict. Agents derive keys from the Droid `tool_use_id`: the first
+  never replays the earlier verdict. A key is also bound to the day and the enforcement it was judged
+  under (`verdicts.day`, `verdicts.enforced`): the same key on the same action on a later day, or after
+  the controller mode changed between shadow and enforce, gets `409 {"error": "stale verdict", "verdict_id": …}`,
+  audited, and is never replayed (a shadow block must not become an enforced 403, and a human's escalation
+  decision must not carry over to another day). Agents derive keys from the Droid `tool_use_id`: the first
   ledger write of a tool call uses it as-is, the n-th uses `<tool_use_id>:<n>`
   (`agentkit.LedgerClient` does this). A preparation is keyed by the same `tool_use_id` as that
   call's first ledger write.

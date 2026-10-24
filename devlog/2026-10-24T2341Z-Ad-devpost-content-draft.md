@@ -1,0 +1,1 @@
+- 2026-10-24T23:41Z · Ad · docs: Devpost content first draft (elevator pitch, About, 25 built-with tags, GenAI answer) in docs/devpost-content-draft.md; next: R finalizes on Devpost; blocked: none
