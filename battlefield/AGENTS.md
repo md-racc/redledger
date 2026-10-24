@@ -83,8 +83,11 @@ Goal for this session: <fill in>
 - `red_writes._current_attack` links new rows to `ORDER BY id DESC LIMIT 1` of today's
   attacks, but attack ids are random uuids, so with more than one attack per red turn rows
   may be linked to the wrong attack. Fix needs `attacks.created_at` (contracts change).
-- `legit_traffic` doesn't yet produce legit bank-detail changes or legit new vendors, so blue
-  has no false-positive bait for those rules. Dev M will want that.
+- `legit_traffic` false-positive bait (done): one legit `bank_account` change per 3 days
+  (established vendor, old_value = current account, ~60% while it has open invoices) and one
+  legit new vendor per 4 days (PO on its first day, first invoice > $1k under it 1-2 days
+  later), on seeded days, counted in `legit_injected.vendor_changes` / `.new_vendors`. Dev M
+  tunes the constants at the top of `legit_traffic.py`. Not yet: legit address/name changes.
 - Replays broadcast via `bus._broadcast` under a virtual episode id and are not persisted.
 - No pagination on `/api/events` beyond `limit`; fine for 10-day episodes.
 - Day pacing for demos is `DAY_PAUSE_SEC`; there is no per-turn pacing.
