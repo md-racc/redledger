@@ -98,3 +98,27 @@ hasMore}` shape): all four entries `billable:false`. No credentials, tokens, bod
 provider prose were logged or printed. Episode-level clean/mismatch/step-up cases still need
 Ad's operator fixture route (employee + one expense each with distinct accounts, `hr_record`)
 before the end-to-end audit-to-gate hold can be demonstrated.
+
+## Episode acceptance evidence, 2026-10-24 (approved scope: P01/P12/P16 only)
+
+`blue/tests/crs_episode_acceptance.py` (opt-in, `--allow-provider-call`) drove a two-day
+enforce episode on the merged operator fixtures route with the keyless audit and
+`CRS_LIVE=true`: three fixture employees (exact persona names, distinct accounts,
+`hr_record`, active, `start_day` 0) bound to P01/P12/P16 through the operator extension, one
+expense per employee before day 0 and a second per employee while paused between days, the
+episode advanced by `/step` only. Result (episode ep_e1d35dfb24b1): all three day-0 expenses
+paid — the check itself blocks nothing — and the day-0 audit produced **exactly one
+high-severity employee flag, on P12 (mismatch)**; P01 (verified) and P16 (review) stayed
+flag-free through day 1. Two audit reports posted; the provider's `/users/logs` then showed
+13 identity-verification entries, **all `billable:false`**. No credentials, tokens, bodies,
+or provider prose were logged or printed.
+
+**Finding (battlefield, reported on #102):** the hold did not fire — P12's day-1 expense
+paid. `already_flagged_high` is correct, but `_expense_context` (used by both the gated
+routes and `/api/preparations`) never includes `flags`; only `_invoice_context` does
+(vendor + invoice flags). Employee flags therefore never reach the gate on expense actions.
+Proposed fix is one symmetric query in `battlefield/app/api/green_writes.py`
+(`(entity_type='employee' AND entity_id=<employee>) OR (entity_type='expense' AND
+entity_id=<expense>)`). Once it lands, re-run the driver: P12's day-1 expense must block on
+`already_flagged_high` while P01's and P16's pay.
+
