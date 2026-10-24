@@ -1,0 +1,1 @@
+- 2026-10-24T05:54Z · Ad · battlefield: deploy passes the production DRY_RUN variable through to the VM .env so prod can run agents without Factory/LLM keys; next: first deploy (DRY_RUN) for TLS + Access; blocked: none

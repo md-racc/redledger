@@ -1,11 +1,15 @@
-# TLS at the edge. Cloudflare DNS points api.$DOMAIN and app.$DOMAIN at the VM (DNS-only or
-# proxied with "Full (strict)"). Internal traffic stays plain HTTP.
-api.{$DOMAIN} {
-	reverse_proxy battlefield:8000
-	encode gzip
-}
-
+# TLS at the edge. One public hostname: app.$DOMAIN (Cloudflare DNS, proxied with SSL "Full
+# (strict)" and Cloudflare Access in front once Caddy holds a certificate). Internal traffic stays
+# plain HTTP on the compose networks.
+#
+# Only two things are reachable from the internet, both behind Access:
+#   /api/ws  → battlefield (WebSocket; still needs a single-use ticket or the operator token)
+#   *        → frontend (its server-side /api/bf/* proxy is the only holder of OPERATOR_TOKEN)
+# Battlefield's REST API has no public hostname: agents reach it on the `agents` network and the
+# frontend on `edge`. Operators use `make prod-*` (deploy/PROD-OPS.md).
 app.{$DOMAIN} {
-	reverse_proxy frontend:3000
 	encode gzip
+	@ws path /api/ws /api/ws/*
+	reverse_proxy @ws battlefield:8000
+	reverse_proxy frontend:3000
 }
