@@ -112,7 +112,7 @@ text says. Blocked only by P1/P2.
 | A6 | **MLH Gemini** | Swag kit | Red's live Droid model on prod is `gemini-3.8-flash`; `blue/gate/llm.py` supports Gemini as one of three gate-LLM providers (`BLUE_GATE_LLM_PROVIDER`, default `gemini` in `.env.example`), but the gate LLM is not enabled on prod yet (blue is keyless there) | One line; cite red's model, not the gate |
 | A7 | **MLH Best Use of Gen AI** | Assorted | Live red Droid agent + evolution (`docs/EVOLUTION-DESIGN.md`) | One line, same evidence |
 | A8 | **Figma** | Gift cards + recruiter session | R's deck and design work | Blocked on P8 |
-| A9 | **MLH Tiger Data** | Stream Deck Mini | True once B1 merges | Written after B1 |
+| A9 | **MLH Tiger Data** | Stream Deck Mini | True (#98/#100): `events` and `audit_log` are TimescaleDB hypertables keyed `(id, ts)`, plus a `score_timeline` continuous aggregate (1-minute score buckets per episode, real-time); local compose defaults to `timescale/timescaledb:latest-pg16`; CI's `battlefield-timescale` job runs the full battlefield suite on the real image. Prod still runs plain `postgres:16-alpine` | The append-only event stream and audit log live in hypertables; score over time comes from a continuous aggregate; CI proves it on TimescaleDB |
 
 Not submitted, and why:
 
