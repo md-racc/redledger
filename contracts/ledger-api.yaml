@@ -231,6 +231,7 @@ components:
             outcome: { type: string }
             amount_extracted: { $ref: '#/components/schemas/Money' }
             detected_day: { type: integer, nullable: true }
+            created_at: { type: string, format: date-time, description: "declaration time; orders same-day attacks" }
     Reason:
       type: object
       properties: { reason: { type: string } }
