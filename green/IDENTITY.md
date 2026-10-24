@@ -7,7 +7,8 @@ SDK-reported `ToolUse`; its request does not consume an invocation write key.
 UUID4 fallback described below is historical best-effort behavior, not permission
 to execute live Green. Contracts #80 drop the Blue mirror entirely; Green prepares
 only against Battlefield. See [INTEGRATION.md](INTEGRATION.md) for current blockers.
-The guard/static CANCEL still stand, and fixture correlation is not SDK acceptance.
+The permission adapter now applies canonical preparation decisions, but the pre-SDK
+hard guard still stands. Fixture correlation is not SDK acceptance.
 
 ## Historical #34 evidence (preparation/replay proposal superseded by Option P)
 
