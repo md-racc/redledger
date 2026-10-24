@@ -1,0 +1,1 @@
+- 2026-10-24T03:27Z · Ad · contracts: attacks.created_at + vendor_changes.attack_id (hidden from agents) with idempotent ALTERs, so existing DBs upgrade without make db-reset; recorded Al's PR #9 Droid findings (tool IDs <server>___<tool>, model multipliers, credits per turn, awaiting MCP tools stall); next: battlefield/attack-linking uses them; blocked: none
