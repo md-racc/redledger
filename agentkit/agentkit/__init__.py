@@ -23,6 +23,7 @@ from .models import (
     TurnResponse,
 )
 from .server import make_agent_app
+from .sync import TurnLock, run_on_turn_loop
 from .tools import collect_tools, ctx, ledger_tool
 
 __all__ = [
@@ -53,6 +54,8 @@ __all__ = [
     "TurnRequest",
     "TurnResponse",
     "make_agent_app",
+    "TurnLock",
+    "run_on_turn_loop",
     "collect_tools",
     "ctx",
     "ledger_tool",
