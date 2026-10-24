@@ -19,8 +19,15 @@ yours; nothing in the backend dictates look or tone.
 - Need a new aggregate or field? Ask Ad for a `/api/fe` endpoint, or open a `battlefield/` PR
   yourself with Ad as reviewer (`battlefield/app/api/frontend.py` is read-only SQL; adding an
   endpoint there is low-risk). Need a new event type? That's a `contracts/` PR.
-- `NEXT_PUBLIC_INTERNAL_TOKEN` is a shared demo token, not a secret model; the app is private
-  behind Cloudflare Access or a VPN for the hackathon. Don't build auth.
+- The browser never holds a token. Every REST call goes same-origin to `/api/bf/*`, a Next
+  route handler that mirrors battlefield `/api/*` and adds `OPERATOR_TOKEN` server-side
+  (`app/api/bf/[...path]/route.ts`). The socket uses a 60 s single-use ticket from
+  `/api/bf/ws-ticket`. The app is private behind Cloudflare Access or a VPN for the hackathon;
+  don't build user auth.
+- **Never put a token in a `NEXT_PUBLIC_` var.** `NEXT_PUBLIC_*` referenced from client code is
+  inlined into the JS bundle at build. Server-only vars (`BATTLEFIELD_URL`, `OPERATOR_TOKEN`)
+  are read per request in route handlers (`dynamic = "force-dynamic"`), so one image serves
+  every environment.
 
 ## Data model in one paragraph
 
@@ -32,9 +39,14 @@ into `UIState`; `lib/types.ts` has the shapes; `contracts/events.md` is the auth
 
 ## What's already wired
 
-- `lib/ws.ts` — reconnecting socket with `after_id` catch-up.
+- `app/api/bf/[...path]/route.ts` + `lib/proxy.ts` — server-side proxy `/api/bf/<path>` →
+  `${BATTLEFIELD_URL}/api/<path>` with the operator bearer; streams responses; 30 s upstream
+  timeout (300 s for `POST /episodes/{id}/step`); 502 JSON if unconfigured/unreachable.
+- `app/api/bf/ws-ticket/route.ts` — `GET ?episode_id=` → `{ticket, expires_at, ws_url}`.
+- `lib/ws.ts` — reconnecting socket with `after_id` catch-up; fetches a fresh ticket before
+  every (re)connect and takes the socket URL from `ws_url`.
 - `lib/reducer.ts` — idempotent reducer; `lib/reducer.test.ts` shows the pattern.
-- `lib/api.ts` — every REST route, including `/api/fe/*`.
+- `lib/api.ts` — every REST route, including `/api/fe/*`, via the same-origin proxy. No token.
 - `lib/mock.ts` + `public/mocks/sample.jsonl` — fixture replay with `NEXT_PUBLIC_MOCK=true`.
 - `app/page.tsx` — a throwaway skeleton proving the data path. Replace freely; keep the hooks.
 
@@ -56,9 +68,9 @@ into `UIState`; `lib/types.ts` has the shapes; `contracts/events.md` is the auth
 
 ```
 cd frontend && npm install
-NEXT_PUBLIC_MOCK=true npm run dev            # zero backend
-# or against the shared box:
-NEXT_PUBLIC_BATTLEFIELD_URL=https://api.<domain> NEXT_PUBLIC_WS_URL=wss://api.<domain> npm run dev
+NEXT_PUBLIC_MOCK=true npm run dev            # zero backend, zero other env
+# or against a battlefield (local `make mock-agents`, or the shared box); see .env.example:
+BATTLEFIELD_URL=http://localhost:8000 OPERATOR_TOKEN=<operator token> NEXT_PUBLIC_WS_URL=ws://localhost:8000 npm run dev
 npm run gen:api                              # regenerate REST types from contracts/ledger-api.yaml
 ```
 
