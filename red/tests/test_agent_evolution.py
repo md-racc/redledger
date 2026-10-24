@@ -242,3 +242,19 @@ async def test_keyless_lineage_falls_back_to_plain_rotation_on_playbook_error(mo
         finally:
             ctx.unbind(tokens)
     assert result == f"{scheme.id} not viable today" and not put.called
+
+
+@respx.mock
+async def test_playbook_transport_error_keeps_the_books():
+    books_routes()
+    respx.get("http://bf/api/playbook").mock(side_effect=httpx.ReadTimeout("timed out"))
+    write = respx.put("http://bf/api/playbook").respond(200, json=playbook())
+    events = Events()
+    async with LedgerClient(S, episode_id="ep", day=1) as ledger:
+        tokens = ctx.bind(ledger, events, turn())
+        try:
+            result = json.loads(await red_tools.inspect_books(_tool_use_id="current-call"))
+        finally:
+            ctx.unbind(tokens)
+    assert result["lineage"] == {"error": "ReadTimeout"} and "active_vendors" in result
+    assert not write.called

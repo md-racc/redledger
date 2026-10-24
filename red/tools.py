@@ -11,7 +11,7 @@ import json
 
 from evolution import RATIONALE, fold, lineage_info, view
 
-from agentkit import LedgerError, ctx, ledger_tool
+from agentkit import ctx, ledger_tool
 from schemes import SCHEMES
 
 
@@ -39,10 +39,10 @@ async def inspect_books() -> str:
             updated = fold(content, items, info.generation, req.episode_id)
             if updated is not None and playbook is not None:
                 # The decorator owns this invocation; LedgerClient supplies its current write key.
-                await L.put_playbook(updated, RATIONALE, playbook["version"])
+                await L.put_playbook(updated, RATIONALE, playbook.get("version", 0))
             learned["lineage"] = view(updated if updated is not None else content, req.day)
-        except LedgerError as e:  # learning is optional: the books (and the attack) still go ahead
-            learned["lineage"] = {"error": e.status}
+        except Exception as e:  # learning is optional: any failure (HTTP status, timeout, bad shape) keeps the books and the attack
+            learned["lineage"] = {"error": getattr(e, "status", None) or type(e).__name__}
     return json.dumps(
         {
             **learned,
