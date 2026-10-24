@@ -1,0 +1,1 @@
+- 2026-10-24T16:23Z · M · green: wire merged Option-P preparation decisions into the permission adapter with turn-local cause accounting and no-retry holds; fail closed on unknown/batched requests; stacked on preparation foundation #93; next: independent verification and Green SDK acceptance; pre-SDK live hard guard remains, no Phase C or Bright Data clearance

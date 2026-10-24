@@ -11,12 +11,13 @@ ones when the controller is off so the baseline loses money. Don't make green su
 blue's job.
 
 `battlefield` remains the enforcement point. Live Green is intentionally disabled before
-Droid Session/tool execution pending permission-handler integration and Green SDK acceptance,
+Droid Session/tool execution pending Green SDK acceptance,
 including exact tool restrictions and verified invocation correlation. The merged contract
 uses Battlefield preparations, not a Green → Blue mirror (#80, Option P). Shared strict identity
 and `LedgerClient.prepare` landed in #84; preparation creation/consumption landed in #87/#89.
-The permission handler still cancels with a static prerequisite message. Dormant helpers in
-`preparation.py` do not enable it. [INTEGRATION.md](INTEGRATION.md) separates current prerequisites
+The permission handler uses `preparation.py` for canonical decisions, but the pre-SDK
+`_droid_turn` hard guard still prevents live execution.
+[INTEGRATION.md](INTEGRATION.md) separates current prerequisites
 from the superseded handoff; [IDENTITY.md](IDENTITY.md) records identity evidence limits.
 
 ## Boundaries
@@ -33,7 +34,7 @@ from the superseded handoff; [IDENTITY.md](IDENTITY.md) records identity evidenc
 |---|---|
 | `tools.py` | model-facing tools; wrappers over LedgerClient; the descriptions are prompt material |
 | `agent.py` | `GreenAgent(DroidAgent)`: prompt, guarded permission handler, DRY_RUN clerk |
-| `preparation.py` | dormant Option-P mapping and decision helpers; no SDK/session or execution writes |
+| `preparation.py` | Option-P mapping and decision helpers; no SDK/session or execution writes |
 | `workflow.py` | shared turn-local procedure, eligibility, reconciliation and confirmed summary |
 | `prompts/system.md` | persona; a string replacing Droid's default |
 | `server.py` | leave alone |
@@ -71,14 +72,14 @@ from the superseded handoff; [IDENTITY.md](IDENTITY.md) records identity evidenc
   actual status; error bodies and bank/account details are not narrated.
 - There is no automatic GL tool in this milestone. Do not claim balanced accounting.
   Posting GL requires a separate accounting milestone; this staged foundation deliberately
-  does not yet implement balanced GL or the live preparation handler.
+  does not yet implement balanced GL or SDK-qualified live execution.
 - Shared #33/#34 carry invocation IDs into tool events and the first ledger write, with
   `:<n>` keys for subsequent writes, canceled-call pairs and copied clerk ContextVars.
   #84 refuses missing, ambiguous or conflicting identities in strict live turns; local UUIDs
   remain valid for DRY_RUN, not live Green. Adapter fixtures are not live SDK evidence.
-  Handler/cause integration and verified Green SDK behavior remain release prerequisites.
+  Verified Green SDK behavior remains a release prerequisite; unit adapters do not qualify it.
 
-## Preparation staging, not live enablement
+## Permission preparations, not live enablement
 
 `preparation.py` maps the eight existing AP mutation tools to the exact route body; `ap_queue`
 is read-only and GL is not registered. Its decisions follow `contracts/agent-service.md` (Green):
@@ -86,9 +87,15 @@ validation/key/turn conflicts cancel in every mode; availability or malformed-re
 fall back to inline gating only in off/shadow; enforce fails closed. Block decisions carry
 `control_hold` or `escalation_timeout`; failures carry `invalid_state` or `integration_failure`.
 Helpers never retry, consume a write key, execute a mutation, or invent an identity.
-Consumption (#89) is merged; connecting these helpers to `on_permission` and turn-local cause
-accounting is a separate follow-up, not part of this dormant staging.
-Do not remove the pre-SDK guard or static CANCEL without separate Green acceptance.
+`on_permission` uses the shared registry, turn-owned LedgerClient, and turn-local clerk state.
+Only `PROCEED_ONCE` can authorize execution. Cancel comments carry JSON cause/source data;
+the shared registry includes that comment in the single canceled-call result pair.
+Held entities remain suppressed across later tools; cause counts are unique per entity and
+are appended only when present, leaving ordinary keyless summaries unchanged.
+Unknown/empty requests and batches of multiple tool uses fail closed before preparing.
+Batch callers must issue individual tool requests; Green SDK acceptance must verify callback
+granularity as well as OFF prompting, restrictions, identity and cancellation delivery.
+Do not remove the pre-SDK guard without separate Green SDK acceptance.
 
 ## Realism work (shared with Ad)
 
@@ -148,8 +155,8 @@ paid/approved/blocked/rejected). Legit items you had blocked arrive only in the 
   fields, is preserved; incompatible namespace versions and oversized content are kept unchanged.
 - This is stored reflection memory, **not changed AP policy**: neither `build_prompt` nor the
   keyless clerk consumes it or daily debriefs yet. Active-turn consumption needs a separate PR;
-  do not add playbook tools/writes without fresh tool-ID acceptance. Live Green and the static
-  CANCEL handler remain guarded. Contract: `contracts/agent-service.md` (Lineages).
+  do not add playbook tools/writes without fresh tool-ID acceptance. Live Green retains the
+  pre-SDK guard. Contract: `contracts/agent-service.md` (Lineages).
 
 ## Paste this to your coding agent as its first message
 
@@ -163,7 +170,7 @@ if not, create `green/<topic>` from origin/main. Edit only inside `green/`,
 Never force-push, never merge, never touch another directory; if you need a contracts change,
 write the proposed diff into the PR description and stop. Run `make lint test-green` before
 each push. Everything must work with DRY_RUN=true. Current scope: trusting AP clerk foundation;
-live preparation execution waits for handler integration and Green SDK acceptance. Never call Blue.
+live preparation execution waits for Green SDK acceptance. Never call Blue.
 ```
 
 ## Don't
