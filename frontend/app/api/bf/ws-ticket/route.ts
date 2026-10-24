@@ -3,11 +3,11 @@
 // (battlefield `POST /api/ws/ticket`). `ws_url` is NEXT_PUBLIC_WS_URL read at request time, so
 // one image serves every environment (client code would get it inlined at build instead).
 import { isTimeout, jsonError, runtimeEnv, upstreamConfig, upstreamUrl } from "@/lib/proxy";
+import { hub } from "@/lib/sync/hub";
+import { wsBaseUrl } from "@/lib/wsurl";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const DEFAULT_WS_URL = "ws://localhost:8000";
 
 export async function GET(req: Request): Promise<Response> {
   const cfg = upstreamConfig();
@@ -17,6 +17,7 @@ export async function GET(req: Request): Promise<Response> {
 
   const episodeId = new URL(req.url).searchParams.get("episode_id") || null;
 
+  const t0 = performance.now();
   let upstream: Response;
   try {
     upstream = await fetch(target, {
@@ -29,6 +30,7 @@ export async function GET(req: Request): Promise<Response> {
   } catch (err) {
     return isTimeout(err) ? jsonError(504, "battlefield timed out") : jsonError(502, "battlefield unreachable");
   }
+  hub().recordTraffic({ method: "POST", path: "/ws/ticket", status: upstream.status, ms: performance.now() - t0, client: req.headers.get("x-rl-client") ?? "" });
   if (!upstream.ok) return jsonError(upstream.status >= 500 ? 502 : upstream.status, `ticket request failed (${upstream.status})`);
 
   let data: { ticket?: unknown; expires_at?: unknown };
@@ -39,7 +41,7 @@ export async function GET(req: Request): Promise<Response> {
   }
   if (typeof data.ticket !== "string") return jsonError(502, "bad ticket response");
 
-  const wsUrl = (runtimeEnv("NEXT_PUBLIC_WS_URL") ?? DEFAULT_WS_URL).replace(/\/+$/, "");
+  const wsUrl = wsBaseUrl(runtimeEnv("NEXT_PUBLIC_WS_URL"), req.headers, req.url);
   return Response.json(
     { ticket: data.ticket, expires_at: data.expires_at ?? null, ws_url: wsUrl },
     { headers: { "cache-control": "no-store" } },

@@ -2,8 +2,9 @@
 // so the floor (and everyone on it) is visible from the orbit camera. A clipping plane on the Palace materials only.
 import * as THREE from "three";
 
-/** y above which the Palace is clipped; the rotunda's outer columns end around 23.5 m. */
-export const CUT_Y = 23.4;
+/** y above which the Palace is clipped. The rotunda's outer columns end around 23.5 m; slicing them at 11 m leaves the piers
+ *  as stumps that still read as architecture, but they no longer stand in front of the agents on the floor. */
+export const CUT_Y = 11;
 export const CLEAR_Y = 140;
 
 /** Palace materials that fade out in the arena: the dome shell, the coffered ceiling and the inner pier ring, so nothing

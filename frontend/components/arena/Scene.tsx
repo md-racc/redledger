@@ -1,9 +1,9 @@
 "use client";
 // The R3F canvas: atmosphere, Palace, arena, camera, picking, post.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { PerformanceMonitor } from "@react-three/drei";
 import * as THREE from "three";
+import { QualityGovernor } from "@/lib/arena/governor";
 import { initialLevel, pinnedByUrl, QUALITY } from "@/lib/arena/quality";
 import { useArena } from "@/lib/arena/store";
 import type { ArenaSim } from "@/lib/arena/sim";
@@ -60,11 +60,25 @@ function QualityApplier({ level }: { level: 0 | 1 | 2 | 3 }) {
   return null;
 }
 
+/** Steps the quality level from the frame rate (lib/arena/governor.ts): slow to step down, able to step back up. Idle while the
+ *  scene is still loading or the page is hidden. */
+function Governor({ start, onLevel }: { start: 0 | 1 | 2 | 3; onLevel: (l: 0 | 1 | 2 | 3) => void }) {
+  const gov = useMemo(() => new QualityGovernor(start), [start]);
+  useFrame((_, dt) => {
+    if (document.hidden || useArena.getState().stage === "loading") return;
+    const l = gov.frame(dt);
+    if (l !== null) onLevel(l);
+  });
+  return null;
+}
+
 export default function Scene({ subscribe, feedActive, onSim, onProgress, tallies }: Props) {
   const [ground, setGround] = useState<GroundSampler | null>(null);
   const onGround = useCallback((g: GroundSampler | null) => setGround(g), []);
   const hover = useArena((s) => s.hoveredId);
-  const [level, setLevel] = useState<0 | 1 | 2 | 3>(initialLevel);
+  const [start] = useState<0 | 1 | 2 | 3>(initialLevel);
+  const [level, setLevel] = useState<0 | 1 | 2 | 3>(start);
+  useEffect(() => { document.documentElement.dataset.quality = String(level); }, [level]); // for debugging: which step the page is on
   const q = QUALITY[level];
   const pinned = pinnedByUrl();
 
@@ -81,15 +95,7 @@ export default function Scene({ subscribe, feedActive, onSim, onProgress, tallie
       <color attach="background" args={["#d99a73"]} />
       <ProgressBridge onProgress={onProgress} />
       <QualityApplier level={level} />
-      {!pinned && (
-        <PerformanceMonitor
-          ms={300}
-          iterations={5}
-          bounds={() => [20, 100]}
-          flipflops={2}
-          onDecline={() => setLevel((l) => (l > 0 ? ((l - 1) as 0 | 1 | 2 | 3) : l))}
-        />
-      )}
+      {!pinned && <Governor start={start} onLevel={setLevel} />}
       <Lights shadowSize={q.shadowMap} />
       <SkyDome />
       <Water />

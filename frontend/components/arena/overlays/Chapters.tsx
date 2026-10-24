@@ -11,6 +11,7 @@ const FADE = 0.075;
 
 export function Chapters() {
   const stage = useArena((s) => s.stage);
+  const inShow = useArena((s) => s.show.status === "playing" || s.show.status === "paused");
   const refs = useRef<(HTMLElement | null)[]>([]);
   const ticks = useRef<(HTMLElement | null)[]>([]);
   const root = useRef<HTMLDivElement>(null);
@@ -44,7 +45,7 @@ export function Chapters() {
         <article key={c.no} className="chapter" ref={(el) => { refs.current[i] = el; }}>
           <span className="chapter-no">{c.no}</span>
           <h2 className="chapter-title">{c.title}</h2>
-          <p className="chapter-body">{c.body}</p>
+          <p className="chapter-body">{inShow ? c.line : c.body}</p>
         </article>
       ))}
       <nav className="rail" aria-label="Tour progress">

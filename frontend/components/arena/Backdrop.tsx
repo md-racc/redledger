@@ -259,9 +259,10 @@ function Searchlights() {
 export function Backdrop({ ground, tallies, detail }: { ground: GroundSampler | null; tallies: DayTally[]; detail: 0 | 1 | 2 | 3 }) {
   return (
     <group name="backdrop">
-      {detail >= 2 && <LedgerRing ground={ground} tallies={tallies} />}
-      {detail >= 2 && <Skyline />}
-      {detail >= 3 && <Searchlights />}
+      {/* the city is one instanced mesh and costs next to nothing: it stays at every level, so a slow machine still has a skyline */}
+      <Skyline />
+      {detail >= 1 && <LedgerRing ground={ground} tallies={tallies} />}
+      {detail >= 2 && <Searchlights />}
       {detail >= 3 && (
         <>
           <Sparkles count={220} scale={[240, 55, 240]} position={[0, 28, 25]} size={7} speed={0.25} opacity={0.75} color="#ffbb77" noise={0.6} />

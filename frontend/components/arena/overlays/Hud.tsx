@@ -1,17 +1,20 @@
 "use client";
-// Heads-up display for the arena stage: episode state, the converge trigger, controller mode, the money scoreboard
-// and a roster of every agent (also the keyboard route to the dossier).
-import { useState } from "react";
-import { api } from "@/lib/api";
+// Heads-up display for the arena stage: episode state, the show and converge triggers, controller mode, the money
+// scoreboard, the attack console, a roster of every agent (also the keyboard route to the dossier) and the escalation
+// that needs a human.
+import { useEffect, useRef, useState } from "react";
+import { explainEscalation } from "@/lib/arena/escalation";
 import { rosterOf, TEAM_META, TEAMS } from "@/lib/arena/roster";
 import { useArena } from "@/lib/arena/store";
 import type { Feed } from "@/lib/arena/useFeed";
 import type { ControllerMode } from "@/lib/types";
+import type { ShowController } from "../useShow";
+import { ThreatConsole } from "./ThreatConsole";
 
 const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const MODES: ControllerMode[] = ["off", "shadow", "enforce"];
 
-export function Hud({ feed }: { feed: Feed }) {
+export function Hud({ feed, show }: { feed: Feed; show: ShowController }) {
   const stage = useArena((s) => s.stage);
   const simPhase = useArena((s) => s.simPhase);
   const model = useArena((s) => s.modelState);
@@ -20,24 +23,44 @@ export function Hud({ feed }: { feed: Feed }) {
   const actions = useArena((s) => s.actions);
   const cinematic = useArena((s) => s.cinematic);
   const setCinematic = useArena((s) => s.setCinematic);
+  const panel = useArena((s) => s.panel);
+  const setPanel = useArena((s) => s.setPanel);
   const [roster, setRoster] = useState(false);
+  const clicks = useRef<number[]>([]);
+  // three quick clicks on the brand open the backstage hub (the same as pressing B)
+  const brandClick = () => {
+    const now = performance.now();
+    clicks.current = [...clicks.current.filter((t) => now - t < 700), now];
+    if (clicks.current.length >= 3) { clicks.current = []; window.open("/backstage", "_blank", "noopener"); }
+  };
+  const [threat, setThreat] = useState(false);
   const { state, source } = feed;
   const arenaFormed = simPhase === "engaged" || simPhase === "converging";
+  const inShow = show.status === "playing" || show.status === "paused";
 
-  const sourceLabel = source === "live" ? "LIVE" : source === "mock" ? "REPLAY" : "STANDBY";
+  // the show hands over: the attack console opens so the first thing a visitor can do is fire something
+  useEffect(() => { if (show.status === "done") setThreat(true); }, [show.status]);
+  useEffect(() => { if (inShow) { setThreat(false); setRoster(false); } }, [inShow]);
+
+  const { backend } = feed;
+  const apiLabel = backend.state === "live" ? (backend.keyless ? "open · agents keyless" : "open") : backend.state === "offline" ? "closed" : "calling";
+  const feedLabel = `${inShow ? "show · " : ""}${source === "live" ? "live" : source === "mock" ? "recorded" : "idle"}`;
 
   return (
-    <div className={`hud ${stage === "arena" ? "is-on" : ""}`} aria-hidden={stage !== "arena"}>
+    <div className={`hud ${stage === "arena" ? "is-on" : ""} ${inShow ? "in-show" : ""}`} aria-hidden={stage !== "arena"}>
       <header className="hud-top">
         <div className="hud-brand">
-          <span><b>red</b>ledger</span>
-          <span className={`hud-chip src-${source}`}><i />{sourceLabel}</span>
-          {state.episodeId && <span className="hud-chip">day {state.currentDay}/{state.days}</span>}
+          <span className="brand" onClick={brandClick}><b>red</b>ledger</span>
+          <span className="stat" title="The battlefield behind the /api/bf proxy"><i className={`led led-${backend.state}`} />Ledger <b>{apiLabel}</b></span>
+          <span className="stat" title="Where the events on screen come from">Source <b>{feedLabel}</b></span>
+          {state.episodeId && <span className="stat">Day <b>{state.currentDay}/{state.days}</b></span>}
+          <span className={`stat mode-${state.controllerMode}`}>Controller <b>{state.controllerMode}</b></span>
         </div>
         <div className="hud-actions">
+          <button className="btn ghost" onClick={show.start} title="The whole site in 90 seconds (S)">▶ 90s show <kbd>S</kbd></button>
           <button className="btn ghost" onClick={() => setCinematic(!cinematic)} aria-pressed={cinematic} title="The camera frames each fraud attempt as it plays out">Auto-cam <kbd>{cinematic ? "on" : "off"}</kbd></button>
           <button className="btn ghost" onClick={() => setRoster((v) => !v)} aria-expanded={roster}>Roster <kbd>{roster ? "–" : "+"}</kbd></button>
-          <button className="btn ghost" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Back to tour <kbd>↑</kbd></button>
+          <button className="btn ghost" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Tour <kbd>↑</kbd></button>
         </div>
       </header>
 
@@ -65,10 +88,15 @@ export function Hud({ feed }: { feed: Feed }) {
         <Tile label="Caught" value={`${state.score.attacks_caught}/${state.score.attacks_launched}`} tone="green" />
       </section>
 
+      <ThreatConsole open={threat && !inShow} mode={state.controllerMode} onClose={() => setThreat(false)} onLaunch={feed.launchAttack} />
+
       <section className="hud-controls">
         <button className="btn primary" onClick={() => void feed.run(state.controllerMode === "off" ? "enforce" : state.controllerMode)} disabled={feed.running}>
-          <i className="dot" />{feed.running ? "Episode running" : state.episodeId ? "Run again" : "Run episode"}
+          {feed.running && <i className="dot" />}{feed.running ? "Running" : state.episodeId ? "Run again" : "Run episode"}
         </button>
+        <button className={`btn ${threat ? "armed" : ""}`} onClick={() => setThreat((v) => !v)} aria-expanded={threat}>Launch attack</button>
+        <button className="btn" onClick={() => setPanel(panel === "compare" ? null : "compare")}>Compare</button>
+        <button className="btn" onClick={() => setPanel(panel === "evolve" ? null : "evolve")}>Evolution</button>
         <button className="btn" onClick={() => (arenaFormed ? actions.disperse() : actions.converge())}>
           {arenaFormed ? "Send them back" : "Send agents in"}
         </button>
@@ -94,17 +122,37 @@ function Tile({ label, value, tone }: { label: string; value: string; tone: stri
   );
 }
 
-/** Open escalations are a human decision (README §3): approve or block right from the arena. */
+/** Open escalations are a human decision (README §3): approve or block right from the arena, against the clock. */
 function EscalationBar({ feed }: { feed: Feed }) {
   const open = Object.values(feed.state.escalations).filter((e) => e.status === "open");
-  if (!open.length) return null;
   const e = open[0];
+  const [left, setLeft] = useState(0);
+  useEffect(() => {
+    if (!e) return;
+    const tick = () => setLeft(Math.max(0, Math.ceil((new Date(e.expires_at).getTime() - Date.now()) / 1000)));
+    tick();
+    const t = setInterval(tick, 250);
+    return () => clearInterval(t);
+  }, [e]);
+  if (!e) return null;
+  // the backend's action id and reason are for developers: say what is about to happen, why it stopped, and what each button does
+  const x = explainEscalation(e, feed.state.verdicts.find((v) => v.verdict_id === e.verdict_id));
   return (
     <div className="escalation" role="alert">
-      <span className="escalation-tag">Needs a human</span>
-      <p>{e.action} {e.amount ? money(e.amount) : ""} · {e.reason}</p>
-      <button className="btn" onClick={() => void api.resolve(e.escalation_id, "approve").catch(() => {})}>Approve</button>
-      <button className="btn primary" onClick={() => void api.resolve(e.escalation_id, "block").catch(() => {})}>Block</button>
+      <div className="escalation-head">
+        <span className="escalation-tag">Your decision</span>
+        <span className="escalation-clock" title="If nobody decides before it runs out, the payment is blocked"><b>{left}</b> s left</span>
+      </div>
+      <h3>{x.title}</h3>
+      <p className="escalation-what">{x.what}</p>
+      <div className="escalation-why">
+        <h4>Why the controller stopped it</h4>
+        <ul>{x.why.map((w) => <li key={w}>{w}</li>)}</ul>
+      </div>
+      <div className="escalation-act">
+        <button className="esc-btn approve" onClick={() => void feed.resolveEscalation(e.escalation_id, "approve").catch(() => {})}><b>{x.approve.label}</b><span>{x.approve.result}</span></button>
+        <button className="esc-btn block" onClick={() => void feed.resolveEscalation(e.escalation_id, "block").catch(() => {})}><b>{x.block.label}</b><span>{x.block.result}</span></button>
+      </div>
     </div>
   );
 }
