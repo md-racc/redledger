@@ -258,7 +258,7 @@ class DroidAgent(ABC):
 
     async def dry_run_reflect(self, req: ReflectRequest) -> ReflectResponse:
         """DRY_RUN stand-in for `reflect`: deterministic, no model calls. Default keeps the playbook."""
-        return ReflectResponse(ok=True, rationale="[dry-run] playbook kept")
+        return ReflectResponse(ok=True, rationale="dry run")
 
     async def health(self) -> dict[str, Any]:
         return {"ok": True, "agent": self.name, "model": self.s.droid_model, "droid_ok": self._droid_available(), "dry_run": self.s.dry_run}
@@ -293,12 +293,13 @@ class DroidAgent(ABC):
         """POST /reflect. A failure or timeout keeps the playbook (ok=false), never a 500."""
         hook = self.dry_run_reflect if self.s.dry_run else self.reflect
         try:
-            return await asyncio.wait_for(hook(req), timeout=self.s.turn_timeout_sec - 10)
+            r = await asyncio.wait_for(hook(req), timeout=self.s.turn_timeout_sec - 10)
+            return ReflectResponse.model_validate(r)  # a hook returning a dict or a bad shape is ok=false, not a 500
         except TimeoutError:
-            log.error("reflect_timeout", agent=self.name, lineage_id=req.lineage_id, generation=req.generation)
+            log.error("reflect_timeout", agent=self.name, episode_id=req.episode_id, lineage_id=req.lineage_id, generation=req.generation)
             return ReflectResponse(ok=False, rationale="reflect timed out")
         except Exception as e:
-            log.exception("reflect_failed", agent=self.name, lineage_id=req.lineage_id, generation=req.generation)
+            log.exception("reflect_failed", agent=self.name, episode_id=req.episode_id, lineage_id=req.lineage_id, generation=req.generation)
             return ReflectResponse(ok=False, rationale=f"reflect failed: {e}")
 
     # ---------- droid plumbing ----------

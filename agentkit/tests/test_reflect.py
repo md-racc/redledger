@@ -52,6 +52,11 @@ class _Slow(_Agent):
         return ReflectResponse(ok=True, playbook={"never": True})
 
 
+class _BadShape(_Agent):
+    async def reflect(self, req):
+        return {"ok": True, "playbook": "not-a-dict"}
+
+
 class _Broken(_Agent):
     async def reflect(self, req):
         raise RuntimeError("boom")
@@ -137,3 +142,9 @@ async def test_playbook_client_paths_headers_and_404s():
     async with LedgerClient(settings(), episode_id="ep_1", day=2) as ledger:
         assert await ledger.get_playbook() is None
         assert await ledger.playbook_history() == []
+
+
+async def test_reflect_hook_returning_a_bad_shape_is_ok_false_not_a_500():
+    r = await post(make_agent_app(_BadShape, settings=settings()))
+    assert r.status_code == 200
+    assert r.json()["ok"] is False
