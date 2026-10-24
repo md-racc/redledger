@@ -9,6 +9,10 @@ Every gated green route calls `check()` before mutating. check():
   6. enforce  → allow → Allow; block → raises GateBlockedError (403);
                 escalate → opens escalation, waits for human up to ESCALATION_TIMEOUT_SEC,
                 timeout = block
+
+Escalations close exactly once (compare-and-set on status='open': resolver, timeout or orphan sweep).
+A replay of an escalated key joins that escalation or reuses its decision. The waiter lives in this
+process, so an escalation left open by a restart is an orphan: resolving it is a 409 and times it out.
 """
 
 from __future__ import annotations
@@ -206,56 +210,128 @@ async def _apply(
         return Decision(allowed=True, verdict_id=vid, verdict=verdict, reason=reason, enforced=True)
     if verdict == "block":
         raise GateBlockedError(reason, vid)
-    # escalate
-    decision = await _escalate(vid, c, action, et, eid, amount, reason)
+    # escalate. A replay of an escalated key (a retry, or a parallel call with the same key) gets the
+    # same human decision: it joins the open escalation or reuses the finished one, never a second card.
+    joined = await _join_escalation(vid) if replay else None
+    esc_id, decision = joined if joined is not None else await _escalate(vid, c, action, et, eid, amount, reason)
     if decision == "approve":
         return Decision(allowed=True, verdict_id=vid, verdict="escalate", reason="escalated; human approved", enforced=True)
-    raise GateBlockedError(f"escalated; {decision}", vid)
+    raise GateBlockedError(f"escalated; {decision}", vid, esc_id)
 
 
-async def _escalate(vid: str, c: Caller, action: str, et: str | None, eid: str | None, amount: float | None, reason: str) -> str:
+# escalations.status <-> escalation.resolved decision
+_STATUS = {"approve": "approved", "block": "blocked", "timeout": "timeout"}
+_DECISION = {v: k for k, v in _STATUS.items()}
+
+
+async def _close(esc_id: str, decision: str, by: str) -> bool:
+    """Compare-and-set an open escalation to its final status and emit escalation.resolved. Exactly one
+    caller (a resolver, the timeout, the orphan sweep) can win it; the losers get False."""
+    row = await db.fetchrow(
+        "UPDATE escalations SET status=$2, resolved_by=$3, resolved_at=now() WHERE id=$1 AND status='open' RETURNING episode_id, verdict_id",
+        esc_id,
+        _STATUS[decision],
+        None if decision == "timeout" else by,
+    )
+    if row is None:
+        return False
+    day = await db.fetchval("SELECT day FROM verdicts WHERE id=$1", row["verdict_id"])
+    payload = {"escalation_id": esc_id, "decision": decision, "by": by}
+    if decision == "timeout":
+        await bus.emit(row["episode_id"], day, "escalation.resolved", payload)
+    else:
+        await bus.emit(row["episode_id"], day, "escalation.resolved", payload, agent="human")
+    return True
+
+
+async def _final_decision(esc_id: str) -> str:
+    return _DECISION.get(await db.fetchval("SELECT status FROM escalations WHERE id=$1", esc_id), "timeout")
+
+
+async def _escalate(vid: str, c: Caller, action: str, et: str | None, eid: str | None, amount: float | None, reason: str) -> tuple[str, str]:
     assert c.episode_id is not None and c.day is not None
     esc_id = db.new_id("esc")
     expires = datetime.now(UTC) + timedelta(seconds=settings.escalation_timeout_sec)
-    await db.execute("INSERT INTO escalations (id, episode_id, verdict_id, expires_at) VALUES ($1,$2,$3,$4)", esc_id, c.episode_id, vid, expires)
+    # Registered before the row exists, so an open row with no waiter in this process is always an
+    # orphan (battlefield restarted mid-hold): see resolve_escalation / expire_orphaned_escalations.
     fut: asyncio.Future = asyncio.get_running_loop().create_future()
     _escalation_waiters[esc_id] = fut
-    await bus.emit(
-        c.episode_id,
-        c.day,
-        "escalation.opened",
-        {
-            "escalation_id": esc_id,
-            "verdict_id": vid,
-            "action": action,
-            "entity_type": et,
-            "entity_id": eid,
-            "amount": amount,
-            "reason": reason,
-            "expires_at": expires.isoformat(),
-        },
-    )
     try:
-        decision = await asyncio.wait_for(fut, timeout=settings.escalation_timeout_sec)
-    except TimeoutError:
-        decision = "timeout"
-        await db.execute("UPDATE escalations SET status='timeout', resolved_at=now() WHERE id=$1", esc_id)
-        await bus.emit(c.episode_id, c.day, "escalation.resolved", {"escalation_id": esc_id, "decision": "timeout", "by": "system"})
+        await db.execute("INSERT INTO escalations (id, episode_id, verdict_id, expires_at) VALUES ($1,$2,$3,$4)", esc_id, c.episode_id, vid, expires)
+        await bus.emit(
+            c.episode_id,
+            c.day,
+            "escalation.opened",
+            {
+                "escalation_id": esc_id,
+                "verdict_id": vid,
+                "action": action,
+                "entity_type": et,
+                "entity_id": eid,
+                "amount": amount,
+                "reason": reason,
+                "expires_at": expires.isoformat(),
+            },
+        )
+        try:
+            # shielded: the future outlives our timeout, so a joiner awaiting it is never cancelled
+            decision = await asyncio.wait_for(asyncio.shield(fut), timeout=settings.escalation_timeout_sec)
+        except TimeoutError:
+            # A resolver may have won the row between the deadline and here; then its decision stands.
+            decision = "timeout" if await _close(esc_id, "timeout", "system") else await _final_decision(esc_id)
+            if not fut.done():
+                fut.set_result(decision)
     finally:
         _escalation_waiters.pop(esc_id, None)
-    return decision
+        if not fut.done():
+            fut.cancel()  # we were cancelled ourselves; release any joiner
+    return esc_id, decision
+
+
+async def _join_escalation(vid: str) -> tuple[str, str] | None:
+    """For a replayed escalate verdict: the latest escalation of that verdict and its decision, waiting
+    for it while another request holds it open. None when there is none to join (never opened, or an
+    orphan left open by a restart, which is expired here): the caller opens a fresh one."""
+    esc = await db.fetchrow("SELECT id, status FROM escalations WHERE verdict_id=$1 ORDER BY opened_at DESC, id DESC LIMIT 1", vid)
+    if esc is None:
+        return None
+    if esc["status"] != "open":
+        return esc["id"], _DECISION[esc["status"]]
+    fut = _escalation_waiters.get(esc["id"])
+    if fut is None:
+        await _close(esc["id"], "timeout", "system")
+        return None
+    try:
+        return esc["id"], await asyncio.shield(fut)
+    except asyncio.CancelledError:
+        if not fut.cancelled():
+            raise  # we were cancelled, not the holder
+        return esc["id"], await _final_decision(esc["id"])  # the holder was cancelled: still open = timeout
 
 
 async def resolve_escalation(esc_id: str, decision: str, by: str) -> bool:
-    """Called by the control-plane route. Returns False if already resolved."""
-    row = await db.fetchrow("SELECT * FROM escalations WHERE id=$1", esc_id)
-    if not row or row["status"] != "open":
-        return False
-    status = "approved" if decision == "approve" else "blocked"
-    await db.execute("UPDATE escalations SET status=$2, resolved_by=$3, resolved_at=now() WHERE id=$1", esc_id, status, by)
-    v = await db.fetchrow("SELECT episode_id, day FROM verdicts WHERE id=$1", row["verdict_id"])
-    await bus.emit(v["episode_id"], v["day"], "escalation.resolved", {"escalation_id": esc_id, "decision": decision, "by": by}, agent="human")
+    """Called by the control-plane route. False (-> 409) if the escalation is unknown, already resolved,
+    or has no request waiting on it in this process (an orphan from a restart: expired here as a
+    timeout, since the held request is gone and the decision could never take effect)."""
     fut = _escalation_waiters.get(esc_id)
-    if fut and not fut.done():
+    if fut is None:
+        await _close(esc_id, "timeout", "system")
+        return False
+    if not await _close(esc_id, decision, by):
+        return False
+    if not fut.done():
         fut.set_result(decision)
     return True
+
+
+async def expire_orphaned_escalations() -> int:
+    """Time out every open escalation no request in this process is waiting on (battlefield restarted
+    mid-hold: the held HTTP request died with the old process). Meant for startup; returns the count."""
+    rows = await db.fetch("SELECT id FROM escalations WHERE status='open'")
+    n = 0
+    for r in rows:
+        if r["id"] not in _escalation_waiters and await _close(r["id"], "timeout", "system"):
+            n += 1
+    if n:
+        log.warning("orphaned_escalations_expired", count=n)
+    return n

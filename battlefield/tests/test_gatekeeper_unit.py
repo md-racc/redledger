@@ -95,8 +95,8 @@ async def test_enforce_block_raises() -> None:
 
 @pytest.mark.parametrize(("decision", "allowed"), [("approve", True), ("block", False), ("timeout", False)])
 async def test_enforce_escalate_waits_for_human(monkeypatch: pytest.MonkeyPatch, decision: str, allowed: bool) -> None:
-    async def fake_escalate(*_: Any) -> str:
-        return decision
+    async def fake_escalate(*_: Any) -> tuple[str, str]:
+        return "esc_1", decision
 
     monkeypatch.setattr(gate, "_escalate", fake_escalate)
     if allowed:
@@ -105,7 +105,7 @@ async def test_enforce_escalate_waits_for_human(monkeypatch: pytest.MonkeyPatch,
     else:
         with pytest.raises(gate.GateBlockedError) as ei:
             await _apply("escalate", "enforce")
-        assert decision in ei.value.reason
+        assert decision in ei.value.reason and ei.value.escalation_id == "esc_1"
 
 
 def test_same_action_compares_action_entity_and_amount() -> None:
