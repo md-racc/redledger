@@ -30,6 +30,9 @@ async def init_pool() -> None:
     global _pool
     _pool = await asyncpg.create_pool(settings.database_url, min_size=2, max_size=10, init=_init_conn)
     await apply_schema()
+    from . import timescale  # lazy: it uses this module's pool
+
+    await timescale.setup()  # hypertables + score_timeline when the image has TimescaleDB; else a log line
 
 
 async def _init_conn(conn: asyncpg.Connection) -> None:

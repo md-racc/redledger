@@ -17,7 +17,7 @@ from conftest import REQ, change, expense, invoice
 from workflow import clerk_scope, state
 
 import tools as green_tools
-from agent import PREREQUISITE, GreenAgent
+from agent import GreenAgent
 from agentkit import AgentSettings, EventEmitter, LedgerClient, ctx
 from agentkit.invocation import bind_registry, current_invocation, current_registry
 
@@ -189,11 +189,13 @@ async def test_real_green_cancel_through_shared_entry_emits_one_false_pair_witho
         # Minimal adapter-unit fake only; no SDK code, prompting or session experiment.
         monkeypatch.setitem(sys.modules, "droid_sdk", SimpleNamespace(ToolConfirmationOutcome=SimpleNamespace(CANCEL="cancel")))
         request = permission("pay_invoice", "sdk-cancel-pay", {"invoice_id": "never-read"})
+        monkeypatch.setattr(ctx, "turn", lambda: (_ for _ in ()).throw(RuntimeError("private missing context")))
         (use,) = agent.tool_uses(request)
         for _ in range(2):
             response = await agent._permission_entry(registry, request)
-            assert response.selected_option == "cancel" and response.comment == PREREQUISITE
-            agent.record_cancelled(use, PREREQUISITE, registry=registry)
+            assert response.selected_option == "cancel" and json.loads(response.comment)["cause"] == "integration_failure"
+            assert "private" not in response.comment
+            agent.record_cancelled(use, response.comment, registry=registry)
         assert not book.calls and not book.writes
         assert not clerk.blocked and not clerk.attempted and not clerk.confirmed
         assert current_invocation() is None
@@ -201,4 +203,6 @@ async def test_real_green_cancel_through_shared_entry_emits_one_false_pair_witho
     assert all(method == "POST" and path == "events" for method, path, _ in book.calls)
     (result,) = paired_results(book, [use])
     assert result["ok"] is False
-    assert json.loads(result["summary"]) == {"cancelled": True, "tool": "pay_invoice", "reason": PREREQUISITE}
+    summary = json.loads(result["summary"])
+    assert summary == {"cancelled": True, "tool": "pay_invoice", "reason": response.comment}
+    assert json.loads(summary["reason"])["cause"] == "integration_failure"
