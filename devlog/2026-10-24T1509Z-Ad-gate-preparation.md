@@ -1,0 +1,1 @@
+- 2026-10-24T15:09Z · Ad · contracts: gate preparations (POST/GET /preparations, preparations table, 120 s fixed expiry, consumption 409s, verdicts.cause), green→blue mirror removed, strict SDK ids for live green/blue, 409 no-active-turn contracted; next: PR 2a battlefield preparations; blocked: none

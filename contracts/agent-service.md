@@ -1,13 +1,13 @@
 # Agent service contract
 
 Each of `red`, `green`, `blue` is an HTTP service that battlefield drives. Battlefield is the only
-caller (plus green's `/gate` mirror to blue). All requests carry `Authorization: Bearer $AGENT_TOKEN`.
+caller. All requests carry `Authorization: Bearer $AGENT_TOKEN`.
 
 ## Tokens
 
 | Token | Who holds it | What it authorizes |
 |---|---|---|
-| `AGENT_TOKEN` | battlefield, red, green, blue containers | Every Ledger API request carrying `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes` `/reflect` (agent `/health` is unauthenticated); green → blue `/gate` mirror |
+| `AGENT_TOKEN` | battlefield, red, green, blue containers | Every Ledger API request carrying `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes` `/reflect` (agent `/health` is unauthenticated) |
 | `OPERATOR_TOKEN` | battlefield, frontend **server** (Next route handler), Makefile/curl, the owner | Every Ledger API request without `X-Agent`: control plane (`/episodes*`, `/escalations*`, `/replays*`, `/schemes`, `/health`, `/attacks/all`), `/fe/*` incl. `/fe/query`, `GET /events`, `/inputs`, `POST /ws/ticket`, `/ws?token=` (curl/debug) |
 | WS ticket | browser, ≤60 s lifetime, single use | One `/ws` connection, for one episode (or `*`). Minted by `POST /api/ws/ticket` with `OPERATOR_TOKEN` |
 | none | anyone | `battlefield/extensions/fe_*` routes deliberately marked public |
@@ -69,9 +69,37 @@ Red must `POST /api/attacks` to declare each attack **before** executing it, and
 ## Green
 
 `/turn` options: `{}`. Green works the AP queue: match → approve → pay, resolve vendor changes,
-approve/pay expenses, post GL entries for what it paid. Green's Droid permission handler mirrors
-`POST blue/gate` with the same `idempotency_key` (= `X-Tool-Use-Id`) and returns `CANCEL` when
-the verdict is `block`; the ledger-side gate is still the enforcement point.
+approve/pay expenses (automatic GL posting is deferred until a balanced-journal contract exists).
+Green never calls blue.
+
+Gated actions are **prepared** before they run (`contracts/ledger-api.yaml` `POST /preparations`):
+- Green's permission handler maps the requested tool + args to `{action, entity_id?, args}` and
+  calls `POST /api/preparations` with the call's SDK `tool_use_id` as `X-Tool-Use-Id`. Battlefield
+  validates, assembles context, asks blue, persists the verdict, marks an enforced block, holds an
+  enforced escalation, and answers `200 Preparation` (also for a block).
+- `effective: allow` → `PROCEED_ONCE`. `effective: block` → `CANCEL` with the stored reason.
+- Prepare failures, by the turn's `controller_mode`:
+  - `404`, `409 invalid_state`, `422` (unknown action / invalid body) → `CANCEL` with cause
+    `invalid_state`, in every mode.
+  - `409` idempotency key conflict and `409 no active turn for this agent` → `CANCEL` with cause
+    `integration_failure`, in every mode (the call can never succeed under this key or turn).
+  - `401`/`403`/`5xx`/timeout/network/malformed body → `PROCEED` in `off` and `shadow` (the gated
+    route then gates inline) and `CANCEL` with cause `integration_failure` in `enforce`.
+  - `200 effective: block` → `CANCEL` with cause `control_hold`, or `escalation_timeout` when
+    `decided_by` is `timeout`.
+- Cancel comments and green's `agent.tool_result` summary carry a `cause`: `control_hold`,
+  `escalation_timeout`, `integration_failure` or `invalid_state`, so a fraud hold and an
+  integration failure are never conflated.
+- The tool then calls the gated route with the same `X-Tool-Use-Id`; the route consumes the
+  preparation without a second gate call and stays the enforcement point. No automatic retries:
+  a `409 PreparationRejected` goes back to the model as a tool error; a new tool call gets a new id.
+- Without a preparation (DRY_RUN, mock agents, any caller that skips it) the gated route gates
+  inline exactly as before.
+
+**Identity.** Live Droid writes from green and blue use only SDK-reported tool_use_ids (permission
+request or stream); a tool call the SDK reported no unique id for is not executed (refused, never
+given a generated id). Red stays best-effort until its owner opts in. DRY_RUN and non-Droid calls
+use UUID4.
 
 ## Blue
 
@@ -96,14 +124,15 @@ Rules:
 - `/gate` requests in a lineage episode carry `"playbook_version": <int>` (blue's latest; absent
   otherwise), so blue can cache learned rules by version and refresh them with `GET /api/playbook`
   (reads are allowed outside turns).
-- `/gate` is idempotent on `idempotency_key` for 120 s (same key → same verdict, no re-evaluation).
+- `/gate` is called only by battlefield (at preparation, or inline on an unprepared gated route).
+  It is idempotent on `idempotency_key` for 120 s (same key → same verdict, no re-evaluation).
 - A key is bound to the action it was first judged for: (action, entity_type, entity_id, amount);
   for `gl.post`, the posted fields. Battlefield answers the same key on a *different* action with
   `409 {"error": "idempotency key reused for a different action", "verdict_id": …}`, audited, and
   never replays the earlier verdict. Agents derive keys from the Droid `tool_use_id`: the first
   ledger write of a tool call uses it as-is, the n-th uses `<tool_use_id>:<n>`
-  (`agentkit.LedgerClient` does this). Green's mirror call to blue `/gate` uses the same
-  `tool_use_id` as that call's first ledger write.
+  (`agentkit.LedgerClient` does this). A preparation is keyed by the same `tool_use_id` as that
+  call's first ledger write.
 - `context` is assembled by battlefield so blue does not need to make ledger reads inside the gate;
   blue may still read via `LedgerClient` if it wants more.
 - `/audit` may read anything (including `/api/audit_log`) and may `POST /api/flags`,
