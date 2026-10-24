@@ -10,6 +10,10 @@
 #   deploy/prod.sh escalations [EP]
 #   deploy/prod.sh resolve ESC approve|block
 #   deploy/prod.sh record EP [NAME]          # -> battlefield/fixtures/episodes/<NAME or EP>.jsonl
+#   deploy/prod.sh evolve GENS DAYS MODE SEED REVEAL_DAYS REVEAL_GENERATIONS MAX_CREDITS  # stdout = lineage id
+#   deploy/prod.sh lineage-status|lineage-pause|lineage-resume|lineage-wait LN
+#   deploy/prod.sh lineage-export LN [GEN]   # -> runs/<LN>/{lineage.json,playbooks/,gen-<g>/...} (ground truth)
+#   deploy/prod.sh evolution-report LN       # -> runs/<LN>/report.json + report.md
 #
 # How the token stays on the VM: every API call is made by a fixed Python program (PROGRAM below)
 # run INSIDE the battlefield container (`docker compose exec -T battlefield python3 ...`). It reads
@@ -30,6 +34,8 @@
 #   PROD_HTTP_TIMEOUT (30)  PROD_STEP_TIMEOUT (900: one live day is up to 3 turns + escalations)
 #   PROD_WAIT_TIMEOUT (3600)  PROD_WAIT_INTERVAL (5)  PROD_CONNECT_TIMEOUT (10)  PROD_LOG_TAIL (200)
 #   PROD_RESOLVE_BY (judge)  PROD_RECORD_OVERWRITE=1 — let `record` replace an existing fixture.
+#   PROD_LINEAGE_WAIT_TIMEOUT (7200)  PROD_LINEAGE_WAIT_INTERVAL (30): lineage-wait polls less often (each poll
+#     scores every generation server-side). RUNS_DIR (<repo>/runs) — where lineage-export/evolution-report write.
 set -euo pipefail
 
 PROD_HOST_FILE="${PROD_HOST_FILE:-$HOME/.config/redledger/prod_host}"
@@ -47,15 +53,17 @@ WAIT_INTERVAL="${PROD_WAIT_INTERVAL:-5}"
 CONNECT_TIMEOUT="${PROD_CONNECT_TIMEOUT:-10}"
 LOG_TAIL="${PROD_LOG_TAIL:-200}"
 RESOLVE_BY="${PROD_RESOLVE_BY:-judge}"
+LINEAGE_WAIT_TIMEOUT="${PROD_LINEAGE_WAIT_TIMEOUT:-7200}"
+LINEAGE_WAIT_INTERVAL="${PROD_LINEAGE_WAIT_INTERVAL:-30}"
 
 REPO_ROOT="$(cd "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 FIXTURES_DIR="$REPO_ROOT/battlefield/fixtures/episodes"
 
 die() { printf 'prod: %s\n' "$*" >&2; exit 1; }
-usage() { sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 is_uint() { [[ "$1" =~ ^[0-9]+$ ]]; }
-for _n in HTTP_TIMEOUT STEP_TIMEOUT WAIT_TIMEOUT WAIT_INTERVAL CONNECT_TIMEOUT LOG_TAIL; do
+for _n in HTTP_TIMEOUT STEP_TIMEOUT WAIT_TIMEOUT WAIT_INTERVAL CONNECT_TIMEOUT LOG_TAIL LINEAGE_WAIT_TIMEOUT LINEAGE_WAIT_INTERVAL; do
   is_uint "${!_n}" || die "$_n must be a whole number of seconds/lines"
 done
 command -v timeout >/dev/null 2>&1 || die "needs coreutils 'timeout' (macOS: brew install coreutils, then put gnubin on PATH)"
@@ -165,6 +173,62 @@ def num(v):
     return float(v)
 
 
+def episode_credits(ep):
+    """Summed turn.ended factory_credits of one episode, total and per agent (missing/null = 0)."""
+    total, per = 0.0, {}
+    for e in events(ep):
+        if e.get("type") != "turn.ended":
+            continue
+        p = e.get("payload") or {}
+        c = num(p.get("factory_credits"))
+        if c is None:
+            continue
+        total += c
+        a = p.get("agent") or "?"
+        per[a] = per.get(a, 0.0) + c
+    return total, per
+
+
+SCORE_KEYS = ("dollars_extracted", "dollars_blocked", "false_positive_cost", "attacks_launched", "attacks_caught", "legit_blocked")
+CONFIG_KEYS = ("generations", "days", "controller_mode", "reveal_days", "reveal_generations", "max_credits")
+
+
+def lineage_summary(ln, with_credits=True):
+    l = call("GET", "/lineages/%s" % seg(ln))
+    cfg = l.get("config") or {}
+    gens, total = [], 0.0
+    for g in l.get("generations") or []:
+        ep = call("GET", "/episodes/%s" % seg(g["episode_id"]))
+        row = {
+            "generation": g.get("generation"),
+            "episode_id": g.get("episode_id"),
+            "seed": g.get("seed"),
+            "status": g.get("status"),
+            "day": "%s/%s" % (ep.get("current_day"), ep.get("days")),
+            "score": {k: (g.get("score") or {}).get(k) for k in SCORE_KEYS},
+        }
+        if with_credits:
+            row["turn_credits"], row["turn_credits_by_agent"] = episode_credits(g["episode_id"])
+            total += row["turn_credits"]
+        gens.append(row)
+    s = {
+        "id": l.get("id"),
+        "status": l.get("status"),
+        "current_generation": l.get("current_generation"),
+        "base_seed": l.get("base_seed"),
+        "config": {k: cfg.get(k) for k in CONFIG_KEYS},
+        "playbook_versions": l.get("playbook_versions"),
+        "generations": gens,
+    }
+    if with_credits:
+        mc = num(cfg.get("max_credits")) or 0.0
+        # /reflect usage also counts toward max_credits but is not in turn.ended: this is a lower bound
+        s["turn_credits_total"] = total
+        s["max_credits"] = mc
+        s["remaining_at_most"] = (mc - total) if mc > 0 else None
+    return s
+
+
 if OP == "health":
     show(call("GET", "/health"))
 elif OP == "episode":
@@ -256,6 +320,56 @@ elif OP == "credits":
         "per_day": days,
         "credit_guard_trips": tripped,
     })
+elif OP == "evolve":
+    gens, days, mode, seed, reveal_days, reveal_gens, max_credits = ARGS
+    config = {"generations": int(gens), "days": int(days), "controller_mode": mode, "max_credits": float(max_credits)}
+    if reveal_days.strip():
+        config["reveal_days"] = int(reveal_days)
+    if reveal_gens.strip():
+        config["reveal_generations"] = int(reveal_gens)
+    busy = [x.get("id") for x in call("GET", "/lineages") if x.get("status") == "running"]
+    if busy:  # checked first so a refused start doesn't leave an orphaned `created` lineage behind
+        fail("lineage %s is running; one runs at a time (wait for it, or prod-lineage-pause it)" % ", ".join(busy), 3)
+    ln = call("POST", "/lineages", {"base_seed": int(seed), "config": config})
+    err("created %s: generations=%s days=%s mode=%s base_seed=%s max_credits=%s" % (ln["id"], gens, days, mode, ln.get("base_seed"), max_credits))
+    call("POST", "/lineages/%s/start" % seg(ln["id"]))  # on failure the lineage stays `created`; it can be started later
+    err("started %s" % ln["id"])
+    out(ln["id"])
+elif OP == "lineage_post":  # pause / resume
+    ln, action = ARGS
+    show(call("POST", "/lineages/%s/%s" % (seg(ln), action)))
+elif OP == "lineage_status":
+    (ln,) = ARGS
+    show(lineage_summary(ln))
+elif OP == "lineage_wait":
+    ln, total, interval = ARGS
+    deadline = time.monotonic() + float(total)
+    last = None
+    while True:
+        l = call("GET", "/lineages/%s" % seg(ln))
+        cfg = l.get("config") or {}
+        cur = (l.get("generations") or [{}])[-1]
+        day = call("GET", "/episodes/%s" % seg(cur["episode_id"])).get("current_day") if cur.get("episode_id") else None
+        now = (l.get("status"), l.get("current_generation"), cur.get("episode_id"), day)
+        if now != last:
+            err("%s: %s, generation %s/%s, %s day %s/%s" % (ln, now[0], now[1], cfg.get("generations"), now[2] or "-", day, cfg.get("days")))
+            last = now
+        if now[0] == "finished":
+            show(lineage_summary(ln, with_credits=False))
+            sys.exit(0)
+        if now[0] in ("failed", "paused", "created"):
+            show(lineage_summary(ln, with_credits=False))
+            fail("lineage is %s; nothing will advance it (credit cap? run lineage-status, then lineage-resume)" % now[0], 3)
+        if time.monotonic() >= deadline:
+            fail("timed out after %ss (the lineage keeps running; wait again or check lineage-status)" % total, 124)
+        time.sleep(float(interval))
+elif OP == "lineage_export":
+    ln, gen, timeout = ARGS
+    q = {"generation": int(gen)} if gen.strip() else None
+    out(json.dumps(call("GET", "/lineages/%s/export" % seg(ln), query=q, timeout=float(timeout)), separators=(",", ":"), default=str))
+elif OP == "lineage_report":
+    ln, timeout = ARGS
+    out(json.dumps(call("GET", "/fe/lineages/%s/report" % seg(ln), timeout=float(timeout)), separators=(",", ":"), default=str))
 else:
     fail("unknown op %r" % OP, 2)
 PY
@@ -311,6 +425,8 @@ py() {
 need() { [[ $# -ge 2 && -n "$2" ]] || die "$1 is required (no defaults on prod; see: deploy/prod.sh --help)"; }
 check_id() { [[ "$2" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || die "$1 must match [A-Za-z0-9_-]{1,64}"; }
 check_mode() { [[ "$1" =~ ^(off|shadow|enforce)$ ]] || die "MODE must be off|shadow|enforce"; }
+# check_int NAME VALUE LO HI
+check_int() { { is_uint "$2" && ((${#2} <= 10)) && ((10#$2 >= $3 && 10#$2 <= $4)); } || die "$1 must be an integer $3..$4"; }
 
 # ---------------------------------------------------------------------------------------------
 # record: secret scan. Fixtures get committed and replayed publicly, so a key in one is a leak.
@@ -398,6 +514,33 @@ cmd_record() {
 }
 
 # ---------------------------------------------------------------------------------------------
+# lineage-export / evolution-report: fetch the JSON over the same token-free channel into a temp dir
+# outside the repo (the export holds ground truth), then let battlefield/scripts/evolution_report.py
+# write runs/<LN>/ through its secret scan (a hard hit writes nothing and exits 3).
+# ---------------------------------------------------------------------------------------------
+FETCH_TMP=""
+cmd_lineage_fetch() {
+  local kind="$1" ln="$2" gen="${3:-}"
+  check_id LN "$ln"
+  [[ -z "$gen" ]] || check_int GEN "$gen" 1 100000
+  if [[ "${PROD_DRY:-}" == 1 ]]; then
+    if [[ "$kind" == export ]]; then py 900 lineage_export "$ln" "$gen" 840; else py 600 lineage_report "$ln" 540; fi
+    return
+  fi
+  command -v python3 >/dev/null 2>&1 || die "needs python3 locally to write runs/$ln/"
+  FETCH_TMP="$(quarantine_dir)"  # global: the EXIT trap runs after this function's locals are gone
+  trap 'rm -rf -- "$FETCH_TMP"' EXIT
+  local f="$FETCH_TMP/$kind.json"
+  if [[ "$kind" == export ]]; then
+    py 900 lineage_export "$ln" "$gen" 840 >"$f" || die "fetching the export of $ln failed (nothing written)"
+  else
+    py 600 lineage_report "$ln" 540 >"$f" || die "fetching the report of $ln failed (nothing written)"
+  fi
+  [[ -s "$f" ]] || die "empty $kind for $ln (nothing written)"
+  RUNS_DIR="${RUNS_DIR:-$REPO_ROOT/runs}" python3 "$REPO_ROOT/battlefield/scripts/evolution_report.py" "$kind-file" "$ln" "$f"
+}
+
+# ---------------------------------------------------------------------------------------------
 main() {
   [[ $# -ge 1 ]] || usage
   local sub="$1"; shift
@@ -439,6 +582,22 @@ main() {
     wait)    need EP "${1:-}"; check_id EP "$1"; py "$((WAIT_TIMEOUT + HTTP_TIMEOUT))" wait "$1" "$WAIT_TIMEOUT" "$WAIT_INTERVAL" ;;
     credits) need EP "${1:-}"; check_id EP "$1"; py 600 credits "$1" ;;
     record)  need EP "${1:-}"; cmd_record "$1" "${2:-}" ;;
+    evolve)
+      need GENS "${1:-}"; need DAYS "${2:-}"; need MODE "${3:-}"; need SEED "${4:-}"
+      [[ -n "${7:-}" ]] || die "MAX_CREDITS is required on prod (red is live; every turn and reflection costs Factory credits), e.g. MAX_CREDITS=1000000"
+      check_int GENS "$1" 1 50; check_int DAYS "$2" 1 365; check_mode "$3"; check_int SEED "$4" 0 2147483647
+      [[ -z "${5:-}" ]] || check_int REVEAL_DAYS "$5" 0 365
+      [[ -z "${6:-}" ]] || check_int REVEAL_GENERATIONS "$6" 0 50
+      check_int MAX_CREDITS "$7" 1 9999999999
+      py "$HTTP_TIMEOUT" evolve "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "$7" ;;
+    lineage-status) need LN "${1:-}"; check_id LN "$1"; py 600 lineage_status "$1" ;;
+    lineage-pause)  need LN "${1:-}"; check_id LN "$1"; py "$HTTP_TIMEOUT" lineage_post "$1" pause ;;
+    lineage-resume) need LN "${1:-}"; check_id LN "$1"; py "$HTTP_TIMEOUT" lineage_post "$1" resume ;;
+    lineage-wait)
+      need LN "${1:-}"; check_id LN "$1"
+      py "$((LINEAGE_WAIT_TIMEOUT + 4 * HTTP_TIMEOUT))" lineage_wait "$1" "$LINEAGE_WAIT_TIMEOUT" "$LINEAGE_WAIT_INTERVAL" ;;
+    lineage-export)   need LN "${1:-}"; cmd_lineage_fetch export "$1" "${2:-}" ;;
+    evolution-report) need LN "${1:-}"; cmd_lineage_fetch report "$1" ;;
     -h|--help|help) usage ;;
     *) printf 'prod: unknown subcommand %q\n' "$sub" >&2; usage ;;
   esac

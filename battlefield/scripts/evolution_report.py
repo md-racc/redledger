@@ -4,6 +4,11 @@ docs/EVOLUTION-DESIGN.md §6–§7. Standard library only, so `make` can run it 
 
     python3 battlefield/scripts/evolution_report.py report LN   # runs/<LN>/report.json + report.md
     python3 battlefield/scripts/evolution_report.py export LN   # runs/<LN>/lineage.json + gen-<g>/...
+    python3 battlefield/scripts/evolution_report.py report-file LN FILE   # same, from a saved report JSON
+    python3 battlefield/scripts/evolution_report.py export-file LN FILE   # same, from a saved export JSON
+
+The *-file forms are what `make prod-evolution-report` / `make prod-lineage-export` use: deploy/prod.sh
+fetches the JSON on the VM (the operator token never leaves it) into a temp file outside the repo.
 
 Environment: API (default http://localhost:8000), TOKEN (operator token), RUNS_DIR (default runs).
 `report` writes `/api/fe/lineages/{id}/report` verbatim as report.json and renders report.md from it.
@@ -269,17 +274,25 @@ def bundle_files(doc: dict[str, Any]) -> dict[str, str]:
     return files
 
 
+def _load(path: str) -> Any:
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError) as e:
+        sys.exit(f"cannot read {path}: {e}")
+
+
 def main(argv: list[str]) -> None:
-    if len(argv) != 2 or argv[0] not in ("report", "export") or not ID.match(argv[1]):
+    ok = (len(argv) == 2 and argv[0] in ("report", "export")) or (len(argv) == 3 and argv[0] in ("report-file", "export-file"))
+    if not ok or not ID.match(argv[1]):
         sys.exit(__doc__)
-    cmd, ln = argv
+    cmd, ln = argv[0], argv[1]
     dest = Path(os.environ.get("RUNS_DIR", "runs")) / ln
-    if cmd == "report":
-        rep = get(f"/api/fe/lineages/{ln}/report")
+    if cmd.startswith("report"):
+        rep = get(f"/api/fe/lineages/{ln}/report") if cmd == "report" else _load(argv[2])
         _write_checked(dest, {"report.json": _dump(rep), "report.md": render_md(rep)})
         print(f"{dest}/report.md")
     else:
-        files = bundle_files(get(f"/api/lineages/{ln}/export"))
+        files = bundle_files(get(f"/api/lineages/{ln}/export") if cmd == "export" else _load(argv[2]))
         _write_checked(dest, files)
         print(f"{dest}: {len(files)} files")
 
