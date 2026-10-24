@@ -30,7 +30,7 @@ from the ordered stream of these; it never queries ledger tables.
 | `agent.thinking` | agent | `{text}` — a delta; UI concatenates per `(agent, day)` |
 | `agent.tool_call` | agent | `{tool, args, tool_use_id}` |
 | `agent.tool_result` | agent | `{tool_use_id, ok, summary}` — a green tool the permission handler cancelled has `ok: false` and a summary carrying `cause` (`control_hold`\|`escalation_timeout`\|`integration_failure`\|`invalid_state`) |
-| `ledger.mutation` | battlefield | `{agent, action, entity_type, entity_id, amount?, verdict_id?, preparation_id?}` |
+| `ledger.mutation` | battlefield | `{agent, action, entity_type, entity_id, amount?, verdict_id?, preparation_id?}` `agent` is `operator` for rows created by `POST /episodes/{id}/fixtures` (actions `employees.create` / `expenses.create`) |
 | `gate.verdict` | battlefield | `{verdict_id, agent, action, entity_type?, entity_id?, amount?, verdict, reason, confidence?, rules_fired: string[], enforced, cause?: "control"\|"gate_unavailable", preparation_id?}` — once per idempotency key: at preparation when the action was prepared, else on the gated route. `cause: gate_unavailable` = blue timed out or failed and this is the fallback verdict |
 | `escalation.opened` | battlefield | `{escalation_id, verdict_id, action, entity_type?, entity_id?, amount?, reason, expires_at, cause?, preparation_id?}` |
 | `escalation.resolved` | battlefield | `{escalation_id, decision: "approve"\|"block"\|"timeout", by}` |
