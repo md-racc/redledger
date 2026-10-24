@@ -69,8 +69,8 @@ one `DEVLOG.md` line per PR.
    the prod key exists only in `production`. Keys arrive via the shared vault, not Slack.
 10. **Timeouts everywhere.** Every HTTP call has a timeout. Every Droid `stream()` has `timeout=`.
     A hung agent must fail a turn, not the episode.
-11. **Agents read the books, never the scoreboard or each other.** Battlefield does not yet
-    enforce all of this in code, so it is a rule every agent team and reviewer holds to:
+11. **Agents read the books, never the scoreboard or each other.** Battlefield enforces part of
+    this (below); the rest is a rule every agent team and reviewer holds to:
     - No agent code or Droid tool calls `GET /api/events` or `WS /api/ws`. That stream carries
       `attack.launched`/`attack.outcome`, red-tagged `ledger.mutation`s, and every agent's
       narration and gate reasoning. Agents *emit* events; only the frontend/operator reads them.
@@ -85,8 +85,10 @@ one `DEVLOG.md` line per PR.
     - **Green** reads `/api/flags` (by contract) and nothing of red's or blue's internals.
     - No system prompt mentions `origin`, `attack_id`, scoring, or the other agents' existence
       beyond what the role implies.
-    A reviewer checks every agent's tool list against this invariant. Code-level enforcement
-    (filtering `/events` and `audit_log` for `X-Agent` callers) is a pending contracts change.
+    Enforced in code: `GET /api/events`, `/api/ws`, `/api/fe/*` and every control-plane route
+    reject `AGENT_TOKEN` (invariant 12), so an agent can't reach them at all. Not enforced:
+    blue's `audit_log` filter, red not reading reports/flags; a reviewer checks every agent's
+    tool list for those. Filtering `audit_log` server-side is a candidate contracts change.
 12. **Two tokens, chosen by `X-Agent`.** A request with `X-Agent` presents `AGENT_TOKEN`; a
     request without it presents `OPERATOR_TOKEN`. The wrong one for the role is a 401, so an
     agent cannot make an operator call and the frontend cannot act as an agent. Agents hold only
