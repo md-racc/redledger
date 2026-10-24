@@ -15,9 +15,11 @@ import tools
 from agent import AP_TOOL_IDS, GreenAgent
 
 
-def install_fake(monkeypatch, *, batch=False, echo=True, fault=None):
+def install_fake(monkeypatch, *, batch=False, echo=True, fault=None, isolated=True):
     observations = []
     monkeypatch.setattr(GreenAgent, "_mcp_server", lambda self, registry: (self, registry))
+    # Fake runs cannot create the harness's disposable cwd; simulate the observation only.
+    monkeypatch.setattr(h, "_isolated_cwd", lambda: isolated)
 
     class Event:
         pass
@@ -140,10 +142,16 @@ async def test_unknown_callback_refuses_later_execution_and_cannot_pass(monkeypa
     assert not e["preparations"] and not e["writes"] and not e["mutated"]
 
 
+async def test_isolation_is_observed_not_assumed(monkeypatch):
+    install_fake(monkeypatch, isolated=False)
+    e = await h.run_case("pay_invoice")
+    assert e["isolated"] is False and not e["passed"] and "isolated_unverified" in e["failure_codes"]
+
+
 async def test_parallel_evidence_correlates_by_id_not_arrival_order(monkeypatch):
     install_fake(monkeypatch)
     e = await h.run_case("granularity")
-    for field in ("calls", "results", "preparations"):
+    for field in ("calls", "results", "preparations", "writes"):
         e[field].reverse()
     assert not h.failure_codes(e)
     e["preparations"][0] = e["preparations"][1].copy()
