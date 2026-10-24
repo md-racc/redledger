@@ -2,11 +2,16 @@
 
 Only agent.thinking / agent.tool_call / agent.tool_result are accepted from agents. Emission is
 best-effort and batched; a failed emit never fails a turn.
+
+An EventEmitter belongs to the loop that entered it (agentkit.sync ownership rule): emitting from any
+other thread raises RuntimeError instead of corrupting its queue. Tool workers narrate through
+DroidAgent._offload's buffering proxy, which replays on the owner loop.
 """
 
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 import uuid
 from typing import Any
@@ -44,8 +49,10 @@ class EventEmitter:
         self._flush_budget = settings.http_timeout_sec if flush_budget_sec is None else flush_budget_sec
         # One sender at a time: the pump and an explicit flush() never interleave POSTs or split a batch.
         self._send_lock = asyncio.Lock()
+        self._owner: int | None = None  # thread of the loop that entered us
 
     async def __aenter__(self) -> EventEmitter:
+        self._owner = threading.get_ident()
         self._client = httpx.AsyncClient(
             base_url=f"{self.s.battlefield_url.rstrip('/')}/api",
             timeout=self.s.http_timeout_sec,
@@ -78,12 +85,16 @@ class EventEmitter:
 
     # ---------- public ----------
     def emit(self, type_: str, payload: dict[str, Any]) -> None:
+        if self._owner is not None and threading.get_ident() != self._owner:
+            raise RuntimeError("EventEmitter used off its owner loop's thread; post with loop.call_soon_threadsafe")
         if not agent_may_emit(type_):
             raise ValueError(f"agents may only emit {sorted(AGENT_EMITTABLE)} or x.<area>.<name>, got {type_}")
         self._q.put_nowait(AgentEventCreate(type=type_, payload=payload))
 
     def thinking(self, text: str) -> None:
         """Buffer thinking deltas; flushed as one event when >200 chars or on tool call."""
+        if self._owner is not None and threading.get_ident() != self._owner:
+            raise RuntimeError("EventEmitter used off its owner loop's thread; post with loop.call_soon_threadsafe")
         self._thinking_buf.append(text)
         if sum(len(t) for t in self._thinking_buf) > 200:
             self._flush_thinking()
