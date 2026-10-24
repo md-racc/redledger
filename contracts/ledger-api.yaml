@@ -4,7 +4,23 @@ info:
   version: 0.1.0
   description: |
     The only interface to the books. Agents (red/green/blue) and the frontend call this.
-    All routes except /ws require `Authorization: Bearer $INTERNAL_TOKEN`.
+    Two bearer tokens, chosen by whether the request carries `X-Agent`:
+      - `agentBearer` (`AGENT_TOKEN`): required on every request that carries `X-Agent`.
+        Held by battlefield, red, green, blue.
+      - `operatorBearer` (`OPERATOR_TOKEN`): required on every request without `X-Agent`.
+        Held by battlefield, the frontend *server* (never the browser), Makefile/curl, the owner.
+    Wrong token for the role → 401: `OPERATOR_TOKEN` + `X-Agent` → 401; `AGENT_TOKEN` without
+    `X-Agent` → 401. A correctly authenticated agent calling a route its role may not use → 403
+    (e.g. any agent on `GET /events` or a control-plane route).
+    Transition: when `AGENT_TOKEN` / `OPERATOR_TOKEN` is unset, battlefield falls back to the
+    legacy `INTERNAL_TOKEN` for it, and logs a warning when the two resolved tokens are equal.
+    Per-operation `security` below says which token(s) a route accepts. A route listing both
+    accepts either: an agent with `X-Agent` + `AGENT_TOKEN`, or the operator without `X-Agent`
+    + `OPERATOR_TOKEN`.
+    Not every route is listed here. Every `/fe/*` route (frontend.py reads, `/fe/query`,
+    `/fe/episodes/{id}/state/{agent}`) is operatorBearer. `/x/{area}/...` extension routes set
+    their own auth; `fe_*` extension routes may be deliberately public (no token).
+    `/ws` authenticates by query string (`ticket` or `token`), not by header; see `/ws/ticket`.
     Agent routes additionally require X-Agent, X-Episode, X-Day, and (for writes) X-Tool-Use-Id.
     Battlefield enforces per-agent route permissions (403 on violation) and strips `origin`
     and `attack_id` from every response to an X-Agent caller.
@@ -13,7 +29,14 @@ servers:
 
 components:
   securitySchemes:
-    bearer: { type: http, scheme: bearer }
+    agentBearer:
+      type: http
+      scheme: bearer
+      description: '`AGENT_TOKEN` (falls back to `INTERNAL_TOKEN` when unset). Required on, and only valid on, requests carrying `X-Agent`.'
+    operatorBearer:
+      type: http
+      scheme: bearer
+      description: '`OPERATOR_TOKEN` (falls back to `INTERNAL_TOKEN` when unset). Required on, and only valid on, requests without `X-Agent`. Never shipped to a browser.'
   parameters:
     XAgent:     { name: X-Agent, in: header, required: true, schema: { type: string, enum: [red, green, blue] } }
     XEpisode:   { name: X-Episode, in: header, required: true, schema: { type: string } }
@@ -264,6 +287,16 @@ components:
       properties:
         type: { type: string, enum: [agent.thinking, agent.tool_call, agent.tool_result] }
         payload: { type: object }
+    WsTicketCreate:
+      type: object
+      properties:
+        episode_id: { type: string, description: 'episode the ticket is scoped to; omit for a ticket valid on any episode (scope `*`)' }
+    WsTicket:
+      type: object
+      required: [ticket, expires_at]
+      properties:
+        ticket: { type: string, description: 'opaque to clients; pass verbatim as `/ws?ticket=`' }
+        expires_at: { type: string, format: date-time, description: 'ISO 8601; issue time + 60 s' }
     Escalation:
       type: object
       properties:
@@ -275,84 +308,97 @@ components:
         amount: { $ref: '#/components/schemas/Money' }
         reason: { type: string }
 
-security: [ { bearer: [] } ]
+# Default for any operation that does not override it: operator only. Agent and dual-role
+# routes override explicitly below.
+security: [ { operatorBearer: [] } ]
 
 paths:
   # ---------- reads (all agents + frontend) ----------
+  # Reads accept either token: agent with X-Agent + AGENT_TOKEN, operator without X-Agent + OPERATOR_TOKEN.
   /vendors:
     get:
       summary: List vendors
+      security: [ { agentBearer: [] }, { operatorBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/XAgent' }, { $ref: '#/components/parameters/XEpisode' }, { $ref: '#/components/parameters/XDay' },
                     { name: status, in: query, schema: { type: string } } ]
       responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Vendor' } } } } } }
     post:
       summary: Create vendor (red)
       x-agents: [red]
+      security: [ { agentBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/XAgent' }, { $ref: '#/components/parameters/XEpisode' }, { $ref: '#/components/parameters/XDay' }, { $ref: '#/components/parameters/XToolUseId' } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/VendorCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } } } }
   /vendors/{id}:
-    get: { parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } } } } }
+    get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } } } } }
   /vendors/{id}/freeze:
     post:
       x-agents: [blue]
+      security: [ { agentBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
       responses: { '200': { description: frozen } }
   /vendors/{id}/unfreeze:
-    post: { x-agents: [blue], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: unfrozen } } }
+    post: { x-agents: [blue], security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: unfrozen } } }
 
   /vendor_changes:
     get:
+      security: [ { agentBearer: [] }, { operatorBearer: [] } ]
       parameters: [ { name: status, in: query, schema: { type: string } } ]
       responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/VendorChange' } } } } } }
     post:
       x-agents: [red]
+      security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/VendorChangeCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/VendorChange' } } } } }
   /vendor_changes/{id}/approve:
-    post: { x-agents: [green], x-gated: vendor_changes.approve, parameters: [ { $ref: '#/components/parameters/id' } ],
+    post: { x-agents: [green], x-gated: vendor_changes.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
             responses: { '200': { description: approved }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } } } }
   /vendor_changes/{id}/reject:
-    post: { x-agents: [green], x-gated: vendor_changes.reject, parameters: [ { $ref: '#/components/parameters/id' } ],
+    post: { x-agents: [green], x-gated: vendor_changes.reject, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
             requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }, responses: { '200': { description: rejected } } }
 
   /employees:
-    get: { responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Employee' } } } } } } }
+    get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Employee' } } } } } } }
     post:
       x-agents: [red]
+      security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Employee' } } } } }
 
   /purchase_orders:
     get:
+      security: [ { agentBearer: [] }, { operatorBearer: [] } ]
       parameters: [ { name: status, in: query, schema: { type: string } }, { name: vendor_id, in: query, schema: { type: string } } ]
       responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PurchaseOrder' } } } } } }
 
   /invoices:
     get:
+      security: [ { agentBearer: [] }, { operatorBearer: [] } ]
       parameters: [ { name: status, in: query, schema: { type: string } }, { name: vendor_id, in: query, schema: { type: string } }, { name: day, in: query, schema: { type: integer } } ]
       responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Invoice' } } } } } }
     post:
       x-agents: [red]
+      security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/InvoiceCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Invoice' } } } } }
   /invoices/{id}:
-    get: { parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Invoice' } } } } } }
+    get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Invoice' } } } } } }
   /invoices/{id}/match:
-    post: { x-agents: [green], x-gated: invoices.match, parameters: [ { $ref: '#/components/parameters/id' } ],
+    post: { x-agents: [green], x-gated: invoices.match, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
             requestBody: { content: { application/json: { schema: { type: object, required: [po_id], properties: { po_id: { type: string } } } } } },
             responses: { '200': { description: matched }, '403': { content: { application/json: { schema: { $ref: '#/components/schemas/GateBlocked' } } } } } }
   /invoices/{id}/approve:
-    post: { x-agents: [green], x-gated: invoices.approve, parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: approved }, '403': { description: blocked } } }
+    post: { x-agents: [green], x-gated: invoices.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: approved }, '403': { description: blocked } } }
   /invoices/{id}/reject:
-    post: { x-agents: [green], x-gated: invoices.reject, parameters: [ { $ref: '#/components/parameters/id' } ],
+    post: { x-agents: [green], x-gated: invoices.reject, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
             requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }, responses: { '200': { description: rejected } } }
   /invoices/{id}/pay:
     post:
       summary: The money-moving call.
       x-agents: [green]
       x-gated: invoices.pay
+      security: [ { agentBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
         '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
@@ -360,142 +406,203 @@ paths:
         '409': { description: invoice not in a payable state or vendor frozen }
 
   /payments:
-    get: { parameters: [ { name: day, in: query, schema: { type: integer } } ],
+    get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: day, in: query, schema: { type: integer } } ],
            responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Payment' } } } } } } }
 
   /expenses:
-    get: { parameters: [ { name: status, in: query, schema: { type: string } } ],
+    get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: status, in: query, schema: { type: string } } ],
            responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Expense' } } } } } } }
     post:
       x-agents: [red]
+      security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ExpenseCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Expense' } } } } }
   /expenses/{id}/approve:
-    post: { x-agents: [green], x-gated: expenses.approve, parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: ok }, '403': { description: blocked } } }
+    post: { x-agents: [green], x-gated: expenses.approve, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: ok }, '403': { description: blocked } } }
   /expenses/{id}/pay:
-    post: { x-agents: [green], x-gated: expenses.pay, parameters: [ { $ref: '#/components/parameters/id' } ],
+    post: { x-agents: [green], x-gated: expenses.pay, security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
             responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }, '403': { description: blocked } } }
 
   /bank/transactions:
-    get: { parameters: [ { name: from_day, in: query, schema: { type: integer } }, { name: to_day, in: query, schema: { type: integer } } ],
+    get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: from_day, in: query, schema: { type: integer } }, { name: to_day, in: query, schema: { type: integer } } ],
            responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/BankTransaction' } } } } } } }
 
   /gl/entries:
-    get: { parameters: [ { name: from_day, in: query, schema: { type: integer } }, { name: to_day, in: query, schema: { type: integer } }, { name: account, in: query, schema: { type: string } } ],
+    get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: from_day, in: query, schema: { type: integer } }, { name: to_day, in: query, schema: { type: integer } }, { name: account, in: query, schema: { type: string } } ],
            responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/GlEntry' } } } } } } }
     post:
       x-agents: [green]
       x-gated: gl.post
+      security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/GlEntryCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/GlEntry' } } } } }
 
   /flags:
-    get: { x-agents: [green, blue], responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Flag' } } } } } } }
+    get: { x-agents: [green, blue], security: [ { agentBearer: [] }, { operatorBearer: [] } ], responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Flag' } } } } } } }
     post:
       x-agents: [blue]
+      security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/FlagCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Flag' } } } } }
 
   /reports:
     post:
       x-agents: [blue]
+      security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { type: object, required: [day, markdown], properties: { day: { type: integer }, markdown: { type: string } } } } } }
       responses: { '201': { description: posted } }
   /reports/{id}:
-    get: { parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: report } } }
+    get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: report } } }
 
   /audit_log:
-    get: { x-agents: [blue], parameters: [ { name: agent, in: query, schema: { type: string } }, { name: day, in: query, schema: { type: integer } } ],
+    get: { x-agents: [blue], security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: agent, in: query, schema: { type: string } }, { name: day, in: query, schema: { type: integer } } ],
            responses: { '200': { description: rows } } }
 
   /attacks:
     post:
       summary: Red declares an attack before executing it.
       x-agents: [red]
+      security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/AttackCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Attack' } } } } }
-    get: { x-agents: [red], description: red sees only its own declared attacks; frontend sees all, responses: { '200': { description: list } } }
+    get: { x-agents: [red], security: [ { agentBearer: [] }, { operatorBearer: [] } ], description: red sees only its own declared attacks; frontend sees all, responses: { '200': { description: list } } }
   /attacks/{id}:
-    patch: { x-agents: [red], parameters: [ { $ref: '#/components/parameters/id' } ],
+    patch: { x-agents: [red], security: [ { agentBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ],
              requestBody: { content: { application/json: { schema: { type: object, properties: { notes: { type: string } } } } } }, responses: { '200': { description: ok } } }
+  /attacks/all:
+    get:
+      summary: Every attack in an episode, with ground truth. Operator only.
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { name: episode_id, in: query, required: true, schema: { type: string } } ]
+      responses: { '200': { description: list } }
 
   # ---------- events ----------
   /events:
     get:
+      summary: Event history. Operator only; agents emit events, they never read them (any X-Agent caller → 403).
+      security: [ { operatorBearer: [] } ]
       parameters: [ { name: episode_id, in: query, required: true, schema: { type: string } }, { name: after_id, in: query, schema: { type: integer } }, { name: limit, in: query, schema: { type: integer, default: 500 } } ]
-      responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Event' } } } } } }
+      responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Event' } } } } }, '403': { description: caller is an agent } }
     post:
       summary: Agents push narration.
       x-agents: [red, green, blue]
+      security: [ { agentBearer: [] } ]
       requestBody: { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AgentEventCreate' } } } } }
       responses: { '202': { description: accepted } }
 
-  # ---------- control plane (frontend / operator) ----------
+  # ---------- control plane (frontend server / operator) ----------
+  /health:
+    get: { summary: Battlefield + agent health. Operator only., security: [ { operatorBearer: [] } ], responses: { '200': { description: ok } } }
   /episodes:
     post:
+      security: [ { operatorBearer: [] } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/EpisodeCreate' } } } }
       responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Episode' } } } } }
-    get: { responses: { '200': { description: list } } }
+    get: { security: [ { operatorBearer: [] } ], responses: { '200': { description: list } } }
   /episodes/{id}:
-    get: { parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Episode' } } } } } }
-  /episodes/{id}/start:  { post: { parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '202': { description: running } } } }
-  /episodes/{id}/pause:  { post: { parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: paused } } } }
-  /episodes/{id}/resume: { post: { parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: resumed } } } }
+    get: { security: [ { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Episode' } } } } } }
+  /episodes/{id}/start:  { post: { security: [ { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '202': { description: running } } } }
+  /episodes/{id}/pause:  { post: { security: [ { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: paused } } } }
+  /episodes/{id}/resume:
+    post:
+      summary: Resume a paused episode. The only way out of a credit_guard pause (events.md `error`).
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses: { '200': { description: resumed } }
   /episodes/{id}/step:
-    post: { summary: Run exactly one day (episode must be paused or created), parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: day ran } } }
+    post: { summary: Run exactly one day (episode must be paused or created), security: [ { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: day ran } } }
   /episodes/{id}/score:
-    get: { parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Score' } } } } } }
+    get: { security: [ { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Score' } } } } } }
   /episodes/{id}/controller:
     patch:
       summary: Live toggle of controller mode.
+      security: [ { operatorBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody: { content: { application/json: { schema: { type: object, required: [mode], properties: { mode: { type: string, enum: [off, shadow, enforce] } } } } } }
       responses: { '200': { description: changed } }
   /episodes/{id}/attack:
     post:
       summary: Force red's next turn to run a scheme (judge-selected attack).
+      security: [ { operatorBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody: { content: { application/json: { schema: { type: object, required: [scheme_id], properties: { scheme_id: { type: string }, params: { type: object } } } } } }
       responses: { '202': { description: queued } }
   /schemes:
-    get: { summary: Proxied from red /schemes, responses: { '200': { description: list } } }
+    get: { summary: Proxied from red /schemes, security: [ { operatorBearer: [] } ], responses: { '200': { description: list } } }
   /escalations:
-    get: { parameters: [ { name: episode_id, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string, default: open } } ],
+    get: { security: [ { operatorBearer: [] } ], parameters: [ { name: episode_id, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string, default: open } } ],
            responses: { '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Escalation' } } } } } } }
   /escalations/{id}/resolve:
     post:
+      security: [ { operatorBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody: { content: { application/json: { schema: { type: object, required: [decision], properties: { decision: { type: string, enum: [approve, block] }, by: { type: string } } } } } }
       responses: { '200': { description: resolved }, '409': { description: already resolved } }
   /replays:
-    get: { responses: { '200': { description: list of fixture files } } }
+    get: { security: [ { operatorBearer: [] } ], responses: { '200': { description: list of fixture files } } }
   /replays/{id}/play:
     post:
+      security: [ { operatorBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody: { content: { application/json: { schema: { type: object, properties: { speed: { type: number, default: 1.0 }, episode_id: { type: string, description: 'virtual episode id to stream under' } } } } } }
       responses: { '202': { description: streaming } }
 
   # ---------- extension points (README §16) ----------
   /state/{key}:
-    get: { x-agents: [red, green, blue], parameters: [ { name: key, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: JSON value or {} } } }
-    put: { x-agents: [red, green, blue], parameters: [ { name: key, in: path, required: true, schema: { type: string } } ], requestBody: { content: { application/json: { schema: { type: object } } } }, responses: { '200': { description: ok } } }
+    get: { x-agents: [red, green, blue], security: [ { agentBearer: [] } ], parameters: [ { name: key, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: 'JSON value or {}' } } }
+    put: { x-agents: [red, green, blue], security: [ { agentBearer: [] } ], parameters: [ { name: key, in: path, required: true, schema: { type: string } } ], requestBody: { content: { application/json: { schema: { type: object } } } }, responses: { '200': { description: ok } } }
   /state:
-    get: { x-agents: [red, green, blue], responses: { '200': { description: all keys for this agent } } }
+    get: { x-agents: [red, green, blue], security: [ { agentBearer: [] } ], responses: { '200': { description: all keys for this agent } } }
   /inputs:
     post:
-      summary: Leave a message for an agent's next turn (arrives in options.inputs).
+      summary: Leave a message for an agent's next turn (arrives in options.inputs). Agents (with X-Agent) or the operator (without).
+      security: [ { agentBearer: [] }, { operatorBearer: [] } ]
       requestBody: { content: { application/json: { schema: { type: object, required: [episode_id, target], properties: { episode_id: { type: string }, target: { type: string, enum: [red, green, blue] }, source: { type: string }, payload: { type: object } } } } } }
       responses: { '201': { description: queued } }
-    get: { parameters: [ { name: episode_id, in: query, required: true, schema: { type: string } }, { name: target, in: query, schema: { type: string } }, { name: pending_only, in: query, schema: { type: boolean, default: true } } ], responses: { '200': { description: rows } } }
+    get: { security: [ { operatorBearer: [] } ], parameters: [ { name: episode_id, in: query, required: true, schema: { type: string } }, { name: target, in: query, schema: { type: string } }, { name: pending_only, in: query, schema: { type: boolean, default: true } } ], responses: { '200': { description: rows } } }
   /fe/query:
     post:
-      summary: Read-only SQL for the frontend. Single SELECT/WITH, 5 s timeout, 5000-row cap. Convenience, not a security boundary.
+      summary: Read-only SQL for the frontend. Single SELECT/WITH, 5 s timeout, 5000-row cap. Convenience, not a security boundary. Operator only (as is every /fe/* route).
+      security: [ { operatorBearer: [] } ]
       requestBody: { content: { application/json: { schema: { type: object, required: [sql], properties: { sql: { type: string }, params: { type: array }, limit: { type: integer } } } } } }
       responses: { '200': { description: rows }, '422': { description: rejected statement } }
   /x/{area}/...:
-    get: { summary: Team extension routers from battlefield/extensions/<area>_*.py are mounted here., responses: { '200': { description: extension-defined } } }
+    get:
+      summary: Team extension routers from battlefield/extensions/<area>_*.py are mounted here.
+      description: Auth is extension-defined. Agent-facing routes use agentBearer, operator routes operatorBearer; `fe_*` routes may be deliberately public (no token).
+      security: [ { agentBearer: [] }, { operatorBearer: [] }, {} ]
+      parameters: [ { name: area, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: extension-defined } }
 
+  # ---------- websocket ----------
+  /ws/ticket:
+    post:
+      summary: Mint a short-lived, single-use ticket for one /ws connection. Operator only.
+      description: |
+        The frontend server calls this with OPERATOR_TOKEN and hands the ticket to the browser,
+        so the browser never holds a token. Clients treat `ticket` as opaque.
+        Battlefield-internal format (normative for battlefield only): `<scope>.<exp>.<sig>` where
+        `scope` = `episode_id` from the body, or `*` when omitted; `exp` = unix seconds
+        (issue time + 60); `sig` = lowercase hex HMAC-SHA256(key=OPERATOR_TOKEN, msg=`<scope>|<exp>`).
+        TTL 60 s. Single use: battlefield remembers redeemed tickets until `exp` and rejects reuse.
+      security: [ { operatorBearer: [] } ]
+      requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/WsTicketCreate' } } } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/WsTicket' } } } }
+        '401': { description: 'missing or wrong token, or X-Agent present' }
   /ws:
     get:
-      summary: WebSocket. `?episode_id=&token=`. Server sends Event JSON frames; `after_id` query replays missed events first.
-      responses: { '101': { description: upgrade } }
+      summary: WebSocket. Server sends Event JSON frames; `after_id` replays missed events first.
+      description: |
+        Authenticates by query string, not header. Supply exactly one of:
+          - `ticket` from `POST /ws/ticket`: signature valid, unexpired, not yet used, and scope
+            `*` or equal to `episode_id`.
+          - `token=<OPERATOR_TOKEN>`: curl/debug only; never from a browser.
+        AGENT_TOKEN is never accepted. On any auth failure the server closes with code 4401.
+      security: []
+      parameters:
+        - { name: episode_id, in: query, schema: { type: string } }
+        - { name: after_id, in: query, schema: { type: integer } }
+        - { name: ticket, in: query, schema: { type: string }, description: 'single-use ticket from POST /ws/ticket' }
+        - { name: token, in: query, schema: { type: string }, description: 'OPERATOR_TOKEN; curl/debug only' }
+      responses: { '101': { description: 'upgrade. On auth failure the socket is closed with code 4401 (bad/expired/reused/wrong-episode ticket, or bad token).' } }

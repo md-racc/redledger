@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,10 +12,13 @@ class AgentSettings(BaseSettings):
     agent_name: str = Field(..., alias="AGENT_NAME")  # red | green | blue
     battlefield_url: str = Field("http://battlefield:8000", alias="BATTLEFIELD_URL")
     blue_url: str = Field("http://blue:8003", alias="BLUE_URL")  # only green uses it
-    internal_token: str = Field("change-me", alias="INTERNAL_TOKEN")
+    # Bearer token for agent <-> battlefield calls. AGENT_TOKEN wins; INTERNAL_TOKEN is the legacy
+    # name kept as a fallback so stale .env files and `AgentSettings(INTERNAL_TOKEN=...)` still work.
+    internal_token: str = Field("change-me", validation_alias=AliasChoices("AGENT_TOKEN", "INTERNAL_TOKEN"))
 
     factory_api_key: str | None = Field(None, alias="FACTORY_API_KEY")
     droid_model: str | None = Field(None, alias="DROID_MODEL")
+    droid_reasoning: str | None = Field(None, alias="DROID_REASONING")  # none|off|minimal|low|medium|high|xhigh|max
     dry_run: bool = Field(False, alias="DRY_RUN")
 
     turn_timeout_sec: int = Field(180, alias="TURN_TIMEOUT_SEC")
