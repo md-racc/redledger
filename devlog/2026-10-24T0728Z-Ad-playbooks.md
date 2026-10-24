@@ -1,0 +1,1 @@
+- 2026-10-24T07:28Z · Ad · battlefield: agent playbook routes (GET/PUT /playbook, /playbook/history) per E1: own-only, advisory-locked versions, stale 409, X-Tool-Use-Id retry 200 / reused-key 409, 413, turn guard, playbook.put audit rows hidden from agents, playbook.updated event; next: debriefs + reveal freeze (E2a-2); blocked: none
