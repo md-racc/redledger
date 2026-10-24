@@ -31,8 +31,11 @@ x-agent-env: &agent-env
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    # TimescaleDB (PG16 + extension) by default; plain postgres:16-alpine also works (battlefield then
+    # skips the hypertables and logs timescale_unavailable). Prod pins its own value in deploy/render-env.sh.
+    image: ${POSTGRES_IMAGE:-timescale/timescaledb:latest-pg16}
     environment:
+      TIMESCALEDB_TELEMETRY: "off"
       POSTGRES_USER: redledger
       POSTGRES_PASSWORD: redledger
       POSTGRES_DB: redledger
