@@ -1,0 +1,1 @@
+- 2026-10-24T23:49Z · Ad · battlefield: gate verdicts replay only on the same day and enforcement (else audited 409 stale verdict, incl. prepare) and PUT /state writes an audit row (contract #147); next: design-doc table refresh; blocked: none
