@@ -277,8 +277,13 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- events and audit_log are keyed by (id, ts), not id alone: Timescale (optional image swap,
+-- AGENTS.md §4) partitions hypertables on ts and requires it in every unique index. id stays a
+-- unique-in-practice BIGSERIAL with its own index for `after_id` cursors. Battlefield's startup
+-- turns both into hypertables only when the timescaledb extension is available (guarded: a plain
+-- postgres:16 keeps ordinary tables).
 CREATE TABLE IF NOT EXISTS audit_log (
-  id          BIGSERIAL PRIMARY KEY,
+  id          BIGSERIAL,
   ts          TIMESTAMPTZ NOT NULL DEFAULT now(),
   episode_id  TEXT NOT NULL,
   day         INTEGER NOT NULL,
@@ -288,20 +293,24 @@ CREATE TABLE IF NOT EXISTS audit_log (
   args        JSONB NOT NULL DEFAULT '{}',
   result      JSONB NOT NULL DEFAULT '{}',
   http_status INTEGER NOT NULL,
-  verdict_id  TEXT
+  verdict_id  TEXT,
+  PRIMARY KEY (id, ts)
 );
 CREATE INDEX IF NOT EXISTS audit_ep ON audit_log(episode_id, day);
+CREATE INDEX IF NOT EXISTS audit_id ON audit_log(id);
 
 CREATE TABLE IF NOT EXISTS events (
-  id          BIGSERIAL PRIMARY KEY,
+  id          BIGSERIAL,
   ts          TIMESTAMPTZ NOT NULL DEFAULT now(),
   episode_id  TEXT NOT NULL,
   day         INTEGER NOT NULL,
   type        TEXT NOT NULL,
   agent       TEXT,
-  payload     JSONB NOT NULL DEFAULT '{}'
+  payload     JSONB NOT NULL DEFAULT '{}',
+  PRIMARY KEY (id, ts)
 );
 CREATE INDEX IF NOT EXISTS events_ep ON events(episode_id, id);
+CREATE INDEX IF NOT EXISTS events_id ON events(id);
 
 -- ---------- evolution (lineages; docs/EVOLUTION-DESIGN.md) ----------
 
@@ -390,3 +399,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS episodes_lineage_seed ON episodes(lineage_id, 
 -- 2026-10-24: verdicts.cause (gate preparations). Existing rows stay NULL = unknown; read them as
 -- 'control' unless rules_fired contains 'gate_timeout'.
 ALTER TABLE verdicts ADD COLUMN IF NOT EXISTS cause TEXT CHECK (cause IN ('control','gate_unavailable'));
+
+-- 2026-10-24: events and audit_log primary keys (id) -> (id, ts), for Timescale hypertables (see the
+-- comment above audit_log). Only rewrites a primary key that is exactly (id); a no-op on re-apply and
+-- on databases created by this file. Nothing references either table by foreign key.
+DO $$
+DECLARE t text; c text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['events', 'audit_log'] LOOP
+    SELECT con.conname INTO c
+      FROM pg_constraint con
+     WHERE con.conrelid = t::regclass AND con.contype = 'p'
+       AND (SELECT array_agg(a.attname::text ORDER BY a.attname)
+              FROM unnest(con.conkey) AS k(n)
+              JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.n) = ARRAY['id'];
+    IF c IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', t, c);
+      EXECUTE format('ALTER TABLE %I ADD PRIMARY KEY (id, ts)', t);
+    END IF;
+  END LOOP;
+END $$;
