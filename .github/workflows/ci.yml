@@ -23,7 +23,7 @@ jobs:
         with:
           filters: |
             agentkit: ['agentkit/**']
-            battlefield: ['battlefield/**', 'agentkit/**', 'contracts/**']
+            battlefield: ['battlefield/**', 'agentkit/**', 'contracts/**', '.env.example', 'docker-compose.yml', 'deploy/render-env.sh', '.github/workflows/deploy.yml', '.github/workflows/ci.yml', '.github/scripts/check_contracts.py']
             # extension files are owned by their prefix but run battlefield tests
             red: ['red/**', 'agentkit/**']
             green: ['green/**', 'agentkit/**']
@@ -38,9 +38,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - name: contracts change must come with a CHANGELOG entry
+      - name: core contracts changes require a CHANGELOG entry (team extensions are exempt)
+        shell: bash
+        env:
+          BASE_REF: origin/${{ github.base_ref || 'main' }}
         run: |
-          git diff --name-only origin/${{ github.base_ref || 'main' }}...HEAD | grep -q '^contracts/CHANGELOG.md$' || { echo "::error::contracts/ changed without contracts/CHANGELOG.md entry"; exit 1; }
+          git diff --name-only --no-renames -z "$BASE_REF"...HEAD | python3 .github/scripts/check_contracts.py
 
   python:
     needs: changes
@@ -75,6 +78,9 @@ jobs:
       - name: lint
         if: steps.skip.outputs.run == 'true'
         run: uvx ruff check ${{ matrix.svc }} && uvx ruff format --check ${{ matrix.svc }}
+      - name: lint contracts guard helper
+        if: steps.skip.outputs.run == 'true' && matrix.svc == 'battlefield'
+        run: uvx ruff check .github/scripts/check_contracts.py && uvx ruff format --check .github/scripts/check_contracts.py
       - name: test
         if: steps.skip.outputs.run == 'true'
         working-directory: ${{ matrix.svc }}

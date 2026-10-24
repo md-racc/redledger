@@ -29,6 +29,11 @@ Repo → Settings → Environments → **New environment** `production`:
   - `AGENT_TOKEN`, `OPERATOR_TOKEN`: `openssl rand -hex 32` each, two different values (render-env refuses equal or empty tokens).
   - `FACTORY_API_KEY`: the dedicated prod key. ⚑ It goes here and nowhere else: not in a teammate's `.env`, not in chat. Each dev uses their own key locally.
   - `BLUE_GATE_LLM_API_KEY`, `CRS_API_KEY`, `CARTESIA_API_KEY` (leave unset if unused).
+  - `CRS_USERNAME`, `CRS_PASSWORD`: optional CRS **sandbox** login, entered by a human later.
+    Both are `production` environment secrets, forwarded only at runtime to Blue (never shared
+    agent env, frontend, or image build args). `CRS_API_KEY` remains legacy compatibility
+    plumbing and is unused by the identity client. Leave both login secrets unset when unused;
+    missing credentials and `DRY_RUN=true` yield neutral unknown evidence, never a block.
 - [ ] Environment **variables**:
   - `DROID_MODEL_RED`, `DROID_MODEL_GREEN`, `DROID_MODEL_BLUE`: pinned prod models (never `auto`).
   - `DROID_REASONING_RED`, `DROID_REASONING_GREEN`, `DROID_REASONING_BLUE`: optional reasoning effort, one of `none|off|minimal|low|medium|high|xhigh|max` (leave unset for the model default). A bad value stops that agent at startup.
@@ -40,6 +45,11 @@ Repo → Settings → Environments → **New environment** `production`:
   - `NEXT_PUBLIC_WS_URL`: `wss://api.<domain>` (the default if unset).
 - [ ] Repo → Settings → Secrets and variables → Actions → **Repository variables**: `DEPLOY_ENABLED=true`, but only once the VM in §3 is up. Until then merges to `main` build and push images and skip the SSH roll.
 - [ ] Rotation = change the secret in the environment, then re-run deploy.yml. Rotating `AGENT_TOKEN`/`OPERATOR_TOKEN` restarts every service with the new value; nothing else to touch.
+- [ ] CRS live acceptance: **blocked / not run** until sandbox credentials and runtime tooling
+  are available and checks are authorized. Check only pinned approved fictional personas
+  (`deploy/ENVIRONMENT.md`); never real PII or an EIN lookup. Container smoke and live Factory
+  acceptance are also unavailable here; Blue's live SDK guard stays disabled. Do not mark the
+  integration live-ready based only on credential wiring or unit tests.
 
 ## 3. VM (15 min, can run in parallel with §1)
 
