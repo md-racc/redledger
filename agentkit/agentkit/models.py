@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,19 +18,18 @@ ControllerMode = Literal["off", "shadow", "enforce"]
 VerdictKind = Literal["allow", "block", "escalate"]
 
 # Gated actions blue is asked about. Keep in sync with contracts/agent-service.md.
-GATED_ACTIONS: frozenset[str] = frozenset(
-    {
-        "invoices.match",
-        "invoices.approve",
-        "invoices.reject",
-        "invoices.pay",
-        "vendor_changes.approve",
-        "vendor_changes.reject",
-        "expenses.approve",
-        "expenses.pay",
-        "gl.post",
-    }
-)
+GatedAction = Literal[
+    "invoices.match",
+    "invoices.approve",
+    "invoices.reject",
+    "invoices.pay",
+    "vendor_changes.approve",
+    "vendor_changes.reject",
+    "expenses.approve",
+    "expenses.pay",
+    "gl.post",
+]
+GATED_ACTIONS: frozenset[str] = frozenset(get_args(GatedAction))
 
 
 class EventType(StrEnum):
@@ -189,17 +188,6 @@ class AttackCreate(BaseModel):
 
 # ---------- gate preparations (contracts/ledger-api.yaml POST /preparations) ----------
 
-GatedAction = Literal[
-    "invoices.match",
-    "invoices.approve",
-    "invoices.reject",
-    "invoices.pay",
-    "vendor_changes.approve",
-    "vendor_changes.reject",
-    "expenses.approve",
-    "expenses.pay",
-    "gl.post",
-]  # same set as GATED_ACTIONS
 VerdictCause = Literal["control", "gate_unavailable"]
 # Why green's permission handler cancelled a tool call (in its cancel comment and tool_result summary).
 CancelCause = Literal["control_hold", "escalation_timeout", "integration_failure", "invalid_state"]
@@ -220,7 +208,7 @@ class Preparation(BaseModel):
     action: GatedAction
     entity_type: str | None = None
     entity_id: str | None = None
-    amount: float | None = None
+    amount: float | None = None  # None for gl.post and vendor_changes.*
     effective: Literal["allow", "block", "pending"]  # what execution under this key will do
     enforced: bool = False
     decided_by: Literal["mode", "gate", "human", "timeout"]

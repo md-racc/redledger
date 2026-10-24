@@ -78,9 +78,15 @@ Gated actions are **prepared** before they run (`contracts/ledger-api.yaml` `POS
   validates, assembles context, asks blue, persists the verdict, marks an enforced block, holds an
   enforced escalation, and answers `200 Preparation` (also for a block).
 - `effective: allow` → `PROCEED_ONCE`. `effective: block` → `CANCEL` with the stored reason.
-- Prepare failures, by the turn's `controller_mode`: `404` / `409 invalid_state` / `409` key
-  conflict → `CANCEL` in every mode; `401`/`403`/`5xx`/timeout/network/malformed body → `PROCEED`
-  in `off` and `shadow` (the gated route then gates inline) and `CANCEL` in `enforce`.
+- Prepare failures, by the turn's `controller_mode`:
+  - `404`, `409 invalid_state`, `422` (unknown action / invalid body) → `CANCEL` with cause
+    `invalid_state`, in every mode.
+  - `409` idempotency key conflict and `409 no active turn for this agent` → `CANCEL` with cause
+    `integration_failure`, in every mode (the call can never succeed under this key or turn).
+  - `401`/`403`/`5xx`/timeout/network/malformed body → `PROCEED` in `off` and `shadow` (the gated
+    route then gates inline) and `CANCEL` with cause `integration_failure` in `enforce`.
+  - `200 effective: block` → `CANCEL` with cause `control_hold`, or `escalation_timeout` when
+    `decided_by` is `timeout`.
 - Cancel comments and green's `agent.tool_result` summary carry a `cause`: `control_hold`,
   `escalation_timeout`, `integration_failure` or `invalid_state`, so a fraud hold and an
   integration failure are never conflated.
