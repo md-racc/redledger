@@ -211,6 +211,38 @@ the agentkit default keeps the playbook) and, in lineage episodes, receive `opti
 `options.debrief` (blue: `lineage` / `debrief` on `/audit`). All three must run under
 `DRY_RUN=true` with no model calls.
 
+### Where Droid runs
+
+One Droid `Session` per turn, opened by `agentkit.DroidAgent._droid_turn`
+(`agentkit/agentkit/droid_agent.py`). `/reflect` opens no Session for any agent: red folds the
+review deterministically (`red/evolution.py`), green uses `green/playbook.py`, blue
+`blue/gate/learned.py`. Blue's `/gate` is rules plus an optional direct LLM call
+(`blue/gate/llm.py`, `BLUE_GATE_LLM_PROVIDER` = `gemini | anthropic | openai`), not Droid; it is
+not enabled on prod.
+
+| Service | `DroidAgent` subclass | Autonomy | Permission handler | Restricted tool IDs | Prod |
+|---|---|---|---|---|---|
+| red `/turn` | `RedAgent` (`red/agent.py`) | `high` | base default: `PROCEED_ONCE` | `red-ledger___` + `list_schemes`, `inspect_books`, `run_scheme`, `create_vendor`, `submit_invoice`, `request_vendor_bank_change`, `submit_expense`, `add_employee`. Not hardcoded: built from the `@ledger_tool` names in `red/tools.py`, then confirmed by `session.list_tools()` on the first Session | **live**, `gpt-5.4-mini`, reasoning `low` (repo vars `DROID_MODEL_RED` / `DROID_REASONING_RED`) |
+| green `/turn` | `GreenAgent` (`green/agent.py`) | `off`, strict identity | one call per request: `POST /preparations` keyed by the SDK `tool_use_id` (`green/preparation.py`); `PROCEED_ONCE` on `allow`, else `CANCEL` with a reason; batched requests, unverified ids and handler errors fail closed | hardcoded `AP_TOOL_IDS`: `green-ledger___` + `ap_queue`, `approve_expense`, `approve_invoice`, `approve_vendor_change`, `match_invoice`, `pay_expense`, `pay_invoice`, `reject_invoice`, `reject_vendor_change` (Finding #96) | keyless (`DRY_RUN_GREEN`); `_droid_turn` raises before any Session opens until live acceptance (#78, #102) |
+| blue `/audit` (and `/turn`) | `AuditAgent` (`blue/audit/agent.py`) | `off`, strict identity | `PROCEED_ONCE` | hardcoded `AUDIT_TOOL_IDS`: `blue-ledger___` + `benford_check`, `crs_identity_check`, `day_activity`, `freeze_vendor`, `post_report`, `raise_flag`, `vendor_dedupe` | keyless (`DRY_RUN_BLUE`); `_droid_turn` raises before any stream or write until live acceptance (#78, #102) |
+
+- `system_prompt` is a plain string read from each service's `prompts/` file and passed as
+  `SessionConfig(system_prompt=...)`; `disable_builtin_skills=True` and
+  `restrict_tools=<ids above>` on every Session (`droid_agent.py`).
+- Timeouts: `session.stream(..., timeout=TURN_TIMEOUT_SEC - 10)`, tool calls must finish
+  within `TURN_TIMEOUT_SEC - 20` s (min 5) of turn start, the whole turn runs on its own loop under a
+  `TURN_TIMEOUT_SEC` ceiling;
+  blue's audit budget is `min(170, TURN_TIMEOUT_SEC - 10)` s.
+- The Droid `tool_use_id` is the call's ledger idempotency key: `X-Tool-Use-Id` on its first write,
+  `<id>:<n>` on the n-th (`agentkit/agentkit/ledger_client.py`). Strict agents refuse a write
+  without an SDK-reported id.
+- Per-turn `factory_credits` is logged at INFO (`turn_usage`) and returned in `usage`; battlefield
+  pauses an episode at `MAX_CREDITS_PER_EPISODE` (`battlefield/app/orchestrator/runner.py`, 0 =
+  off) and a lineage at `config.max_credits`; `make prod-evolve` refuses to start without
+  `MAX_CREDITS=`.
+- Per-agent `DRY_RUN_RED/GREEN/BLUE` (`deploy/render-env.sh`, `.github/workflows/deploy.yml`)
+  is how prod runs red live while green and blue stay keyless.
+
 ---
 
 ## 7. Events — `contracts/events.md` is canonical
