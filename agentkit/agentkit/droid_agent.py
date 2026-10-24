@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -44,6 +45,9 @@ from .tools import ToolFn, ctx
 log = structlog.get_logger(__name__)
 
 _TOOL_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="droid-tool")
+# Extra wait on the calling side past the tool's own deadline, so the in-thread cancellation (which
+# closes the tool's HTTP calls cleanly) normally wins and the outer wait only catches a wedged thread.
+_TOOL_GRACE_SEC = 2.0
 
 
 class _ThreadSafeEmitter:
@@ -92,7 +96,7 @@ class DroidAgent(ABC):
         t0 = time.monotonic()
         async with (
             LedgerClient(self.s, episode_id=req.episode_id, day=req.day) as ledger,
-            EventEmitter(self.s, episode_id=req.episode_id, day=req.day) as emitter,
+            EventEmitter(self.s, episode_id=req.episode_id, day=req.day, flush_budget_sec=self._flush_budget_sec()) as emitter,
         ):
             tokens = ctx.bind(ledger, emitter, req)
             try:
@@ -131,26 +135,80 @@ class DroidAgent(ABC):
         wrapped = [tool(n, d, self._offload(fn)) for (n, d, fn) in self.tools()]
         return create_sdk_mcp_server(name=f"{self.name}-ledger", tools=wrapped, version="0.1.0")
 
+    def _flush_budget_sec(self) -> float:
+        """Cap on the end-of-turn event flush. The stream may use up to TURN_TIMEOUT_SEC - 10 and
+        battlefield waits TURN_TIMEOUT_SEC + 5 for the HTTP reply, so the flush gets at most 5 s of the
+        remaining 15 s (session teardown needs the rest)."""
+        return min(self.s.http_timeout_sec, 5.0)
+
+    def _tool_timeout_sec(self) -> float:
+        """Wall-clock cap on one tool call, measured from when the SDK invokes it.
+
+        Must be (a) strictly below the stream timeout (turn_timeout_sec - 10) so the turn's own deadline
+        still fires after a hung tool, and (b) above battlefield's escalation hold, because green's
+        gated calls legitimately block until a human decides or ESCALATION_TIMEOUT_SEC (90 s) expires,
+        and LedgerClient allows that read up to max(http_timeout_sec, 120) s. Cutting such a call
+        short would tell the model "failed" while the payment may still go through. So: the turn
+        budget minus 20 s (160 s at the default 180), never below 5 s."""
+        return max(5.0, self.s.turn_timeout_sec - 20)
+
     def _offload(self, fn: ToolFn) -> Callable[..., str]:
         """droid-sdk 0.5.0 stalls the whole run (RunTimeoutError) if an in-process tool yields to the
         event loop, even for `await asyncio.sleep(0.3)`; only tools that return without awaiting work.
         So each tool call runs to completion on a private loop in a worker thread, with its own
-        LedgerClient for the same turn, and its narration is posted back to the turn's emitter."""
+        LedgerClient for the same turn, and its narration is posted back to the turn's emitter.
+
+        The SDK itself accepts sync or async handlers (droid_sdk.mcp.tool's `invoke` awaits the result
+        only if it is awaitable) and serves them from a uvicorn task on the session's loop, so this sync
+        wrapper freezes that loop while the tool runs. That freeze is bounded by _tool_timeout_sec():
+        the tool is cancelled inside its thread at the deadline and the model gets an error string;
+        nothing is raised through the SDK."""
+
+        name = getattr(fn, "_rl_tool", (getattr(fn, "__name__", "tool"), ""))[0]
+        is_ledger_tool = hasattr(fn, "_rl_tool")
 
         @functools.wraps(fn)
         def sync_tool(*args: Any, **kwargs: Any) -> str:
             turn, emitter = ctx.turn(), ctx.emitter()
             proxy = _ThreadSafeEmitter(emitter, asyncio.get_running_loop()) if emitter else None
+            budget = self._tool_timeout_sec()
+            deadline = time.monotonic() + budget
+            tool_use_id = None
+            if is_ledger_tool:  # pin the narration id so a timeout can still close the tool_call event
+                tool_use_id = kwargs.setdefault("_tool_use_id", LedgerClient.new_tool_use_id())
 
             async def run() -> str:
-                async with LedgerClient(self.s, episode_id=turn.episode_id, day=turn.day) as ledger:
-                    tokens = ctx.bind(ledger, proxy, turn)  # type: ignore[arg-type]
-                    try:
-                        return await fn(*args, **kwargs)
-                    finally:
-                        ctx.unbind(tokens)
+                async with asyncio.timeout(max(0.0, deadline - time.monotonic())):
+                    async with LedgerClient(self.s, episode_id=turn.episode_id, day=turn.day) as ledger:
+                        tokens = ctx.bind(ledger, proxy, turn)  # type: ignore[arg-type]
+                        try:
+                            return await fn(*args, **kwargs)
+                        finally:
+                            ctx.unbind(tokens)
 
-            return _TOOL_POOL.submit(asyncio.run, run()).result(timeout=self.s.turn_timeout_sec)
+            # The coroutine is created in the worker, so a call cancelled while queued leaves no
+            # never-awaited coroutine behind.
+            future = _TOOL_POOL.submit(lambda: asyncio.run(run()))
+            try:
+                return future.result(timeout=max(0.0, deadline - time.monotonic()) + _TOOL_GRACE_SEC)
+            except TimeoutError:  # concurrent.futures.TimeoutError is TimeoutError on 3.11+; the in-thread
+                # asyncio.timeout surfaces here too, re-raised by future.result()
+                started = not future.cancel()  # cancel() only succeeds if it never left the pool queue
+                msg = json.dumps(
+                    {
+                        "error": True,
+                        "timeout": True,
+                        "tool": name,
+                        "detail": (
+                            f"tool timed out after {budget:.0f}s; "
+                            + ("its outcome is unknown, re-read the books before retrying" if started else "it never ran")
+                        ),
+                    }
+                )
+                log.error("tool_timeout", agent=self.name, tool=name, day=turn.day, timeout_sec=budget, started=started)
+                if emitter and tool_use_id:
+                    emitter.tool_result(tool_use_id, False, msg)
+                return msg
 
         return sync_tool
 

@@ -31,6 +31,7 @@ Repo → Settings → Environments → **New environment** `production`:
   - `BLUE_GATE_LLM_API_KEY`, `CRS_API_KEY`, `CARTESIA_API_KEY` (leave unset if unused).
 - [ ] Environment **variables**:
   - `DROID_MODEL_RED`, `DROID_MODEL_GREEN`, `DROID_MODEL_BLUE`: pinned prod models (never `auto`).
+  - `DROID_REASONING_RED`, `DROID_REASONING_GREEN`, `DROID_REASONING_BLUE`: optional reasoning effort, one of `none|off|minimal|low|medium|high|xhigh|max` (leave unset for the model default). A bad value stops that agent at startup.
   - `BLUE_GATE_LLM_PROVIDER`, `BLUE_GATE_LLM_MODEL`.
   - `MAX_CREDITS_PER_EPISODE`: e.g. `40`. Battlefield pauses an episode that reaches it; `0` disables.
   - `DOMAIN`: e.g. `example.com` (Caddy serves `api.` and `app.` under it).
