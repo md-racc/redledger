@@ -131,15 +131,23 @@ leaves the window; `"new": true` on its first appearance). Item shapes, by agent
 |---|---|---|
 | red | `attack` | `attack_id, scheme_id, day_launched, resolved_day, outcome, amount_extracted, detected_day, new, controls: [{kind: "verdict", day, action, verdict, rules_fired, reason} \| {kind: "flag", day, severity, reason} \| {kind: "freeze", day, vendor_id, reason}]` — its own attacks and the controls they ran into |
 | blue | `attack` | `attack_id, scheme_id, display_name, day_launched, resolved_day, outcome, amount_extracted, detected_day, new, entities: [{entity_type, entity_id, amount?}], caught_by: [{kind: "verdict"\|"flag"\|"freeze", id, day, rules_fired?}]` — every resolved red attack; `caught_by: []` = missed |
-| blue | `false_positive` | `entity_type, entity_id, amount?, day, new, by: {kind: "verdict"\|"flag"\|"freeze", id, rules_fired?}` — a legit item in a terminal status that blue blocked, escalated, flagged or froze |
-| green | `fraud` | `entity_type, entity_id, amount, green_action, outcome: "paid"\|"blocked"\|"rejected", day, new` — a red item green acted on |
-| green | `legit_blocked` | `entity_type, entity_id, amount?, action, verdict_id, day, new` — green's action on a legit item that the gate blocked |
+| blue | `false_positive` | **after-action review only, never in a daily debrief** — `entity_type, entity_id, amount?, day, by: {kind: "verdict"\|"flag"\|"freeze", id, rules_fired?}` — a legit item blue blocked, escalated, flagged or froze |
+| green | `fraud` | `entity_type, entity_id, amount, green_action, outcome: "paid"\|"blocked"\|"rejected", day, new` — an item of a resolved red attack on which green actually took a gated action (`green_action` is that action; never inferred) |
+| green | `legit_blocked` | **after-action review only, never in a daily debrief** — `entity_type, entity_id, amount?, action, verdict_id, day` — green's action on a legit item that the gate blocked |
 
 Information policy (amends `AGENTS.md` invariant 4 for lineage episodes only):
-- Only **resolved** attacks are revealed mid-episode (`failed`, or entities and none pending), and
-  legit items only in a terminal status. Pending red items are never revealed before the episode ends.
-- An attack's outcome is **frozen** once revealed (`attacks.revealed_day`): later blocks, flags or
-  freezes on it do not change its outcome or detection.
+- Daily debriefs reveal **only resolved red attacks**, never legit items: a list of legit items an
+  agent blocked or froze would let it infer that the unlisted ones are red from unresolved attacks.
+  Legit items (`false_positive`, `legit_blocked`) appear only in the after-action review.
+- **Resolved** = `failed`, or entities and none pending. An approved red bank-detail change that is
+  still live (no later approved change of that field on the vendor) is pending: a working bank swap
+  is never revealed before the episode ends. Pending red items are never revealed mid-episode.
+- An attack is **frozen** once revealed (`attacks.revealed_day`): its outcome, detection and score
+  contribution (extracted, blocked, frozen vendor) are evaluated as of `revealed_day`, so later blocks,
+  flags or freezes on it change nothing. `controls` / `caught_by` list only actions on or before
+  `revealed_day`.
+- Vendor-change attribution is always computed over all of an episode's attacks; revealing or
+  freezing some attacks never re-attributes another attack's changes.
 - No agent ever sees another agent's playbook. Opponents' strategy is visible only as behaviour.
 - Every disclosure is stored in `debriefs` exactly as delivered (operator-readable).
 - `origin` itself still never appears in any field; disclosures say "attack" / "legit", per item.
@@ -155,9 +163,12 @@ once per agent, sequentially:
 POST /reflect
   { "lineage_id": "ln_…", "generation": 2, "episode_id": "ep_…",
     "review": { "generation": 2, "episode_id": "ep_…", "seed": 44, "score": Score,
-                "items": [ … same kinds as the debrief, every item of the generation,
-                          resolved or not; blue's false_positive items include all
-                          legit items it blocked/escalated/flagged/froze … ],
+                "items": [ … same kinds as the debrief plus the AAR-only kinds, covering every
+                          attack of the generation whether or not it resolved (the episode
+                          has ended, so nothing is still in play; an unresolved attack's
+                          outcome is as scored at the end), green's fraud items for every
+                          red item it acted on, and blue's false_positive / green's
+                          legit_blocked items for every legit item concerned … ],
                 "rules": [ { "rule_id": "…", "fired": 9, "on_red": 6, "on_legit": 3 } ],   # blue only
                 "history": [ { "generation": 1, "seed": 43, "score": Score,
                                "summary": { … per-agent counts by scheme / rule / outcome … } } ] },
