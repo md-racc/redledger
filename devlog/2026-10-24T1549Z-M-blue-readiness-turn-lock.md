@@ -1,0 +1,1 @@
+- 2026-10-24T15:49Z · M · blue: use TurnLock in the offline readiness probe and test worker-loop acquisition with no HTTP or readiness bypass; next: shared/strict adapter integration and authenticated acceptance; blocked: all-real Phase C shadow checkpoint
