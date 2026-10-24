@@ -50,6 +50,18 @@ by `db.apply_schema` after the core. Core extension routes live in `app/api/exte
 (`/state`, `/inputs`, `/fe/query`). The orchestrator drains `inputs` into `options.inputs` per
 turn. Keep these stable: they are what lets the other three work without you.
 
+## Lineages you run (README §15)
+
+- `app/orchestrator/lineage.py` (generation loop, start/pause/resume under one lock + conditional
+  status updates, restart recovery, demo reflection), `app/evolution/{debrief,review,report,export}.py`,
+  playbook routes in `app/api/playbooks.py`.
+- Information policy (AGENTS.md invariant 4): daily debriefs = resolved red attacks only; legit
+  items only in after-action reviews; every disclosure stored in `debriefs`; revealed attacks are
+  scored as of `revealed_day`. Any change here needs a contracts PR and a verifier.
+- Headless generations: escalations auto-block after the lineage's `headless.escalation_timeout_sec`
+  (gatekeeper infers headless from the lineage being running or paused; demos need a finished lineage).
+- Known gaps: `/reflect` credits not persisted across restarts; one shared `AGENT_TOKEN`.
+
 ## Paste this to your coding agent as its first message
 
 ```

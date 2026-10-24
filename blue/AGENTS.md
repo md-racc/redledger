@@ -81,6 +81,17 @@ See README §16. For `blue/` specifically:
 - Your own battlefield routes: `battlefield/extensions/blue_<name>.py` with `router = APIRouter()`, mounted at `/api/x/blue/...`. Read-only on core tables; writes only to `blue_*` tables.
 CI allows exactly those extra paths on a `blue/` branch. Nothing else outside `blue/`.
 
+## Evolution / lineages
+
+In lineage episodes `/audit` gets `lineage` and `debrief` (resolved red attacks with `caught_by`;
+empty = you missed it), and battlefield's `/gate` requests carry `playbook_version`.
+- Learned rules go in your playbook as data, with rule ids `learned:<slug>` so the report credits them.
+- Keep `/gate` read-free in the common case: cache learned rules by `playbook_version` and refresh
+  them during `/audit` (or once per new version). Mock blue in `battlefield/mock_agents/server.py`
+  shows the pattern.
+- Your after-action review adds `false_positive` items and precision/recall per rule id; override
+  `reflect(req)` / `dry_run_reflect(req)` to act on it. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
+
 ## Paste this to your coding agent as its first message
 
 ```

@@ -106,6 +106,18 @@ Crowd page sketch (not built): Next route `/play` → public `POST /api/x/fe/cro
 `POST /api/x/fe/crowd/act` (side, action) → extension writes `fe_crowd_*` rows + an `inputs` row for red or blue +
 `x.fe.crowd` event → red/blue read `options.inputs` and adapt → leaderboard from `fe_crowd_*`. All on your branch.
 
+## Evolution / lineages
+
+Lineages are chains of episodes in which the agents evolve (README §15). For the evolution view:
+- `GET /api/bf/fe/lineages/{id}/timeline`: playbook versions with diffs, generation scores, in order.
+- `GET /api/bf/fe/lineages/{id}/report`: the evolution report (scores per generation, red tactic
+  mix, blue rules incl. `learned:*`, who-beat-whom matrix, playbook diffs).
+- Fixtures for mock mode: `battlefield/fixtures/lineages/sample-{timeline,report}.json`.
+- Events in a lineage episode: `generation.started|ended`, `playbook.updated`, `debrief.delivered`
+  (counts only), `lineage.paused|resumed` (`contracts/events.md`).
+- The demo episode is the lineage's next generation; `generation.started.playbook_versions` tells
+  you how evolved the agents are. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
+
 ## Paste this to your coding agent as its first message
 
 ```

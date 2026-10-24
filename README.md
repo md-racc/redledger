@@ -140,7 +140,7 @@ carry `attack_id`. Both are stripped from agent responses.
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| `episodes` | one run | id, seed, controller_mode, days, status, current_day, attack_plan |
+| `episodes` | one run | id, seed, controller_mode, days, status, current_day, attack_plan, lineage_id?, generation? |
 | `vendors` | counterparties | id, name, ein, bank_account, bank_routing, category, created_day, status(active/frozen), origin |
 | `vendor_changes` | requests to change vendor details (bank swaps) | id, vendor_id, field, old_value, new_value, requested_day, status, origin |
 | `employees` | payroll population | id, name, role, salary, bank_account, start_day, status, hr_record, origin |
@@ -150,13 +150,16 @@ carry `attack_id`. Both are stripped from agent responses.
 | `expenses` | reimbursements | id, employee_id, amount, category, submitted_day, status, origin, attack_id |
 | `bank_transactions` | bank feed | id, day, amount, counterparty, memo, matched_payment_id |
 | `gl_entries` | general ledger | id, day, account, debit, credit, memo, posted_by, ref_type, ref_id |
-| `attacks` | red's declared attempts (ground truth) | id, scheme_id, display_name, story, day_launched, params, target_amount, outcome, amount_extracted, detected_day |
+| `attacks` | red's declared attempts (ground truth) | id, scheme_id, display_name, story, day_launched, params, target_amount, outcome, amount_extracted, detected_day, resolved_day, revealed_day |
 | `verdicts` | every gate decision | id, idempotency_key, day, agent, action, entity_type, entity_id, amount, verdict, reason, confidence, rules_fired, enforced, latency_ms |
 | `escalations` | human-in-the-loop queue | id, verdict_id, status, expires_at, resolved_by |
 | `flags` | blue's suspicions | id, day, entity_type, entity_id, severity, reason, raised_by |
 | `reports` | end-of-day controller reports | id, day, markdown |
 | `audit_log` | every agent call | ts, agent, action, tool_use_id, args, result, http_status, verdict_id |
 | `events` | everything the frontend sees | id, ts, day, type, agent, payload |
+| `lineages` | a chain of generations (§15) | id, name, base_seed, config, status, current_generation |
+| `playbooks` | versioned per-agent memory in a lineage | lineage_id, agent, version, parent_version, generation, episode_id?, day?, source(seed/turn/reflect/operator), content, rationale, tool_use_id |
+| `debriefs` | every disclosure of ground truth to an agent | lineage_id, generation, episode_id, day (NULL = after-action review), agent, payload |
 
 Scoring (`battlefield/app/scoring/score.py`, emitted as `score.updated`):
 
@@ -186,7 +189,9 @@ Agent requests also carry `X-Agent`, `X-Episode`, `X-Day`, and on writes `X-Tool
 | Events (write) | `POST /events` (agents: `agent.*` and `x.*` only) | agents |
 | Events (read) | `GET /events?episode_id=&after_id=`, `POST /ws/ticket {episode_id?}` → `{ticket, expires_at}`, `WS /ws?episode_id=&ticket=&after_id=` (or `&token=<OPERATOR_TOKEN>` for curl) | operator only |
 | Control plane | `POST /episodes`, `GET /episodes[/{id}]`, `/episodes/{id}/start\|pause\|resume\|step`, `GET /episodes/{id}/score`, `PATCH /episodes/{id}/controller`, `POST /episodes/{id}/attack`, `GET /schemes`, `GET /escalations`, `POST /escalations/{id}/resolve`, `GET /replays`, `POST /replays/{id}/play`, `GET /health` | operator / frontend server |
-| Frontend read API | `GET /fe/episodes/{ep}/snapshot \| timeline \| ap_aging \| entities/{type}/{id} \| vendors \| attacks \| attacks/leaderboard \| verdicts \| verdicts/rules \| verdicts/confusion \| agents/activity \| agents/{agent}/thinking \| feed \| search \| reports \| escalations`, `GET /fe/compare?a=&b=` | operator / frontend server (browser via `/api/bf/*`); see `frontend/FRONTEND-API.md` |
+| Playbooks (lineage episodes) | `GET /playbook`, `GET /playbook/history`, `PUT /playbook {content, rationale, base_version}` (own playbook only; active turn only) | red, green, blue |
+| Lineages | `POST /lineages`, `GET /lineages[/{id}]`, `/lineages/{id}/start\|pause\|resume`, `GET /lineages/{id}/export`, `POST /episodes {…, lineage_id}` (demo generation) | operator / frontend server |
+| Frontend read API | `GET /fe/episodes/{ep}/snapshot \| timeline \| ap_aging \| entities/{type}/{id} \| vendors \| attacks \| attacks/leaderboard \| verdicts \| verdicts/rules \| verdicts/confusion \| agents/activity \| agents/{agent}/thinking \| feed \| search \| reports \| escalations`, `GET /fe/compare?a=&b=`, `GET /fe/lineages/{id}/timeline \| report` | operator / frontend server (browser via `/api/bf/*`); see `frontend/FRONTEND-API.md` |
 
 Gated routes return `403 {verdict:"block", reason, verdict_id}` on block, or hold for the
 escalation then return 200 or 403. In `shadow` they succeed and record the verdict anyway.
@@ -199,7 +204,10 @@ Every agent: `GET /health`, `POST /turn {episode_id, day, controller_mode, optio
 `{ok, summary, duration_sec, usage}` within `TURN_TIMEOUT_SEC`. Agents narrate via
 `POST /events` (`agent.thinking`, `agent.tool_call`, `agent.tool_result`). Red adds
 `GET /schemes`. Blue adds `POST /gate` (≤ `GATE_TIMEOUT_SEC`, idempotent on key for 120 s) and
-`POST /audit`. All three must run under `DRY_RUN=true` with no model calls.
+`POST /audit`. All three add `POST /reflect` (lineages: after-action review in, next playbook out;
+the agentkit default keeps the playbook) and, in lineage episodes, receive `options.lineage` and
+`options.debrief` (blue: `lineage` / `debrief` on `/audit`). All three must run under
+`DRY_RUN=true` with no model calls.
 
 ---
 
@@ -208,7 +216,8 @@ Every agent: `GET /health`, `POST /turn {episode_id, day, controller_mode, optio
 Envelope `{id, ts, episode_id, day, type, agent, payload}`. Types: `episode.*`,
 `controller.changed`, `day.*`, `turn.*`, `attack.launched|outcome`, `agent.thinking|tool_call|tool_result`,
 `ledger.mutation`, `gate.verdict`, `escalation.opened|resolved`, `flag.raised`,
-`vendor.frozen|unfrozen`, `report.posted`, `score.updated`, `error`. Frontend renders from
+`vendor.frozen|unfrozen`, `report.posted`, `score.updated`, `error`; lineages add
+`generation.started|ended`, `playbook.updated`, `debrief.delivered` (counts only) and `lineage.paused|resumed`. Frontend renders from
 events plus `/api/fe`; it never reads ledger tables.
 
 ---
@@ -241,8 +250,9 @@ redledger/
 ├── .github/   workflows/ci.yml  CODEOWNERS  pull_request_template.md
 ├── contracts/ schema.sql  ledger-api.yaml  events.md  agent-service.md  CHANGELOG.md
 ├── agentkit/  agentkit/{models,config,ledger_client,events,tools,droid_agent,server}.py  tests/
-├── battlefield/  AGENTS.md  app/{main,config,db,auth}.py  app/api/*  app/gate/*  app/orchestrator/*  app/scoring/*  app/events/*
-│              seed/company.py  mock_agents/server.py  fixtures/episodes/*.jsonl  Dockerfile
+├── battlefield/  AGENTS.md  app/{main,config,db,auth}.py  app/api/*  app/gate/*  app/orchestrator/{runner,lineage,…}.py  app/scoring/*  app/events/*
+│              app/evolution/{debrief,review,report,export}.py  seed/company.py  mock_agents/server.py  scripts/evolution_report.py
+│              fixtures/episodes/*.jsonl  fixtures/lineages/sample-{report,timeline}.json  Dockerfile
 ├── red/       AGENTS.md  agent.py  tools.py  server.py  schemes/{base,ghost_vendor,__init__}.py  prompts/system.md  tests/  Dockerfile
 ├── green/     AGENTS.md  agent.py  tools.py  server.py  prompts/system.md  tests/  Dockerfile
 ├── blue/      AGENTS.md  server.py  gate/{rules,engine,llm,cache}.py  audit/agent.py  prompts/audit.md  tests/  Dockerfile
@@ -383,6 +393,41 @@ controller-off and controller-on episodes recorded. Anything not on screen by th
 Demo choreography, visual identity, and pitch narrative are Dev R's; the backend exposes the
 on/off toggle, judge-selected attacks, escalation approve/block, replay, and compare so any
 of several demo shapes is possible.
+
+---
+
+## 15. Evolution runs (lineages)
+
+Agents evolve across generations. A **lineage** runs one episode per generation (seed
+`base_seed + g`); after each generation every agent gets an after-action review on `POST /reflect`
+and returns its next **playbook** version. During an episode each agent also gets a daily
+**debrief** (resolved red attacks it may see, last `reveal_days` days) and may rewrite its playbook
+inside its turn. Every version, with parent, generation, source and rationale, is the record of how
+the agents developed. What counts as a playbook and how to learn from a debrief is each team's
+code; battlefield stores, discloses and scores. Design: `docs/EVOLUTION-DESIGN.md`; contract:
+`contracts/agent-service.md` (Lineages); information policy: `AGENTS.md` invariant 4.
+
+```
+make mock-agents
+make evolve GENS=3 DAYS=5 [MODE=enforce SEED=42 REVEAL_DAYS=3 REVEAL_GENERATIONS=2]   # prints LN=…
+make lineage-status LN=<id>          # generations, scores, playbook versions
+make lineage-pause LN=<id> / make lineage-resume LN=<id>
+make evolution-report LN=<id>        # runs/<id>/report.md + report.json
+make lineage-export LN=<id>          # runs/<id>/gen-<g>/… log bundle
+```
+
+- Generations run headless: no day pause, escalations auto-block after
+  `config.headless.escalation_timeout_sec` (5 s), one lineage at a time. With the mock agents a
+  5-day generation takes about 1.3 s; the mocks adapt (red climbs an evasion ladder, blue learns
+  `learned:*` rules), so a keyless run already shows a report with real tactic shifts.
+- The **demo** is the next generation, in real time: once the lineage is finished (or failed),
+  `POST /api/episodes {controller_mode, days, lineage_id}` creates it from the evolved playbooks
+  (normal day pause and human escalations), then start it as usual. It is reflected afterwards too.
+- `runs/` holds ground truth (`origin`, attack outcomes): it is git-ignored; never commit it.
+  The report and timeline are also served to the frontend at `/fe/lineages/{id}/report|timeline`
+  (fixtures: `battlefield/fixtures/lineages/`).
+- Live generations need live agents (the live hold must be lifted) and `config.max_credits` set;
+  the lineage pauses when turns + reflections reach it.
 
 ---
 

@@ -1,0 +1,1 @@
+- 2026-10-24T14:19Z · Ad · docs: evolution runs documented (README §15, invariant 4 amended for lineage debriefs, glossary, owner pointers in each AGENTS.md, design doc marked implemented with PR map); next: teammates build real reflect/playbooks (Al red, M blue/green, R lineage view); blocked: live generations wait on the live hold

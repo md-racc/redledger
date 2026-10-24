@@ -78,6 +78,20 @@ See README §16. For `red/` specifically:
 - Your own battlefield routes: `battlefield/extensions/red_<name>.py` with `router = APIRouter()`, mounted at `/api/x/red/...`. Read-only on core tables; writes only to `red_*` tables.
 CI allows exactly those extra paths on a `red/` branch. Nothing else outside `red/`.
 
+## Evolution / lineages
+
+In lineage episodes your `/turn` gets `options.lineage {id, generation, playbook_version}` and
+`options.debrief`: your own **resolved** attacks from the last `reveal_days` days, with the controls
+they ran into (verdict rules and reasons, flags, freezes). That disclosure is deliberate and is the
+one exception to "red doesn't see blue's reasons" below; outside the debrief the rule stands.
+- Read and write your playbook with `ledger.get_playbook()` / `ledger.put_playbook(content, rationale, base_version)`
+  inside your turn (`None` outside lineages: fall back to defaults).
+- Override `reflect(req)` (and `dry_run_reflect`) on your agent: `req.review` is the after-action
+  review of the whole generation, `req.playbook` your current version; return new content or `None`.
+- Composed schemes go in the playbook and are declared as `scheme_id = "evolved:<slug>"`.
+- `battlefield/mock_agents/server.py` (mock red's evasion ladder) is a worked example of using only
+  these inputs. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
+
 ## Paste this to your coding agent as its first message
 
 ```
