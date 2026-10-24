@@ -1,0 +1,1 @@
+- 2026-10-24T05:10Z · Ad · battlefield: ws tickets carry a random nonce (<scope>.<exp>.<nonce>.<sig>, single-use per nonce) so two tickets minted in the same second both work; old 3-part tickets 4401; /ws drops live frames already sent from catch-up history; next: contract text lands with the contracts PR; blocked: none
