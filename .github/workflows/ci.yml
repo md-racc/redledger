@@ -50,6 +50,21 @@ jobs:
         svc: [agentkit, battlefield, red, green, blue]
     if: ${{ always() && needs.changes.result == 'success' }}
     runs-on: ubuntu-latest
+    # DB-tier tests (battlefield) run against this; services skip them when TEST_DATABASE_URL is unset.
+    # A service on a matrix job starts for every entry; that's ~10 s, accepted.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: redledger
+          POSTGRES_PASSWORD: redledger
+          POSTGRES_DB: redledger
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U redledger -d redledger"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - name: skip if unchanged
@@ -63,6 +78,8 @@ jobs:
       - name: test
         if: steps.skip.outputs.run == 'true'
         working-directory: ${{ matrix.svc }}
+        env:
+          TEST_DATABASE_URL: postgresql://redledger:redledger@localhost:5432/redledger
         run: uv sync --extra dev && uv run pytest -q
 
   frontend:
@@ -92,7 +109,7 @@ jobs:
           case "$PREFIX" in
             red|green|blue) ALLOWED="^($PREFIX/|battlefield/extensions/${PREFIX}_[^/]*\.py$|contracts/ext/$PREFIX/|DEVLOG.md$)";;
             frontend) ALLOWED="^(frontend/|battlefield/extensions/fe_[^/]*\.py$|contracts/ext/fe/|DEVLOG.md$)";;
-            battlefield) ALLOWED="^(battlefield/|agentkit/|docker-compose|Makefile|\.env\.example|\.github/|DEVLOG.md$)";;
+            battlefield) ALLOWED="^(battlefield/|agentkit/|deploy/|docker-compose|Makefile|\.env\.example|\.github/|DEVLOG.md$)";;
             contracts) ALLOWED="^(contracts/|agentkit/agentkit/models.py|DEVLOG.md$)";;
             docs|chore|release) exit 0;;
             *) echo "::error::branch must be prefixed red/ green/ blue/ frontend/ battlefield/ contracts/ docs/ chore/"; exit 1;;
