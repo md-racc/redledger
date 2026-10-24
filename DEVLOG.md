@@ -10,3 +10,4 @@ them from here.
 
 - 2026-10-23T00:00Z · Ad · repo scaffolded: contracts, agentkit, battlefield (ledger API, gate, orchestrator, scoring, mock agents), skeletons for red/green/blue/frontend; next: hosting decision + first live episode on mock agents; blocked: none
 - 2026-10-24T01:44Z · Ad · chore: drop root uv workspace pyproject (broke per-service uv sync, so CI python failed everywhere); next: battlefield tests + scoring fixes; blocked: none
+- 2026-10-24T02:17Z · Ad · battlefield: first battlefield tests (unit + DB tier, Postgres in CI), PYTHONPATH for service tests, deploy/ in ownership guard; scoring credits bank_swap (blocked at approve or at pay time), bounds swap windows, no pre-launch detection, FP excludes controller-correct blocks; smoke enforce 4/4 caught $0 extracted; next: env-tokens; blocked: none
