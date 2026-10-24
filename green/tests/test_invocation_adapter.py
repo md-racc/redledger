@@ -180,8 +180,8 @@ async def test_blocked_entity_is_suppressed_across_worker_invocations_in_one_par
     results = paired_results(book, uses)
     assert results[0]["ok"] is False and json.loads(results[0]["summary"]) == outputs[0]
     assert [json.loads(result["summary"]) for result in results[1:]] == outputs[1:]
-    # Baseline gap: normal deferred returns currently produce ok=true, not false.
-    # Do not bless that flag here or change AP behavior in adapter acceptance.
+    # Deferred outcomes and zero follow-on Ledger I/O prove suppression,
+    # independently of the result's tool-execution ok flag.
 
 
 async def test_real_green_cancel_through_shared_entry_emits_one_false_pair_without_ledger_io(book, monkeypatch):
