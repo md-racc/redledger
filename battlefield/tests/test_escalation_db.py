@@ -525,23 +525,31 @@ async def test_fe_escalations_view_describes_a_vendor_change(episode: str, blue_
 # ---------- battlefield restart ----------
 
 
-async def test_startup_recovery_pauses_running_episodes_and_expires_orphans(episode: str) -> None:
+async def test_startup_recovery_pauses_episodes_fails_replays_and_expires_orphans(episode: str) -> None:
     from app import main
 
     esc_id, _, _ = await _orphan(episode)
     await db.execute("UPDATE episodes SET status='running', current_day=2 WHERE id=$1", episode)
     replay = f.uid("replay_x")
-    await db.execute("INSERT INTO episodes (id, seed, controller_mode, status) VALUES ($1, 1, 'off', 'running')", replay)
+    await db.execute("INSERT INTO episodes (id, seed, controller_mode, status, current_day) VALUES ($1, 1, 'off', 'running', 3)", replay)
+    done_replay = f.uid("replay_y")
+    await db.execute("INSERT INTO episodes (id, seed, controller_mode, status) VALUES ($1, 1, 'off', 'finished')", done_replay)
     finished = f.uid("ep")
     await db.execute("INSERT INTO episodes (id, seed, controller_mode, status) VALUES ($1, 1, 'off', 'finished')", finished)
 
     await main.recover_after_restart()
 
     assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", episode) == "paused"  # never auto-resumed
-    assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", replay) == "running"  # replays are not ours to pause
+    replay_row = await db.fetchrow("SELECT status, finished_at FROM episodes WHERE id=$1", replay)
+    assert replay_row["status"] == "failed" and replay_row["finished_at"] is not None  # its streaming task died with the process
     assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", finished) == "finished"
     assert await db.fetchval("SELECT status FROM escalations WHERE id=$1", esc_id) == "timeout"
     rows = await db.fetch("SELECT type, day, payload FROM events WHERE episode_id=$1 AND type IN ('error','episode.paused') ORDER BY id", episode)
     assert [(r["type"], r["day"]) for r in rows] == [("error", 2), ("episode.paused", 2)]
     assert rows[0]["payload"] == {"where": "orchestrator", "message": "battlefield restarted mid-episode; resume to continue"}
-    assert await db.fetchval("SELECT COUNT(*) FROM events WHERE episode_id=ANY($1::text[])", [replay, finished]) == 0
+    replay_events = await db.fetch("SELECT type, day, payload FROM events WHERE episode_id=$1 ORDER BY id", replay)
+    assert [(e["type"], e["day"], e["payload"]) for e in replay_events] == [
+        ("error", 3, {"where": "replay", "message": "battlefield restarted mid-replay"})
+    ]  # no episode.paused: a replay is failed, not paused
+    assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", done_replay) == "finished"
+    assert await db.fetchval("SELECT COUNT(*) FROM events WHERE episode_id=ANY($1::text[])", [finished, done_replay]) == 0

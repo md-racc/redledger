@@ -105,7 +105,8 @@ Goal for this session: <fill in>
 - Escalations (done): close exactly once (resolver, timeout or orphan sweep); a same-key replay
   joins the open escalation or reuses its decision; on startup open escalations are timed out
   (their held request died with the old process) and `running` episodes are paused with an
-  `error {where:"orchestrator"}`, never auto-resumed. Resuming such an episode re-runs its current
+  `error {where:"orchestrator"}`, never auto-resumed; `replay_*` episodes still `running` are marked
+  `failed` with `error {where:"replay"}`. Resuming such an episode re-runs its current
   day, but `run_day` is idempotent per day: if the episode already has that day's `day.started`, it
   skips legit traffic and the event (logs `day_resumed`) and goes on with the turns. Mock blue
   escalates on demand with `MOCK_BLUE_ESCALATE`; drive it with `scripts/escalation_smoke.py`. **Docs PR needed:** README §11
