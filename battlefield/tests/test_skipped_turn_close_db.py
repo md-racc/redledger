@@ -177,3 +177,44 @@ async def test_green_interrupted_on_resume_is_superseded_before_its_rerun(monkey
         ("turn.ended", True, "stub"),
     ]
     assert await _pairs(eid, 1) == {"red": (1, 1), "green": (2, 2), "blue": (1, 1)}
+
+
+async def test_green_crashing_again_during_its_rerun_is_rerun_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """crash → resume → green crashes again mid re-run → resume: green re-runs a third time (a synthetic
+    close never counts as a finished turn) and every start on the day is paired exactly once."""
+    eid = await _running_episode()
+    crashes = {"left": 2}  # green's first run and its first re-run both die
+    green_runs: list[int] = []
+
+    async def turn(agent: str, episode_id: str, day: int, mode: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        if agent == "green" and day == 1:
+            green_runs.append(day)
+            if crashes["left"]:
+                crashes["left"] -= 1
+                raise _Crash
+        return {"ok": True, "summary": "stub", "duration_sec": 0}
+
+    async def audit(*_: Any, **__: Any) -> dict[str, Any]:
+        return {"ok": True, "summary": "stub"}
+
+    monkeypatch.setattr(agents, "turn", turn)
+    monkeypatch.setattr(agents, "audit", audit)
+    with pytest.raises(_Crash):
+        await runner.run_day(eid)
+
+    # first resume: green's orphan is superseded, its re-run dies too (the loop records a failed episode)
+    runner._states.pop(eid, None)
+    await main.recover_after_restart()
+    await runner.resume(eid)
+    task = runner.state(eid).task
+    assert task is not None
+    await task
+    await db.execute("UPDATE episodes SET status='running' WHERE id=$1", eid)  # a real crash leaves it running
+    assert len(green_runs) == 2 and await _pairs(eid, 1) == {"red": (1, 1), "green": (2, 1)}
+
+    # second resume: green is not mistaken for finished; it re-runs and the day ends balanced
+    await _resume(eid)
+    assert len(green_runs) == 3
+    assert await _pairs(eid, 1) == {"red": (1, 1), "green": (3, 3), "blue": (1, 1)}
+    green = [(p["ok"], p["summary"]) for p in await _ended(eid, 1, "green")]
+    assert green == [(False, runner.SUPERSEDED_ON_RESUME), (False, runner.SUPERSEDED_ON_RESUME), (True, "stub")]

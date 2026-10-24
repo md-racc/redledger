@@ -188,24 +188,43 @@ async def _turn_event(episode_id: str, day: int, agent: str, type_: str) -> bool
     )
 
 
+SKIPPED_ON_RESUME = "skipped on resume"
+SUPERSEDED_ON_RESUME = "superseded on resume"
+_SYNTHETIC_CLOSES = [SKIPPED_ON_RESUME, SUPERSEDED_ON_RESUME]  # battlefield's own closes, not a turn that finished
+
+
 async def _turn_ended(episode_id: str, day: int, agent: str) -> bool:
-    """Did this agent's turn already finish on this day (before a restart)?"""
-    return await _turn_event(episode_id, day, agent, "turn.ended")
+    """Did this agent's turn really finish on this day (before a restart)? A synthetic close written by a
+    resume doesn't count: the turn it closes never finished, so a re-run interrupted again must re-run."""
+    return bool(
+        await db.fetchval(
+            "SELECT 1 FROM events WHERE episode_id=$1 AND type='turn.ended' AND day=$2 AND payload->>'agent'=$3 "
+            "AND NOT (payload->>'ok' = 'false' AND payload->>'summary' = ANY($4::text[])) LIMIT 1",
+            episode_id,
+            day,
+            agent,
+            _SYNTHETIC_CLOSES,
+        )
+    )
 
 
 async def _turn_started(episode_id: str, day: int, agent: str) -> bool:
     return await _turn_event(episode_id, day, agent, "turn.started")
 
 
-SKIPPED_ON_RESUME = "skipped on resume"
-SUPERSEDED_ON_RESUME = "superseded on resume"
-
-
 async def _close_skipped_turn(episode_id: str, day: int, agent: str, summary: str = SKIPPED_ON_RESUME) -> None:
     """A turn interrupted by a restart left `turn.started` without `turn.ended`. Close the pair once with
     an `ok: false` turn.ended so viewers and fixtures stay balanced. No credits: the turn's usage was never
-    reported, and charging a guess would trip the credit guard on nothing."""
-    if await _turn_started(episode_id, day, agent) and not await _turn_ended(episode_id, day, agent):
+    reported, and charging a guess would trip the credit guard on nothing. Counts starts against every end
+    (synthetic ones included), so each unmatched start gets exactly one close however often it is resumed."""
+    counts = await db.fetchrow(
+        "SELECT COUNT(*) FILTER (WHERE type='turn.started') AS started, COUNT(*) FILTER (WHERE type='turn.ended') AS ended "
+        "FROM events WHERE episode_id=$1 AND day=$2 AND payload->>'agent'=$3 AND type IN ('turn.started','turn.ended')",
+        episode_id,
+        day,
+        agent,
+    )
+    for _ in range(counts["started"] - counts["ended"]):
         await bus.emit(episode_id, day, "turn.ended", {"agent": agent, "ok": False, "summary": summary, "duration_sec": 0})
 
 
