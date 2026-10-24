@@ -23,6 +23,12 @@ class GreenAgent(DroidAgent):
     autonomy = "off"  # Do not change without an SDK experiment and shared integration.
     system_prompt = (Path(__file__).parent / "prompts" / "system.md").read_text()
 
+    async def health(self) -> dict[str, Any]:
+        if self.s.dry_run:
+            # SDK availability is neither probed nor required by the keyless clerk.
+            return {"ok": True, "agent": self.name, "model": self.s.droid_model, "droid_ok": False, "dry_run": True}
+        return await super().health()
+
     def tools(self) -> list[tuple[str, str, ToolFn]]:
         return collect_tools(green_tools)
 
