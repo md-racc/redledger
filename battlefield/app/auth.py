@@ -80,6 +80,8 @@ def caller(
             raise HTTPException(400, f"unknown X-Agent {x_agent}")
         if x_episode is None or x_day is None:
             raise HTTPException(400, "agents must send X-Episode and X-Day")
+        if x_episode.startswith("replay_"):  # control.REPLAY_PREFIX: replays are event-only, never agent-facing
+            raise HTTPException(403, "agents may not act in replay episodes")
         if request.method in ("POST", "PATCH", "PUT", "DELETE") and not x_tool_use_id:
             raise HTTPException(400, "writes require X-Tool-Use-Id")
     return Caller(agent=x_agent, episode_id=x_episode, day=x_day, tool_use_id=x_tool_use_id)

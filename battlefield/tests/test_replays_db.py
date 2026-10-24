@@ -273,3 +273,98 @@ def test_ws_after_id_0_mid_replay_gets_history_then_live(tmp_path: Path, monkeyp
     assert [_strip(e) for e in ordered] == [_strip(e) for e in evs]
     assert arrival[: len(before)] == [e["id"] for e in before]  # history first, then live frames
     assert max(seen) > max(e["id"] for e in before)
+
+
+@pytest.mark.usefixtures("pg")
+async def test_unreadable_or_escaping_fixtures_create_no_episode(fixtures_dir: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+    outside = tmp_path_factory.mktemp("outside") / "secret.jsonl"
+    _write(outside.parent, "secret", _small_fixture(n_days=1))
+    (fixtures_dir / "escape.jsonl").symlink_to(outside)
+    _write(fixtures_dir, "real", _small_fixture(n_days=1))
+    (fixtures_dir / "inside.jsonl").symlink_to(fixtures_dir / "real.jsonl")
+    (fixtures_dir / "adir.jsonl").mkdir()
+    (fixtures_dir / "binary.jsonl").write_bytes(b'{"type": "x"}\n\xff\xfe\n')
+    (fixtures_dir / "badpayload.jsonl").write_text('{"type": "day.started", "payload": [1]}\n')
+    run = f.uid("x")  # ids unique per run: the test DB is reused across runs
+    async with _client() as c:
+        h = f.auth()
+        codes = {
+            name: (await c.post(f"/api/replays/{name}/play", json={"speed": 0, "episode_id": f"replay_{name}_{run}"}, headers=h)).status_code
+            for name in ("escape", "adir", "binary", "badpayload", "inside")
+        }
+        await _wait_done(c, f"replay_inside_{run}")
+    assert codes == {"escape": 404, "adir": 422, "binary": 422, "badpayload": 422, "inside": 202}
+    made = await db.fetch("SELECT id FROM episodes WHERE id = ANY($1::text[])", [f"replay_{n}_{run}" for n in codes])
+    assert [r["id"] for r in made] == [f"replay_inside_{run}"]
+
+
+@pytest.mark.usefixtures("pg")
+async def test_fe_views_survive_odd_payloads(episode: str) -> None:
+    rep = f.uid("replay_odd")
+    await db.execute("INSERT INTO episodes (id, seed, controller_mode, days, current_day) VALUES ($1, 1, 'shadow', 2, 2)", rep)
+    odd = [
+        ("day.started", {"day": 0, "legit_injected": None}),
+        ("day.started", {"day": 1, "legit_injected": [1, 2]}),
+        ("attack.launched", {"attack_id": {"x": 1}, "target_amount": "lots", "story": None}),
+        ("attack.launched", {"attack_id": "atk_ok", "target_amount": None, "display_name": 5}),
+        ("attack.outcome", {"attack_id": "atk_ok", "amount_extracted": "x", "outcome": "blocked"}),
+        ("gate.verdict", {"verdict": None, "amount": "12", "reason": {"r": 1}}),
+        ("gate.verdict", {"verdict": "block", "amount": "12", "reason": None}),
+        ("escalation.opened", {"amount": "x", "reason": 3}),
+        ("flag.raised", {"reason": ["a"]}),
+        ("vendor.frozen", {"reason": None}),
+        ("turn.ended", {"agent": "red", "factory_credits": "a lot", "duration_sec": "slow"}),
+        ("turn.ended", {"agent": "red", "factory_credits": 1.5, "duration_sec": 2}),
+        ("score.updated", {"dollars_blocked": "x", "dollars_extracted": None}),
+    ]
+    for ep in (episode, rep):
+        for t, p in odd:
+            await db.execute("INSERT INTO events (episode_id, day, type, agent, payload) VALUES ($1, 0, $2, 'battlefield', $3)", ep, t, p)
+        for raw in ("[1, 2]", '"str"', "null", "3"):  # non-object payloads stored by some other path
+            await db.execute(
+                "INSERT INTO events (episode_id, day, type, agent, payload) VALUES ($1, 0, 'score.updated', 'battlefield', $2::text::jsonb)", ep, raw
+            )
+    async with _client() as c:
+        h = f.auth()
+        for ep in (episode, rep):
+            for path in ("snapshot", "timeline", "attacks", "agents/activity", "feed?include_verdict_allows=true", "agents/red/thinking"):
+                r = await c.get(f"/api/fe/episodes/{ep}/{path}", headers=h)
+                assert r.status_code == 200, (ep, path, r.text[:200])
+            assert (await c.get(f"/api/episodes/{ep}/score", headers=h)).status_code == 200
+        cmp = await c.get("/api/fe/compare", params={"a": episode, "b": rep}, headers=h)
+        attacks = (await c.get(f"/api/fe/episodes/{rep}/attacks", headers=h)).json()
+        turns = (await c.get(f"/api/fe/episodes/{rep}/agents/activity", headers=h)).json()["turns"]
+    assert cmp.status_code == 200
+    assert [(a["id"], a["outcome"], a["amount_extracted"]) for a in attacks] == [("atk_ok", "blocked", 0.0)]
+    assert turns == [{"agent": "red", "day": 0, "credits": 1.5, "seconds": 2.0}]
+
+
+def test_lifespan_shutdown_marks_running_replay_failed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL not set")
+    monkeypatch.setattr(settings, "database_url", url)
+    monkeypatch.setattr(settings, "schema_path", "/nonexistent/schema.sql")
+    monkeypatch.setattr(settings, "fixtures_dir", str(tmp_path))
+    _write(tmp_path, "slow", _small_fixture(n_days=2, gap_sec=10.0))  # 3 s (capped) per event at speed 1
+    with TestClient(app) as c:
+        ep = c.post("/api/replays/slow/play", json={"speed": 1}, headers=f.auth()).json()["episode_id"]
+        deadline = time.monotonic() + 5
+        while not c.get("/api/events", params={"episode_id": ep}, headers=f.auth()).json() and time.monotonic() < deadline:
+            time.sleep(0.02)
+    # lifespan exit cancelled the replay before closing the pool; read the result with a fresh pool
+
+    async def check() -> tuple[str, list[tuple[str, dict]]]:
+        await db.init_pool()
+        try:
+            status = await db.fetchval("SELECT status FROM episodes WHERE id=$1", ep)
+            evs = await db.fetch("SELECT type, payload FROM events WHERE episode_id=$1 ORDER BY id", ep)
+            return status, [(r["type"], r["payload"]) for r in evs]
+        finally:
+            await db.close_pool()
+            monkeypatch.setattr(db, "_pool", None)
+
+    status, evs = asyncio.run(check())
+    assert status == "failed"
+    assert evs[0][0] == "episode.started" and evs[-1][0] == "error" and "cancelled" in evs[-1][1]["message"]
+    assert len(evs) < 10

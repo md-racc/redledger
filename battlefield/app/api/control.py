@@ -195,6 +195,7 @@ _ZERO_SCORE: dict[str, Any] = {
     "legit_blocked": 0,
     "legit_processed": 0,
 }
+_PG_INT_MIN, _PG_INT_MAX = -(2**31), 2**31 - 1
 _replay_tasks: set[asyncio.Task] = set()
 
 
@@ -214,9 +215,12 @@ async def replay_score(episode_id: str) -> dict[str, Any]:
     )
     if not row:
         return dict(_ZERO_SCORE)
-    p = row["payload"] or {}
+    p = row["payload"] if isinstance(row["payload"], dict) else {}
     sc = p.get("final_score") if row["type"] == "episode.ended" else p
-    return {**_ZERO_SCORE, **sc} if isinstance(sc, dict) else dict(_ZERO_SCORE)
+    out = dict(_ZERO_SCORE)
+    if isinstance(sc, dict):  # only well-typed Score fields; anything else keeps its zero
+        out.update({k: sc[k] for k in _ZERO_SCORE if isinstance(sc.get(k), int | float) and not isinstance(sc.get(k), bool)})
+    return out
 
 
 @router.get("/replays")
@@ -229,7 +233,11 @@ async def list_replays():
 async def play_replay(replay_id: str, body: ReplayPlay):
     if replay_id not in await list_replays():
         raise HTTPException(404)
-    events = _load_fixture(Path(settings.fixtures_dir) / f"{replay_id}.jsonl")
+    root = Path(settings.fixtures_dir).resolve()
+    path = (root / f"{replay_id}.jsonl").resolve()  # follows symlinks; the real file must stay inside the dir
+    if not path.is_relative_to(root):
+        raise HTTPException(404)
+    events = _load_fixture(path)
     if body.episode_id is not None:
         if not _REPLAY_ID_RE.fullmatch(body.episode_id):
             raise HTTPException(422, f"episode_id must match {_REPLAY_ID_RE.pattern}")
@@ -256,24 +264,49 @@ async def play_replay(replay_id: str, body: ReplayPlay):
 
 
 def _load_fixture(p: Path) -> list[dict[str, Any]]:
+    """Parse and validate a fixture up front (422 naming the line), so a bad file creates no episode."""
+    try:
+        text = p.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:  # IsADirectoryError is an OSError
+        raise HTTPException(422, f"fixture is not readable UTF-8 text ({type(e).__name__})") from None
     out: list[dict[str, Any]] = []
-    for n, line in enumerate(p.read_text().splitlines(), 1):
+    for n, line in enumerate(text.splitlines(), 1):
         if not line.strip():
             continue
         try:
             ev = json.loads(line)
         except json.JSONDecodeError:
             raise HTTPException(422, f"fixture line {n} is not JSON") from None
-        if not isinstance(ev, dict) or not isinstance(ev.get("type"), str):
-            raise HTTPException(422, f"fixture line {n} is not an event")
+        if not isinstance(ev, dict) or not isinstance(ev.get("type"), str) or not ev["type"]:
+            raise HTTPException(422, f"fixture line {n} is not an event (needs a non-empty string type)")
         if ev["type"] == "ping":
             continue
-        try:
-            ev["day"] = int(ev.get("day") or 0)
-        except (TypeError, ValueError):
-            raise HTTPException(422, f"fixture line {n} has a bad day") from None
-        out.append(ev)
+        day = ev.get("day")
+        day = 0 if day is None else day
+        # day+1 is written on day.ended, so the top of the INT range is excluded
+        if not isinstance(day, int) or isinstance(day, bool) or not (_PG_INT_MIN <= day < _PG_INT_MAX):
+            raise HTTPException(422, f"fixture line {n} has a bad day (integer within Postgres INTEGER range)")
+        payload = ev.get("payload")
+        payload = {} if payload is None else payload
+        if not isinstance(payload, dict):
+            raise HTTPException(422, f"fixture line {n} has a non-object payload")
+        agent = ev.get("agent", "battlefield")
+        if agent is not None and not isinstance(agent, str):
+            raise HTTPException(422, f"fixture line {n} has a non-string agent")
+        if _has_nul(payload) or "\x00" in ev["type"] or (agent and "\x00" in agent):
+            raise HTTPException(422, f"fixture line {n} contains a NUL character (Postgres text/jsonb reject it)")
+        out.append({**ev, "day": day, "payload": payload, "agent": agent})
     return out
+
+
+def _has_nul(x: Any) -> bool:
+    if isinstance(x, str):
+        return "\x00" in x
+    if isinstance(x, dict):
+        return any(_has_nul(k) or _has_nul(v) for k, v in x.items())
+    if isinstance(x, list):
+        return any(_has_nul(v) for v in x)
+    return False
 
 
 def _ts(ev: dict[str, Any]) -> datetime | None:
@@ -293,8 +326,8 @@ async def _stream_fixture(events: list[dict[str, Any]], episode_id: str, speed: 
             if prev and ts and speed > 0:
                 await asyncio.sleep(min(max((ts - prev).total_seconds() / speed, 0.0), REPLAY_MAX_GAP_SEC))
             prev = ts or prev
-            day, type_, payload = ev["day"], ev["type"], ev.get("payload") or {}
-            await bus.emit(episode_id, day, type_, payload, agent=ev.get("agent", "battlefield"))
+            day, type_, payload = ev["day"], ev["type"], ev["payload"]
+            await bus.emit(episode_id, day, type_, payload, agent=ev["agent"])
             # mirror the runner's episode bookkeeping so snapshot/timeline see the right day and mode
             if type_ == "day.started":
                 await db.execute("UPDATE episodes SET current_day=$2 WHERE id=$1", episode_id, day)
@@ -303,13 +336,36 @@ async def _stream_fixture(events: list[dict[str, Any]], episode_id: str, speed: 
             elif type_ == "controller.changed" and payload.get("to") in ("off", "shadow", "enforce"):
                 await db.execute("UPDATE episodes SET controller_mode=$2 WHERE id=$1", episode_id, payload["to"])
         await db.execute("UPDATE episodes SET status='finished', finished_at=now() WHERE id=$1", episode_id)
+    except asyncio.CancelledError:
+        log.warning("replay_cancelled", episode_id=episode_id)
+        await _record_failure(episode_id, day, "replay cancelled (battlefield shutting down)")
+        raise
     except Exception as e:
         log.exception("replay_failed", episode_id=episode_id)
+        await _record_failure(episode_id, day, str(e))
+
+
+async def _record_failure(episode_id: str, day: int, message: str) -> None:
+    """Best effort: mark the replay failed and leave an `error` event (at `day`, else day 0)."""
+    try:
+        await db.execute("UPDATE episodes SET status='failed', finished_at=now() WHERE id=$1", episode_id)
+    except Exception:
+        log.exception("replay_fail_status_failed", episode_id=episode_id)
+    for d in dict.fromkeys((day, 0)):
         try:
-            await db.execute("UPDATE episodes SET status='failed', finished_at=now() WHERE id=$1", episode_id)
-            await bus.emit(episode_id, day, "error", {"where": "replay", "message": str(e)})
+            await bus.emit(episode_id, d, "error", {"where": "replay", "message": message})
+            return
         except Exception:
-            log.exception("replay_fail_record_failed", episode_id=episode_id)
+            log.exception("replay_fail_event_failed", episode_id=episode_id, day=d)
+
+
+async def shutdown_replays(timeout: float = 5.0) -> None:
+    """Lifespan shutdown: cancel running replays and let them record `failed` before the pool closes."""
+    tasks = list(_replay_tasks)
+    for t in tasks:
+        t.cancel()
+    if tasks:
+        await asyncio.wait(tasks, timeout=timeout)
 
 
 async def _must_exist(episode_id: str, *, live: bool = False) -> None:

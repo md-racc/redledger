@@ -36,6 +36,20 @@ from .control import is_replay, replay_score
 router = APIRouter(prefix="/fe", dependencies=[Depends(bearer)])
 
 
+# Event payloads are rendered defensively: a fixture or a buggy emitter can put any JSON in a
+# payload field, and a read view must not 500 on it.
+def _d(x: Any) -> dict[str, Any]:
+    return x if isinstance(x, dict) else {}
+
+
+def _n(x: Any, default: float = 0.0) -> float:
+    return float(x) if isinstance(x, int | float) and not isinstance(x, bool) else default
+
+
+def _s(x: Any) -> str:
+    return x if isinstance(x, str) else ""
+
+
 async def _ep(episode_id: str) -> dict[str, Any]:
     row = await db.fetchrow("SELECT * FROM episodes WHERE id=$1", episode_id)
     if not row:
@@ -154,11 +168,11 @@ async def _replay_timeline(episode_id: str, current_day: int) -> list[dict[str, 
     for r in await db.fetch(
         "SELECT day, type, payload FROM events WHERE episode_id=$1 AND type = ANY($2::text[]) ORDER BY id", episode_id, _TIMELINE_EVENT_TYPES
     ):
-        row, t, p = days.get(r["day"]), r["type"], r["payload"] or {}
+        row, t, p = days.get(r["day"]), r["type"], _d(r["payload"])
         if row is None:
             continue
         if t == "day.started":
-            row["invoices_received"] += int((p.get("legit_injected") or {}).get("invoices") or 0)
+            row["invoices_received"] += int(_n(_d(p.get("legit_injected")).get("invoices")))
         elif t == "gate.verdict" and p.get("verdict") in ("allow", "block", "escalate"):
             row[f"verdict_{p['verdict']}"] += 1
         elif t == "ledger.mutation" and p.get("action") in ("invoices.pay", "expenses.pay"):
@@ -174,8 +188,8 @@ async def _replay_timeline(episode_id: str, current_day: int) -> list[dict[str, 
     last: dict[str, Any] = {}
     for d, row in sorted(days.items()):
         last = scores.get(d, last)
-        row["extracted_cumulative"] = float(last.get("dollars_extracted") or 0)
-        row["blocked_cumulative"] = float(last.get("dollars_blocked") or 0)
+        row["extracted_cumulative"] = _n(last.get("dollars_extracted"))
+        row["blocked_cumulative"] = _n(last.get("dollars_blocked"))
     return [days[d] for d in sorted(days)]
 
 
@@ -185,9 +199,9 @@ async def _replay_attacks(episode_id: str) -> list[dict[str, Any]]:
     for r in await db.fetch(
         "SELECT day, type, payload FROM events WHERE episode_id=$1 AND type IN ('attack.launched','attack.outcome') ORDER BY id", episode_id
     ):
-        p = r["payload"] or {}
+        p = _d(r["payload"])
         aid = p.get("attack_id")
-        if not aid:
+        if not isinstance(aid, str) or not aid:
             continue
         if r["type"] == "attack.launched":
             out[aid] = {
@@ -203,7 +217,7 @@ async def _replay_attacks(episode_id: str) -> list[dict[str, Any]]:
                 "detected_day": None,
             }
         elif aid in out:
-            out[aid].update(outcome=p.get("outcome"), amount_extracted=p.get("amount_extracted", 0.0), detected_day=p.get("detected_day"))
+            out[aid].update(outcome=p.get("outcome"), amount_extracted=_n(p.get("amount_extracted")), detected_day=p.get("detected_day"))
     return list(out.values())
 
 
@@ -409,7 +423,9 @@ async def agent_activity(episode_id: str):
         episode_id,
     )
     credits = await db.fetch(
-        "SELECT payload->>'agent' AS agent, day, SUM((payload->>'factory_credits')::float) AS credits, SUM((payload->>'duration_sec')::float) AS seconds "
+        "SELECT payload->>'agent' AS agent, day, "
+        "SUM(CASE WHEN jsonb_typeof(payload->'factory_credits')='number' THEN (payload->>'factory_credits')::float END) AS credits, "
+        "SUM(CASE WHEN jsonb_typeof(payload->'duration_sec')='number' THEN (payload->>'duration_sec')::float END) AS seconds "
         "FROM events WHERE episode_id=$1 AND type='turn.ended' GROUP BY 1,2",
         episode_id,
     )
@@ -441,7 +457,7 @@ async def compare(a: str, b: str):
     return {
         "a": {"episode": ea, "score": sa, "timeline": ta, "attacks": aa},
         "b": {"episode": eb, "score": sb, "timeline": tb, "attacks": ab},
-        "delta": {k: round((sb.get(k) or 0) - (sa.get(k) or 0), 2) for k in ("dollars_extracted", "dollars_blocked", "false_positive_cost")},
+        "delta": {k: round(_n(sb.get(k)) - _n(sa.get(k)), 2) for k in ("dollars_extracted", "dollars_blocked", "false_positive_cost")},
     }
 
 
@@ -485,44 +501,47 @@ async def feed(episode_id: str, after_id: int = 0, limit: int = Query(200, le=20
     )
     out = []
     for r in db.rows_to_list(rows):
-        p = r["payload"]
+        p = _d(r["payload"])
         t = r["type"]
         if t == "gate.verdict" and p.get("verdict") == "allow" and not include_verdict_allows:
             continue
         head, sub = t, ""
         if t == "attack.launched":
-            head, sub = f"Attack: {p.get('display_name')}", f"{p.get('story', '')} Target ${p.get('target_amount', 0):,.0f}."
+            head, sub = f"Attack: {p.get('display_name')}", f"{_s(p.get('story'))} Target ${_n(p.get('target_amount')):,.0f}."
         elif t == "attack.outcome":
             head, sub = (
                 f"Attack {p.get('outcome')}",
-                f"${p.get('amount_extracted', 0):,.2f} extracted" + (f"; detected day {p['detected_day']}" if p.get("detected_day") is not None else ""),
+                f"${_n(p.get('amount_extracted')):,.2f} extracted" + (f"; detected day {p['detected_day']}" if p.get("detected_day") is not None else ""),
             )
         elif t == "gate.verdict":
-            head, sub = f"{p.get('verdict', '').upper()} — {p.get('action')}", f"{p.get('reason', '')}" + (f" (${p['amount']:,.2f})" if p.get("amount") else "")
+            head, sub = (
+                f"{_s(p.get('verdict')).upper()} — {p.get('action')}",
+                _s(p.get("reason")) + (f" (${_n(p.get('amount')):,.2f})" if _n(p.get("amount")) else ""),
+            )
         elif t == "escalation.opened":
-            head, sub = "Needs a human decision", f"{p.get('action')} ${p.get('amount') or 0:,.2f}: {p.get('reason', '')}"
+            head, sub = "Needs a human decision", f"{p.get('action')} ${_n(p.get('amount')):,.2f}: {_s(p.get('reason'))}"
         elif t == "escalation.resolved":
             head, sub = f"Human decided: {p.get('decision')}", f"by {p.get('by')}"
         elif t == "flag.raised":
-            head, sub = f"Flag ({p.get('severity')}) on {p.get('entity_type')}", p.get("reason", "")
+            head, sub = f"Flag ({p.get('severity')}) on {p.get('entity_type')}", _s(p.get("reason"))
         elif t == "vendor.frozen":
-            head, sub = "Vendor frozen", p.get("reason", "")
+            head, sub = "Vendor frozen", _s(p.get("reason"))
         elif t == "report.posted":
             head, sub = f"Controller report, day {p.get('day')}", "Open to read."
         elif t == "controller.changed":
             head, sub = f"Controller: {p.get('from')} → {p.get('to')}", ""
         elif t == "day.started":
-            li = p.get("legit_injected", {})
+            li = _d(p.get("legit_injected"))
             head, sub = (
                 f"Day {p.get('day')} begins",
-                f"{li.get('invoices', 0)} invoices, {li.get('purchase_orders', 0)} POs, {li.get('expenses', 0)} expenses arrived.",
+                f"{int(_n(li.get('invoices')))} invoices, {int(_n(li.get('purchase_orders')))} POs, {int(_n(li.get('expenses')))} expenses arrived.",
             )
         elif t == "day.ended":
             head = f"Day {p.get('day')} closed"
         elif t == "score.updated":
             head, sub = (
                 "Score",
-                f"${p.get('dollars_extracted', 0):,.0f} stolen · ${p.get('dollars_blocked', 0):,.0f} blocked · ${p.get('false_positive_cost', 0):,.0f} FP cost",
+                f"${_n(p.get('dollars_extracted')):,.0f} stolen · ${_n(p.get('dollars_blocked')):,.0f} blocked · ${_n(p.get('false_positive_cost')):,.0f} FP cost",
             )
         elif t == "episode.ended":
             head = "Episode finished"
