@@ -251,8 +251,7 @@ async def _charge_credits(episode_id: str, day: int, factory_credits: Any) -> No
         await _seed_credits(episode_id)
     else:
         st.credits_total += spent
-    # max_credits_per_episode lives in config.py (MAX_CREDITS_PER_EPISODE); getattr until it lands
-    limit = float(getattr(settings, "max_credits_per_episode", 0.0) or 0.0)
+    limit = settings.max_credits_per_episode  # MAX_CREDITS_PER_EPISODE; 0 disables the guard
     total = st.credits_total or 0.0
     if not (st.credit_guard_armed and spent > 0 and credit_guard_tripped(total, limit)):
         return
