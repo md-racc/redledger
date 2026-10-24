@@ -95,6 +95,34 @@ Goal for this session: <fill in>
   provenance. `list_audit` now gives any X-Agent caller only `agent IN ('green','blue')` rows and
   never an `attacks.*` action; `agent=red` returns `[]`, not 403. Operator view is unfiltered.
   A new agent that writes audit rows stays hidden from agents until added to that allowlist.
+- False positives (done, Ad's call): each legit (sim) item is charged once, by its worst outcome.
+  Blocked (ended blocked, any block verdict, or an escalation that ended block/timeout) costs
+  `amount × FP_PENALTY_RATE + FP_FLAT_PENALTY`; escalated but never blocked (approved or still open)
+  costs `FP_FLAT_PENALTY`. Shadow verdicts score as "would-have" costs the same way, so
+  off/shadow/enforce compare cleanly, and `legit_blocked` in shadow counts would-have blocks. Live
+  red-swap pay-time stops stay excluded. **Docs PR needed:** README §4's `false_positive_cost` line
+  still says `(legit blocks + legit escalations) × FP_FLAT_PENALTY`.
+- Escalations (done): close exactly once (resolver, timeout or orphan sweep); a same-key replay
+  joins the open escalation or reuses its decision; on startup open escalations are timed out
+  (their held request died with the old process) and `running` episodes are paused with an
+  `error {where:"orchestrator"}`, never auto-resumed; `replay_*` episodes still `running` are marked
+  `failed` with `error {where:"replay"}`. Resuming such an episode re-runs its current
+  day, but `run_day` is idempotent per day: if the episode already has that day's `day.started`, it
+  skips legit traffic and the event (logs `day_resumed`) and every agent turn that already has a
+  `turn.ended` that day (logs `turn_skipped_resumed`); red and blue count as done once their turn
+  *started* (red also if an attack of that day exists), since their writes aren't idempotent; only
+  green (gated, compare-and-set) re-runs an interrupted turn. `episode.started` is emitted once.
+- Active-turn guard (`app/turns.py`): the runner marks (episode, agent, day) active only while it
+  waits on that agent's `/turn` or blue's `/audit`; `auth.caller` answers any other X-Agent write
+  (POST/PATCH/PUT/DELETE, incl. `/events`, `/state`, `/inputs`) with an audited 409
+  `{"error":"no active turn for this agent"}`. Reads stay open; operator calls and the
+  orchestrator's own DB writes don't pass through it. A turn battlefield stopped waiting on, or one
+  orphaned by a restart, can't write; a gated write admitted during the turn (an escalation hold)
+  still completes. **In-process**, like the escalation waiters: battlefield must run as one
+  uvicorn worker. Tests disable it by default (`conftest._no_turn_guard`; `turn_guard` re-enables).
+  Gate checks are single-flight per (episode, X-Tool-Use-Id). Mock blue
+  escalates on demand with `MOCK_BLUE_ESCALATE`; drive it with `scripts/escalation_smoke.py`. **Docs PR needed:** README §11
+  should list `MOCK_BLUE_ESCALATE` (mock only), and events.md could list `where: orchestrator`.
 - Replays (done): `POST /replays/{id}/play` creates a real `episodes` row `replay_<fixture>_<8hex>`
   (status `running`→`finished`/`failed`; seed/mode/days from the fixture's `episode.started`) and
   re-emits every fixture event through `bus.emit`, paced by original `ts` / speed (gap cap 3 s), so

@@ -21,9 +21,13 @@ import secrets
 import time
 from dataclasses import dataclass
 
+import structlog
 from fastapi import Depends, Header, HTTPException, Request
 
+from . import turns
 from .config import settings
+
+log = structlog.get_logger(__name__)
 
 AGENTS = ("red", "green", "blue")
 WS_TICKET_TTL_SEC = 60
@@ -67,7 +71,7 @@ class Caller:
         return self.is_agent
 
 
-def caller(
+async def caller(
     request: Request,
     authorization: str | None = Header(default=None),
     x_agent: str | None = Header(default=None, alias="X-Agent"),
@@ -83,9 +87,27 @@ def caller(
             raise HTTPException(400, "agents must send X-Episode and X-Day")
         if x_episode.startswith("replay_"):  # control.REPLAY_PREFIX: replays are event-only, never agent-facing
             raise HTTPException(403, "agents may not act in replay episodes")
-        if request.method in ("POST", "PATCH", "PUT", "DELETE") and not x_tool_use_id:
-            raise HTTPException(400, "writes require X-Tool-Use-Id")
+        if request.method in ("POST", "PATCH", "PUT", "DELETE"):
+            if not x_tool_use_id:
+                raise HTTPException(400, "writes require X-Tool-Use-Id")
+            if not turns.may_write(x_episode, x_agent, x_day):
+                c = Caller(agent=x_agent, episode_id=x_episode, day=x_day, tool_use_id=x_tool_use_id)
+                await _audit_no_turn(c, request)
+                raise turns.NoActiveTurnError(turns.NO_ACTIVE_TURN)
     return Caller(agent=x_agent, episode_id=x_episode, day=x_day, tool_use_id=x_tool_use_id)
+
+
+async def _audit_no_turn(c: Caller, request: Request) -> None:
+    """Audit an agent write refused for lack of an active turn (an orphaned or timed-out turn). Best
+    effort: the refusal must stand even if the audit write fails."""
+    from .api import audit  # late: audit imports this module
+
+    route = request.scope.get("route")
+    path = getattr(route, "path", request.url.path)
+    try:
+        await audit.record(c, f"{request.method} {path}", dict(request.path_params), {"error": turns.NO_ACTIVE_TURN}, 409)
+    except Exception:
+        log.exception("no_turn_audit_failed", agent=c.agent, episode_id=c.episode_id, path=path)
 
 
 def allow(*agents: str, operator: bool = True):

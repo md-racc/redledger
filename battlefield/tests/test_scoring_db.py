@@ -216,6 +216,102 @@ async def test_false_positive_cost_counts_expenses_and_vendor_changes(episode: s
     assert s["legit_processed"] == 1
 
 
+async def _shadow_verdict(ep: str, entity_type: str, entity_id: str, verdict: str) -> str:
+    vid = await f.verdict(ep, entity_type, entity_id, verdict=verdict)
+    await db.execute("UPDATE verdicts SET enforced=false WHERE id=$1", vid)
+    return vid
+
+
+async def _escalation(ep: str, verdict_id: str, status: str) -> None:
+    await db.execute(
+        "INSERT INTO escalations (id, episode_id, verdict_id, status, expires_at) VALUES ($1,$2,$3,$4, now())", f.uid("esc"), ep, verdict_id, status
+    )
+
+
+FLAT = 50.0  # FP_FLAT_PENALTY default; rate 0.02
+
+
+@pytest.mark.parametrize(
+    ("case", "cost", "blocked"),
+    [
+        ("enforce_block", 1000 * 0.02 + FLAT, 1),
+        ("enforce_escalate_approved", FLAT, 0),
+        ("enforce_escalate_open", FLAT, 0),
+        ("enforce_escalate_blocked", 1000 * 0.02 + FLAT, 1),
+        ("enforce_escalate_timeout", 1000 * 0.02 + FLAT, 1),
+        ("block_then_rejected_by_green", 1000 * 0.02 + FLAT, 1),
+        ("escalated_twice_then_blocked", 1000 * 0.02 + FLAT, 1),
+        ("shadow_block", 1000 * 0.02 + FLAT, 1),
+        ("shadow_escalate", FLAT, 0),
+        ("shadow_escalate_and_block", 1000 * 0.02 + FLAT, 1),
+        ("off", 0.0, 0),
+        ("allowed", 0.0, 0),
+    ],
+)
+async def test_legit_item_is_charged_once_by_its_worst_outcome(episode: str, case: str, cost: float, blocked: int) -> None:
+    vid = await f.vendor(episode)
+    status = {"enforce_block": "blocked", "enforce_escalate_blocked": "blocked", "enforce_escalate_timeout": "blocked"}.get(case, "approved")
+    if case == "block_then_rejected_by_green":
+        status = "rejected"
+    if case == "escalated_twice_then_blocked":
+        status = "blocked"
+    inv = await f.invoice(episode, vid, amount=1000, status=status, day=1)
+    if case in ("enforce_block", "block_then_rejected_by_green"):
+        await f.verdict(episode, "invoice", inv, verdict="block")
+    elif case.startswith("enforce_escalate"):
+        v = await f.verdict(episode, "invoice", inv, verdict="escalate")
+        await _escalation(episode, v, {"approved": "approved", "open": "open", "blocked": "blocked", "timeout": "timeout"}[case.rsplit("_", 1)[1]])
+    elif case == "escalated_twice_then_blocked":
+        await _escalation(episode, await f.verdict(episode, "invoice", inv, verdict="escalate"), "approved")  # approve step
+        await _escalation(episode, await f.verdict(episode, "invoice", inv, verdict="escalate"), "blocked")  # pay step
+    elif case == "shadow_block":
+        await _shadow_verdict(episode, "invoice", inv, "block")
+    elif case == "shadow_escalate":
+        await _shadow_verdict(episode, "invoice", inv, "escalate")
+    elif case == "shadow_escalate_and_block":
+        await _shadow_verdict(episode, "invoice", inv, "escalate")
+        await _shadow_verdict(episode, "invoice", inv, "block")
+    elif case == "allowed":
+        await f.verdict(episode, "invoice", inv, verdict="allow")
+    s = await score.compute(episode)
+    assert s["false_positive_cost"] == pytest.approx(cost) and s["legit_blocked"] == blocked
+
+
+async def test_shadow_scores_would_have_costs_like_enforce(episode: str) -> None:
+    """The same controller decisions cost the same whether they were enforced or only recorded."""
+    other = f.uid("ep")
+    await db.execute("INSERT INTO episodes (id, seed, controller_mode) VALUES ($1, 42, 'shadow')", other)
+    for ep, shadow in ((episode, False), (other, True)):
+        vid = await f.vendor(ep)
+        emp = await f.employee(ep)
+        a = await f.invoice(ep, vid, amount=2000, status="approved" if shadow else "blocked")
+        b = await f.invoice(ep, vid, amount=700, status="paid")
+        x = await f.expense(ep, emp, amount=300, status="paid" if shadow else "blocked")
+        ch = await f.change(ep, vid, origin="sim", status="approved" if shadow else "blocked")
+        for et, eid, verdict in (("invoice", a, "block"), ("invoice", b, "escalate"), ("expense", x, "block"), ("vendor_change", ch, "block")):
+            v = await f.verdict(ep, et, eid, verdict=verdict)
+            if shadow:
+                await db.execute("UPDATE verdicts SET enforced=false WHERE id=$1", v)
+            elif verdict == "escalate":
+                await _escalation(ep, v, "approved")
+    enforce_s, shadow_s = await score.compute(episode), await score.compute(other)
+    assert enforce_s["false_positive_cost"] == shadow_s["false_positive_cost"] == pytest.approx((2000 + 300) * 0.02 + 4 * FLAT)
+    assert enforce_s["legit_blocked"] == shadow_s["legit_blocked"] == 3
+
+
+async def test_red_items_and_live_swap_stops_are_never_false_positives(episode: str) -> None:
+    red_v = await f.vendor(episode, origin="red")
+    red_inv = await f.invoice(episode, red_v, amount=4000, origin="red", status="blocked")
+    await _shadow_verdict(episode, "invoice", red_inv, "block")
+    swapped = await f.vendor(episode, bank_account="ACCT-RED")
+    await f.attack(episode, day=1)
+    await f.change(episode, swapped, day=1, status="approved", resolved_day=1)
+    stopped = await f.invoice(episode, swapped, amount=900, day=2)
+    await _shadow_verdict(episode, "invoice", stopped, "block")  # shadow: the controller was right
+    s = await score.compute(episode)
+    assert s["false_positive_cost"] == 0 and s["legit_blocked"] == 0
+
+
 async def test_score_keys_match_contract(episode: str) -> None:
     s = await score.compute(episode)
     assert set(s) == set(Score.model_fields)

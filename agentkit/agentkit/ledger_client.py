@@ -51,11 +51,19 @@ class LedgerClient:
         self.day = day
         self._client: httpx.AsyncClient | None = None
 
+    @staticmethod
+    def read_timeout_sec(s: AgentSettings) -> float:
+        """Read timeout for Ledger API calls. A gated green write may be held by battlefield for a human
+        for up to ESCALATION_TIMEOUT_SEC after blue's gate call (GATE_TIMEOUT_SEC), so the read must
+        outlast both, plus slack for the database work around them; otherwise the client gives up while
+        battlefield still holds the call and may still execute it."""
+        return max(s.http_timeout_sec, s.escalation_timeout_sec + s.gate_timeout_sec + 15)
+
     # ---------- lifecycle ----------
     async def __aenter__(self) -> LedgerClient:
         self._client = httpx.AsyncClient(
             base_url=f"{self.s.battlefield_url.rstrip('/')}/api",
-            timeout=httpx.Timeout(self.s.http_timeout_sec, read=max(self.s.http_timeout_sec, 120)),
+            timeout=httpx.Timeout(self.s.http_timeout_sec, read=self.read_timeout_sec(self.s)),
             headers={
                 "Authorization": f"Bearer {self.s.internal_token}",
                 "X-Agent": self.s.agent_name,
