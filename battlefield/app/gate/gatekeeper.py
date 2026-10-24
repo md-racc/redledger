@@ -10,6 +10,8 @@ Every gated green route calls `check()` before mutating. check():
                 escalate → opens escalation, waits for human up to ESCALATION_TIMEOUT_SEC,
                 timeout = block
 
+Same-key requests are single-flight: they run one at a time, so a key gets one verdict and at most
+one escalation; the later ones replay the first's outcome.
 Escalations close exactly once (compare-and-set on status='open': resolver, timeout or orphan sweep).
 A replay of an escalated key joins that escalation or reuses its decision. The waiter lives in this
 process, so an escalation left open by a restart is an orphan: resolving it is a 409 and times it out.
@@ -34,6 +36,7 @@ from ..events import bus
 log = structlog.get_logger(__name__)
 
 _escalation_waiters: dict[str, asyncio.Future] = {}
+_key_slots: dict[tuple[str, str], list[Any]] = {}  # (episode_id, idempotency key) -> [Lock, users]
 
 
 IDEMPOTENCY_CONFLICT = "idempotency key reused for a different action"
@@ -84,7 +87,33 @@ async def check(
     mode = await controller_mode(c.episode_id)
     if mode == "off":
         return Decision(allowed=True)
+    # Single flight per key: concurrent requests with one X-Tool-Use-Id (parallel Droid tool calls, a
+    # retry racing the original) run one at a time, the first through to its outcome, including any
+    # escalation hold. The others then replay that verdict (and join/reuse its escalation), so one key
+    # gets one verdict, one escalation card and one human decision. Battlefield is one process.
+    slot_key = (c.episode_id, c.tool_use_id)
+    slot = _key_slots.setdefault(slot_key, [asyncio.Lock(), 0])
+    slot[1] += 1  # holders + waiters; dropped when nobody can still need it (also on cancel)
+    try:
+        async with slot[0]:
+            return await _check(c, mode, action, entity_type, entity_id, amount, args, context)
+    finally:
+        slot[1] -= 1
+        if slot[1] == 0:
+            del _key_slots[slot_key]
 
+
+async def _check(
+    c: Caller,
+    mode: str,
+    action: str,
+    entity_type: str | None,
+    entity_id: str | None,
+    amount: float | None,
+    args: dict[str, Any] | None,
+    context: dict[str, Any] | None,
+) -> Decision:
+    assert c.episode_id is not None and c.day is not None
     # idempotent on key: if we already judged this tool_use_id for this same action, reuse the verdict;
     # the same key on a different action is refused, never replayed
     existing = await db.fetchrow("SELECT * FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", c.episode_id, c.tool_use_id)

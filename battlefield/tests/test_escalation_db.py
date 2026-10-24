@@ -553,3 +553,99 @@ async def test_startup_recovery_pauses_episodes_fails_replays_and_expires_orphan
     ]  # no episode.paused: a replay is failed, not paused
     assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", done_replay) == "finished"
     assert await db.fetchval("SELECT COUNT(*) FROM events WHERE episode_id=ANY($1::text[])", [finished, done_replay]) == 0
+
+
+# ---------- concurrent same-key requests (single flight) ----------
+
+
+@pytest.fixture
+def slow_blue_escalates(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Escalates everything after a short await, so concurrent first uses of a key overlap in blue."""
+    asked: list[str] = []
+
+    async def ask(c: Caller, mode: str, action: str, et: str | None, eid: str | None, amount: float | None, args: dict, context: dict):
+        asked.append(c.tool_use_id or "")
+        await asyncio.sleep(0.05)
+        return "escalate", "Needs human review: test.", 0.9, ["near_threshold"]
+
+    monkeypatch.setattr(gate, "_ask_blue", ask)
+    return asked
+
+
+async def _wait_escalations(episode: str, n: int = 1, timeout: float = 3.0) -> list[str]:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        ids = [r["id"] for r in await db.fetch("SELECT id FROM escalations WHERE episode_id=$1 ORDER BY opened_at", episode)]
+        if len(ids) >= n:
+            return ids
+        await asyncio.sleep(0.02)
+    return ids
+
+
+@pytest.mark.parametrize("decision", ["approve", "block"])
+async def test_concurrent_same_key_pays_share_one_escalation_and_decision(episode: str, slow_blue_escalates: list, short_hold: float, decision: str) -> None:
+    vid = await f.vendor(episode)
+    inv = await f.invoice(episode, vid, amount=4_900.0, status="approved")
+    key = _key()
+    async with _client() as cl:
+        held = [asyncio.create_task(cl.post(f"/api/invoices/{inv}/pay", headers=_green(episode, key))) for _ in range(3)]
+        (esc_id,) = await _wait_escalations(episode)
+        await asyncio.sleep(0.3)  # give any second escalation the chance to appear
+        assert await db.fetchval("SELECT COUNT(*) FROM escalations WHERE episode_id=$1", episode) == 1
+        assert (await cl.post(f"/api/escalations/{esc_id}/resolve", json={"decision": decision}, headers=OP)).status_code == 200
+        resps = await asyncio.gather(*held)
+    codes = sorted(r.status_code for r in resps)
+    if decision == "approve":
+        assert codes == [200, 409, 409]  # one pays; the others replay the approval and lose the CAS
+        assert all(r.json()["detail"] == "invoice is paid" for r in resps if r.status_code == 409)
+    else:
+        assert codes == [403, 403, 403] and {r.json()["escalation_id"] for r in resps} == {esc_id}
+    assert await db.fetchval("SELECT COUNT(*) FROM payments WHERE invoice_id=$1", inv) == (1 if decision == "approve" else 0)
+    assert await db.fetchval("SELECT COUNT(*) FROM verdicts WHERE episode_id=$1", episode) == 1
+    assert slow_blue_escalates == [key]  # blue asked once
+    assert [e["payload"]["decision"] for e in await _events(episode, "escalation.resolved")] == [decision]
+    assert not gate._key_slots  # slot released
+
+
+async def test_concurrent_same_key_gate_checks_get_the_same_decision(episode: str, slow_blue_escalates: list, short_hold: float) -> None:
+    vid = await f.vendor(episode)
+    inv = await f.invoice(episode, vid, amount=4_850.0)
+    key = _key()
+
+    async def check() -> gate.Decision:
+        return await gate.check(_caller(episode, key), action="invoices.approve", entity_type="invoice", entity_id=inv, amount=4_850.0)
+
+    async with _client() as cl:
+        tasks = [asyncio.create_task(check()) for _ in range(3)]
+        (esc_id,) = await _wait_escalations(episode)
+        await asyncio.sleep(0.2)
+        assert (await cl.post(f"/api/escalations/{esc_id}/resolve", json={"decision": "approve"}, headers=OP)).status_code == 200
+        ds = await asyncio.gather(*tasks)
+    assert all(d.allowed for d in ds) and len({d.verdict_id for d in ds}) == 1
+    assert await db.fetchval("SELECT COUNT(*) FROM escalations WHERE episode_id=$1", episode) == 1
+
+
+async def test_cancelled_holder_releases_the_key(episode: str, slow_blue_escalates: list, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "escalation_timeout_sec", 5)
+    vid = await f.vendor(episode)
+    inv = await f.invoice(episode, vid, amount=4_850.0)
+    key = _key()
+
+    async def check() -> gate.Decision:
+        return await gate.check(_caller(episode, key), action="invoices.approve", entity_type="invoice", entity_id=inv, amount=4_850.0)
+
+    leader = asyncio.create_task(check())
+    (first,) = await _wait_escalations(episode)
+    follower = asyncio.create_task(check())
+    await asyncio.sleep(0.1)
+    leader.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await leader
+    # the follower takes over: the leader's escalation is an orphan now, so it opens a fresh one
+    ids = await _wait_escalations(episode, n=2)
+    assert len(ids) == 2 and ids[0] == first
+    assert await db.fetchval("SELECT status FROM escalations WHERE id=$1", first) == "timeout"
+    assert await gate.resolve_escalation(ids[1], "block", "judge")
+    with pytest.raises(gate.GateBlockedError):
+        await follower
+    assert not gate._key_slots and not gate._escalation_waiters
