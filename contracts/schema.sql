@@ -207,6 +207,7 @@ CREATE TABLE IF NOT EXISTS verdicts (
   rules_fired       JSONB NOT NULL DEFAULT '[]',
   enforced          BOOLEAN NOT NULL,           -- false in shadow mode
   latency_ms        INTEGER,
+  cause             TEXT CHECK (cause IN ('control','gate_unavailable')),  -- NULL on rows older than the column
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (episode_id, idempotency_key)
 );
@@ -223,6 +224,37 @@ CREATE TABLE IF NOT EXISTS escalations (
   resolved_at  TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS escalations_open ON escalations(episode_id, status);
+
+-- Green's gated actions prepared before they run (ledger-api.yaml POST /preparations). One row per
+-- episode + idempotency key (the SDK tool_use_id), in every mode (off rows have no verdict). The
+-- verdict row records what blue said; this row records what execution under the key may do.
+-- expires_at = created_at + 120 s, never extended. The gated route consumes the row in its own
+-- transaction (CAS on consumed_at IS NULL). state_hash = sha256 of the action's narrow fingerprint.
+CREATE TABLE IF NOT EXISTS preparations (
+  id               TEXT PRIMARY KEY,                          -- prep_
+  episode_id       TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+  idempotency_key  TEXT NOT NULL,
+  day              INTEGER NOT NULL,
+  agent            TEXT NOT NULL,
+  controller_mode  TEXT NOT NULL CHECK (controller_mode IN ('off','shadow','enforce')),
+  action           TEXT NOT NULL,
+  entity_type      TEXT,
+  entity_id        TEXT,
+  amount           NUMERIC(14,2),
+  args             JSONB NOT NULL DEFAULT '{}',
+  state_hash       TEXT NOT NULL,
+  verdict_id       TEXT REFERENCES verdicts(id),              -- NULL in off
+  escalation_id    TEXT REFERENCES escalations(id),
+  effective        TEXT NOT NULL CHECK (effective IN ('allow','block','pending')),
+  decided_by       TEXT CHECK (decided_by IN ('mode','gate','human','timeout')),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  decided_at       TIMESTAMPTZ,
+  expires_at       TIMESTAMPTZ NOT NULL,
+  consumed_at      TIMESTAMPTZ,
+  consumed_status  INTEGER,
+  UNIQUE (episode_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS preparations_pending ON preparations(episode_id) WHERE effective = 'pending';
 
 CREATE TABLE IF NOT EXISTS flags (
   id           TEXT PRIMARY KEY,
@@ -354,3 +386,7 @@ ALTER TABLE attacks ADD COLUMN IF NOT EXISTS resolved_day INTEGER;
 ALTER TABLE attacks ADD COLUMN IF NOT EXISTS revealed_day INTEGER;
 CREATE UNIQUE INDEX IF NOT EXISTS episodes_lineage_gen ON episodes(lineage_id, generation) WHERE lineage_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS episodes_lineage_seed ON episodes(lineage_id, seed) WHERE lineage_id IS NOT NULL;
+
+-- 2026-10-24: verdicts.cause (gate preparations). Existing rows stay NULL = unknown; read them as
+-- 'control' unless rules_fired contains 'gate_timeout'.
+ALTER TABLE verdicts ADD COLUMN IF NOT EXISTS cause TEXT CHECK (cause IN ('control','gate_unavailable'));
