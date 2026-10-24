@@ -18,6 +18,16 @@ from agentkit import GateBlocked, LedgerError, ctx
 
 Key = tuple[str, str]
 log = structlog.get_logger(__name__)
+CAPABILITIES = {
+    ("match", "invoice"),
+    ("approve", "invoice"),
+    ("reject", "invoice"),
+    ("pay", "invoice"),
+    ("approve", "expense"),
+    ("pay", "expense"),
+    ("approve", "vendor_change"),
+    ("reject", "vendor_change"),
+}
 
 
 def money(value: Any) -> Decimal:
@@ -148,6 +158,10 @@ async def operation(action: str, kind: str, entity_id: str, *, po_id: str | None
     label = f"{kind}.{action}"
     if key in clerk.blocked | clerk.deferred | clerk.failures | clerk.uncertain or (action, key) in clerk.attempted:
         return defer(key, "entity already handled or held this turn")
+    if (action, kind) not in CAPABILITIES:
+        clerk.failures.add(key)
+        record(label, key, "unsupported_operation")
+        raise ClerkFailure("unsupported_operation: no mutation sent")
     writing = False
     try:
         row = await current(kind, entity_id)

@@ -10,8 +10,11 @@ pay legitimate invoices so the false-positive penalty is real, and (b) actually 
 ones when the controller is off so the baseline loses money. Don't make green suspicious; that's
 blue's job.
 
-Green is also the Factory-native showpiece: its Droid permission handler mirrors blue's gate.
-That mirror is for the demo; `battlefield` remains the enforcement point.
+`battlefield` remains the enforcement point. Live Green is intentionally disabled before
+Droid Session/tool execution pending Ad's merged shared preflight protocol, verified invocation
+identity propagation and exact tool restrictions. The permission handler cancels with a static
+prerequisite message. Never send incomplete context or fabricated keys to Blue's cache.
+See [INTEGRATION.md](INTEGRATION.md) for shipped shared fixes, remaining prerequisites and acceptance checks.
 
 ## Boundaries
 
@@ -27,19 +30,45 @@ That mirror is for the demo; `battlefield` remains the enforcement point.
 |---|---|
 | `tools.py` | model-facing tools; wrappers over LedgerClient; the descriptions are prompt material |
 | `agent.py` | `GreenAgent(DroidAgent)`: prompt, permission handler mirror, DRY_RUN clerk |
+| `workflow.py` | shared turn-local procedure, eligibility, reconciliation and confirmed summary |
 | `prompts/system.md` | persona; a string replacing Droid's default |
 | `server.py` | leave alone |
 | `tests/` | `respx` tests against a fake Ledger API |
 
 ## Day-one tasks (Friday)
 
-1. Verify in a 10-line script that `Autonomy.OFF` raises a permission request for MCP tool
-   calls. Record the answer in `contracts/CHANGELOG.md` Findings. If it doesn't, drop autonomy
-   to LOW and record that too; the ledger-side gate still enforces.
-2. Verify whether `comment=` on `CANCEL` reaches the model. If not, the tool's `{"blocked": true,
-   "reason": ...}` output is what the model sees, which is fine.
-3. Run `GreenAgent` in DRY_RUN against `make mock-agents` and confirm payments land and blocked
-   invoices show `status=blocked` in `/api/fe/episodes/<EP>/verdicts`.
+1. Hand shared identity/preflight/restriction gaps to Ad. Do not implement a Green-local
+   invocation identity workaround or depend on an unmerged contract.
+2. Once shared integration is merged, experimentally verify `Autonomy.OFF` permission requests,
+   exact tool IDs/restrictions from the first session and `CANCEL` comments reaching the model.
+   Keep autonomy off until evidence exists; unit fakes are not SDK findings.
+3. DRY_RUN is keyless and uses the same decorated tools as the eventual live surface. It emits
+   only `agent.thinking`, `agent.tool_call`, `agent.tool_result`, not gate/mutation events.
+
+## Current AP milestone
+
+- Stable day/ID order: pending vendor changes; invoice matching or genuine no-PO approval;
+  matched/approved invoice payments including backlog; pending expense approval; approved
+  expense payments including backlog. Referenced missing/unusable POs are deferred, never
+  converted to no-PO approvals. Do not investigate vendor age, duplicate invoices or bank history.
+- Decimal invoice limit is inclusive `<= APPROVAL_THRESHOLD` (existing default 5000).
+  Above-limit invoices are deferred, not fraud/escalations. No expense threshold.
+- Operations re-read current entities and existing payments before dependent writes. Turn-local
+  context suppresses blocked/failed/deferred/uncertain entities across tools, including rejects.
+  Ambiguous writes reconcile via current invoice/vendor-change/expense state or payments and
+  are never resent in the same turn, even if confirmed. Restart recovery uses ledger reads,
+  not a promise of backend exactly-once payments.
+- Summaries count only confirmed actions/payment dollars, with unique blocks, deferrals,
+  failures and unknowns separate. HTTP/auth/contract failures are not controller blocks.
+  Non-HTTP tool failures use a small `LedgerError` subclass with `status=null`, explicitly
+  not an HTTP response, so the shared decorator emits `ok=false`. HTTP errors retain their
+  actual status; error bodies and bank/account details are not narrated.
+- There is no automatic GL tool in this milestone. Do not claim balanced accounting.
+  Posting GL requires a separate accounting milestone; this staged foundation deliberately
+  does not yet implement the full agent-service contract's GL/live mirror behavior.
+- Shared `ledger_tool` event IDs and LedgerClient write-header IDs remain separate.
+  Verified correlation, canonical preflight context and complete canceled invocation event
+  pairs remain shared blockers. Green logs episode/day/agent/action/entity without invented IDs.
 
 ## Realism work (shared with Ad)
 
@@ -64,7 +93,7 @@ make episode MODE=enforce
 
 ## Droid specifics
 
-- `autonomy = "off"` (see day-one task 1). Permission handler is `on_permission` in `agent.py`.
+- `autonomy = "off"`. Permission handler is `on_permission` in `agent.py`; live stays guarded.
 - Never return `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*`. They disable the gate.
 - Pin a cheap model. Green does procedural work.
 - Keep the prompt short; green runs every day of every episode and burns the most credits.
@@ -86,10 +115,12 @@ You are working in the Red Ledger repo, directory `green/`, as Dev M's coding ag
 Before any edit: read `green/AGENTS.md`, `GIT.md` §7, `README.md` §§0,1,3,5,6,7,16, and
 `contracts/agent-service.md`, `contracts/events.md`. Confirm `git branch --show-current` starts with `green/`;
 if not, create `green/<topic>` from origin/main. Edit only inside `green/`,
-`battlefield/extensions/green_*.py`, `contracts/ext/green/`, and append to `DEVLOG.md`.
+`battlefield/extensions/green_*.py`, `contracts/ext/green/`, and one new `devlog/` fragment per PR.
+`DEVLOG.md` is frozen; the orchestrator owns the fragment when delegating.
 Never force-push, never merge, never touch another directory; if you need a contracts change,
 write the proposed diff into the PR description and stop. Run `make lint test-green` before
-each push. Everything must work with DRY_RUN=true. Goal for this session: get GreenAgent's Droid permission handler verified (Autonomy.OFF finding → contracts/CHANGELOG.md) and a gated pay call end to end.
+each push. Everything must work with DRY_RUN=true. Current scope: trusting AP clerk foundation;
+live/mirror/identity integration waits for Ad's merged shared protocol and SDK experiments.
 ```
 
 ## Don't
