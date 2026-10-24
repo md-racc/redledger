@@ -130,8 +130,14 @@ async def run_day(episode_id: str) -> dict[str, Any]:
         mode = ep["controller_mode"]
         await _seed_credits(episode_id)
 
-        counts = await legit_traffic.inject(episode_id, ep["seed"], day)
-        await bus.emit(episode_id, day, "day.started", {"day": day, "legit_injected": counts})
+        # Idempotent per day: a day that already started (battlefield restarted mid-day, the episode was
+        # paused by recover_after_restart and is now resumed) is not injected or announced again; its
+        # turns run again. legit_traffic.inject has no per-day guard of its own.
+        if await db.fetchval("SELECT 1 FROM events WHERE episode_id=$1 AND type='day.started' AND day=$2 LIMIT 1", episode_id, day):
+            log.info("day_resumed", episode_id=episode_id, day=day)
+        else:
+            counts = await legit_traffic.inject(episode_id, ep["seed"], day)
+            await bus.emit(episode_id, day, "day.started", {"day": day, "legit_injected": counts})
 
         # red
         options: dict[str, Any] = {}
