@@ -1,11 +1,14 @@
 "use client";
 // "Launch an attack": the judge picks a fraud scheme and the arena plays it. On a live backend this is
 // POST /episodes/{id}/attack (red runs it on its next turn); offline it is simulated from the mock agents' rules. Owner: Dev R.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SCHEME_PROFILE } from "@/lib/arena/localAttack";
 import { money } from "@/lib/arena/headlines";
 import { BLUE_RULES, RED_SCHEMES } from "@/lib/arena/roster";
+import type { Spoken } from "@/lib/arena/useFeed";
+import { BUILT_IN_SCHEMES, closestScheme, type BuiltInScheme } from "@/lib/voice/intent";
 import type { ControllerMode } from "@/lib/types";
+import { languageName, useVoice } from "../useVoice";
 
 const HINT: Record<ControllerMode, string> = {
   off: "No controller: it will get away.",
@@ -13,10 +16,28 @@ const HINT: Record<ControllerMode, string> = {
   enforce: "Enforce mode: watch the guards.",
 };
 
-export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean; mode: ControllerMode; onClose: () => void; onLaunch: (scheme: string) => Promise<void> }) {
+const schemeName = (k: string) => RED_SCHEMES.find((s) => s.key === k)?.name ?? k;
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean; mode: ControllerMode; onClose: () => void; onLaunch: (scheme: string, spoken?: Spoken) => Promise<void> }) {
   const [last, setLast] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const ruleName = (k: string) => BLUE_RULES.find((r) => r.key === k)?.name ?? k;
+
+  // "say it in your own words": speak or type any fraud scheme, in any language
+  const voice = useVoice();
+  const guess = closestScheme(voice.text);
+  const [pick, setPick] = useState<BuiltInScheme | null>(null);
+  const scheme = pick ?? guess.scheme;
+  const [sent, setSent] = useState(false);
+  useEffect(() => { setPick(null); setSent(false); }, [voice.text]);
+  useEffect(() => { if (!open && voice.phase === "listening") voice.reset(); }, [open, voice]);
+  const busy = voice.phase === "listening" || voice.phase === "transcribing";
+  const launchSpoken = () => {
+    setErr(null);
+    setSent(true);
+    onLaunch(scheme, { text: voice.text, language: voice.language }).catch((e: unknown) => { setSent(false); setErr(String(e instanceof Error ? e.message : e).slice(0, 120)); });
+  };
 
   return (
     <section className={`threat ${open ? "is-open" : ""}`} aria-label="Launch an attack" aria-hidden={!open}>
@@ -45,6 +66,49 @@ export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean
           );
         })}
       </ul>
+      <div className="speak">
+        <h4>Or say it in your own words, in any language</h4>
+        <div className="speak-row">
+          <button
+            className={`btn ${voice.phase === "listening" ? "armed" : ""}`}
+            tabIndex={open ? 0 : -1}
+            disabled={voice.phase === "transcribing"}
+            onClick={() => (voice.phase === "listening" ? void voice.stop() : void voice.start())}
+          >
+            {voice.phase === "listening" ? <><i className="dot" />Stop · {clock(voice.seconds)}</> : voice.phase === "transcribing" ? "Listening to what you said…" : "Speak a scheme"}
+          </button>
+          {voice.phase === "listening" && <span className="speak-level" aria-hidden><i style={{ width: `${Math.min(100, voice.level * 160)}%` }} /></span>}
+          {voice.language && voice.phase === "ready" && <span className="speak-lang">Heard: {languageName(voice.language)}{voice.probability != null ? ` · ${Math.round(voice.probability * 100)}%` : ""}</span>}
+        </div>
+        {voice.configured === false && <p className="speak-note">Voice is not set up on this server, so type the scheme instead.</p>}
+        {voice.error && <p className="threat-err">{voice.error}</p>}
+        <textarea
+          className="speak-text"
+          rows={2}
+          value={voice.text}
+          tabIndex={open ? 0 : -1}
+          disabled={busy}
+          maxLength={500}
+          placeholder="Describe a fraud: “change a vendor's bank details right before a big payment”… in any language"
+          onChange={(e) => voice.type(e.target.value)}
+          aria-label="Describe a fraud scheme"
+        />
+        {voice.text.trim() && (
+          <p className="speak-match">
+            Red gets your exact words. Today it also runs the closest built-in scheme:{" "}
+            <select value={scheme} onChange={(e) => setPick(e.target.value as BuiltInScheme)} tabIndex={open ? 0 : -1} aria-label="Closest built-in scheme">
+              {BUILT_IN_SCHEMES.map((k) => <option key={k} value={k}>{schemeName(k)}</option>)}
+            </select>
+            {!guess.confident && !pick && " (no clear match: pick one)"}
+          </p>
+        )}
+        {voice.text.trim() && (
+          <div className="speak-act">
+            <button className="btn primary" tabIndex={open ? 0 : -1} disabled={busy || sent} onClick={launchSpoken}>{sent ? "Launched" : "Launch it"}</button>
+            <button className="btn ghost" tabIndex={open ? 0 : -1} disabled={busy} onClick={voice.reset}>Clear</button>
+          </div>
+        )}
+      </div>
       {err && <p className="threat-err">{err}</p>}
     </section>
   );

@@ -60,6 +60,7 @@ over the interaction) darkens the rest of the frame. The HUD dims with it. It ea
 | | |
 |---|---|
 | **Run episode / Run again** | a live episode (`POST /episodes` + `/start`), or the recorded run without a backend |
+| **Say it in your own words** | in the attack console: speak or type any fraud scheme, in any language (ElevenLabs speech-to-text on the server). Red is told in those words and the closest built-in scheme runs. See [voice.md](voice.md) |
 | **Launch attack** | the attack console. Live: `POST /episodes/{id}/attack` (queued for red's next turn); with no running episode a paused *sandbox* episode is created and each click forces the scheme and steps one day. Offline: `lib/arena/localAttack.ts` plays it from the mock agents' rules |
 | **Controller off / shadow / enforce** | `PATCH /episodes/{id}/controller`; the HUD shows the mode |
 | **Approve / Block** | an open escalation, against its clock. Approve it and that invoice goes through |

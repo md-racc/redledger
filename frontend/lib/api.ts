@@ -35,6 +35,8 @@ export const api = {
   resume: (id: string) => call<void>("POST", `/episodes/${id}/resume`),
   step: (id: string) => call<any>("POST", `/episodes/${id}/step`),
   setController: (id: string, mode: "off" | "shadow" | "enforce") => call<void>("PATCH", `/episodes/${id}/controller`, { mode }),
+  /** leave a message for an agent's next turn (arrives as options.inputs): a judge's own words for red */
+  sendInput: (episode_id: string, target: "red" | "green" | "blue", payload: Record<string, unknown>, source = "judge") => call<any>("POST", "/inputs", { episode_id, target, source, payload }),
   forceAttack: (id: string, scheme_id: string, params?: Record<string, unknown>) => call<void>("POST", `/episodes/${id}/attack`, { scheme_id, params }),
   schemes: () => call<any[]>("GET", "/schemes"),
   openEscalations: (episode_id: string) => call<any[]>("GET", `/escalations?episode_id=${episode_id}&status=open`),
