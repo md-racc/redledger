@@ -39,6 +39,31 @@ T = TypeVar("T")
 CANCEL_JOIN_SEC = 2.0
 
 
+# How long teardown waits for the turn loop's leftover tasks to finish after cancelling them. Something
+# the turn started and never awaited (droid-sdk's in-process MCP server leaves sse_starlette's
+# `_shutdown_watcher` behind) would otherwise be destroyed while pending when the loop closes.
+TEARDOWN_SEC = 2.0
+
+
+def _cancel_leftover_tasks(loop: asyncio.AbstractEventLoop, name: str) -> None:
+    """asyncio.run's `_cancel_all_tasks`, bounded: cancel what is still pending on `loop`, give it
+    TEARDOWN_SEC to unwind, report unexpected exceptions through the loop's exception handler, and log
+    (rather than wait forever on) anything that ignores the cancel."""
+    tasks = [t for t in asyncio.all_tasks(loop) if not t.done()]
+    if not tasks:
+        return
+    for t in tasks:
+        t.cancel()
+    _, pending = loop.run_until_complete(asyncio.wait(tasks, timeout=TEARDOWN_SEC))
+    if pending:
+        log.warning("turn_loop_tasks_abandoned", turn_loop=name, count=len(pending))
+    for t in tasks:
+        if t in pending or t.cancelled():
+            continue
+        if (exc := t.exception()) is not None:
+            loop.call_exception_handler({"message": "unhandled exception in a leftover turn-loop task", "exception": exc, "task": t})
+
+
 class TurnLoopTimeout(TimeoutError):
     """The turn did not finish within the service-side ceiling and was cancelled."""
 
@@ -80,6 +105,9 @@ async def run_on_turn_loop(
             finally:
                 ready.set()
                 try:
+                    # The caller already has the result (done is set above), so this teardown never
+                    # delays the reply; it runs on the turn thread, like asyncio.run's own cleanup.
+                    _cancel_leftover_tasks(loop, name)
                     loop.run_until_complete(loop.shutdown_asyncgens())
                     loop.run_until_complete(loop.shutdown_default_executor())
                 except Exception as e:  # cleanup only

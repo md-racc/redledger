@@ -413,3 +413,85 @@ def test_record_cancelled_without_a_registry_redacts_the_args():
         ctx.unbind(tokens)
     (call,) = [a for k, a, _ in rec.calls if k == "tool_call"]
     assert call[1] == {"amount": 3}
+
+
+# ---------- teardown: leftover tasks on the turn loop ----------
+
+
+def _destroyed_pending(caplog) -> list[str]:
+    import gc
+
+    gc.collect()
+    return [r.getMessage() for r in caplog.records if "Task was destroyed but it is pending" in r.getMessage()]
+
+
+async def test_leftover_tasks_are_cancelled_before_the_turn_loop_closes(caplog):
+    left: dict[str, asyncio.Task] = {}
+
+    async def fn():
+        loop = asyncio.get_running_loop()
+        left["sleeper"] = asyncio.create_task(asyncio.sleep(3600))
+        fut = loop.create_future()
+
+        async def watcher():  # like sse_starlette's _shutdown_watcher: parked on a Future nobody sets
+            await fut
+
+        left["waiter"] = asyncio.create_task(watcher())
+        await asyncio.sleep(0)
+        return "ok"
+
+    caplog.set_level("ERROR", logger="asyncio")
+    assert await run_on_turn_loop(fn, name="leftovers") == "ok"
+    await asyncio.sleep(0.05)  # the turn thread tears down after handing back the result
+    assert left["sleeper"].cancelled() and left["waiter"].cancelled()
+    assert _destroyed_pending(caplog) == []
+
+
+async def test_a_leftover_task_that_ignores_cancel_is_abandoned_with_a_log_not_a_hang(monkeypatch, capsys):
+    import agentkit.sync as sync
+
+    monkeypatch.setattr(sync, "TEARDOWN_SEC", 0.2)
+    release = threading.Event()
+
+    async def stubborn():
+        while not release.is_set():
+            try:
+                await asyncio.sleep(0.05)
+            except asyncio.CancelledError:
+                continue  # swallows every cancel
+
+    async def fn():
+        asyncio.create_task(stubborn())
+        await asyncio.sleep(0)
+        return "ok"
+
+    t0 = time.monotonic()
+    assert await run_on_turn_loop(fn, name="stubborn") == "ok"
+    await asyncio.sleep(0.5)
+    release.set()
+    import gc
+
+    gc.collect()  # the abandoned task is destroyed here, not in whichever test runs next
+    assert time.monotonic() - t0 < 2.0
+    out = capsys.readouterr()
+    assert "turn_loop_tasks_abandoned" in out.out + out.err
+
+
+async def test_a_leftover_task_that_failed_is_reported_through_the_loop_handler():
+    seen: list[dict] = []
+
+    async def boom():
+        await asyncio.sleep(0)
+        raise ValueError("late")
+
+    async def fn():
+        asyncio.get_running_loop().set_exception_handler(lambda _loop, c: seen.append(c))
+        t = asyncio.create_task(asyncio.sleep(3600))
+        asyncio.create_task(boom())
+        await asyncio.sleep(0)
+        t.cancel()
+        return "ok"
+
+    assert await run_on_turn_loop(fn, name="failed-leftover") == "ok"
+    await asyncio.sleep(0.05)
+    assert any(isinstance(c.get("exception"), ValueError) for c in seen)
