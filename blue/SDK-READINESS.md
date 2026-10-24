@@ -178,3 +178,45 @@ is superseded, not requested again. No shared file was changed here. Contract #3
 to its first action (GL posted fields for `gl.post`), with battlefield 409 on different-action
 reuse; shared LedgerClient uses the invocation ID for write one and `<id>:<n>` thereafter.
 This readiness checkpoint does not claim independent validation of Blue gate compatibility.
+
+## Strict-policy opt-in prerequisite (#84)
+
+Blue explicitly selects `autonomy="off"` and `identity="strict"` and answers permission
+requests only with `PROCEED_ONCE` (lazy SDK import). The immutable seven-ID allowlist above,
+including CRS, seeds a fresh per-agent list before the first SessionConfig. Blue overrides
+only the expected IDs; shared `_learn_tool_ids` validates every strict-live turn before
+streaming and rejects missing/extra/lookalike IDs or listing failures.
+
+`tests/test_strict_adapter.py` exercises that policy with controlled module/session doubles
+and synthetic ledger context, not an authenticated SDK or provider. This is not a live
+adapter: the real `_droid_turn` hard stop and false readiness/health remain unchanged.
+Owner-loop/narration work in #85 remains a separate prerequisite.
+
+### Controlled authenticated SDK checkpoint
+
+A local combined snapshot (`7889fba`, #85 + strict policy, shared #84) passed **299 tests**.
+A bounded real CLI-authenticated SDK turn with `gemini-3.8-flash` / low reasoning then
+observed one OFF permission callback, one `PROCEED_ONCE` approval, one verified invocation
+whose ID matched the intercepted report header and confirmed receipt, and exactly one
+shared narration pair. Session discovery matched all seven pinned IDs. A concurrent local
+ASGI `/gate` returned allow in **3.284 ms** during the report's two-second intercepted HTTP
+delay. Reported usage was **2,989 Factory credits**. An earlier attempt was inconclusive;
+successful model discovery after removing an empty `FACTORY_API_KEY` justified the retry.
+
+`tests/sdk_authenticated_probe.py` preserves a portable, explicitly opt-in form of that
+temporary probe; it is not collected by pytest. After #85 and this policy are integrated,
+with the existing CLI authenticated and the `dev` + `droid` extras installed:
+
+```sh
+cd blue
+UV_NO_ENV_FILE=1 uv run --no-sync python tests/sdk_authenticated_probe.py --allow-model-call
+```
+
+The portable replay later matched all Session IDs but ended without a permission callback,
+tool event, write or reported usage. Reproducibility remains unqualified; do not retry blindly.
+
+This command is billable. It uses an empty temporary cwd, disables dotenv, clears sponsor
+credentials in its child process, forbids CRS construction and intercepts all Ledger HTTP.
+Only its test subclass bypasses the guard. This proves controlled SDK identity delivery,
+not a real Ledger commit, production gate latency, CRS access or the three-day shadow
+checkpoint. The real live hard stop and false readiness/health remain unchanged.

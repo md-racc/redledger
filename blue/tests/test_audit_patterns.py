@@ -1,6 +1,7 @@
 import pytest
 
 from audit import evidence
+from audit.agent import AUDIT_TOOL_IDS
 
 from .audit_helpers import FakeLedger, invoice, turn, vendor
 
@@ -135,9 +136,10 @@ async def test_live_path_stays_closed_before_sdk_stream(runtime, monkeypatch):
         raise AssertionError("SDK stream must remain unreachable")
 
     monkeypatch.setattr(DroidAgent, "_droid_turn", forbidden)
-    agent, ledger, _ = runtime(dry_run=False)
+    agent, ledger, emitter = runtime(dry_run=False)
     result = await agent.run_turn(turn())
     assert not result.ok and "Live audit unavailable" in result.summary
     assert "worker-thread Blue context" in result.summary and "invocation binding" in result.summary
-    assert not entered and not ledger.writes
-    assert agent._tool_ids is None
+    assert not entered and not ledger.writes and not emitter.calls
+    assert agent._tool_ids == list(AUDIT_TOOL_IDS)  # A literal allowlist does not qualify live SDK use.
+    assert (await agent.health())["droid_ok"] is False
