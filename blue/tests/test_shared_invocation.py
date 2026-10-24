@@ -98,9 +98,14 @@ async def shared_bridge(monkeypatch, responder=None):
             ctx.unbind(bindings)
 
 
-def call_shared(agent, emitter, fn, kwargs, *, tool_id=SDK_ID, source="stream"):
+def call_shared(agent, emitter, fn, kwargs, *, tool_id=SDK_ID, source="stream", approved=True):
     registry = agent._new_registry(emitter)
     registry.observe(tool_id, f"blue-ledger___{fn._rl_tool[0]}", kwargs, source)
+    assert registry.require_permission and agent.identity_policy() == "strict"
+    if approved:
+        # Controlled approval, not a real SDK claim. The strict-adapter tests separately
+        # exercise the actual OFF permission entry. Keep this helper synchronous for #85.
+        registry.permission_resolved(tool_id, approved=True)
     result = json.loads(agent._offload(fn, registry=registry)(**kwargs))
     registry.close()
     return result
@@ -171,13 +176,50 @@ async def test_shared_bridge_body_error_and_local_fallback_fail_closed(monkeypat
         result = call_shared(agent, emitter, tools.raise_flag, {"finding_id": "unknown"})
         assert not result["ok"]
         assert emitter.events[-1]["payload"]["ok"] is False
-        # No registered SDK sighting: the copied private marker cannot authorize the local fallback.
+        # No registered SDK sighting: strict identity refuses before the Blue body can run.
         result = json.loads(agent._offload(tools.post_report)())
-        assert not result["ok"]
+        assert result == {
+            "error": True,
+            "identity": "unverified",
+            "not_run": True,
+            "tool": "post_report",
+            "detail": "no verified tool_use_id for this call",
+        }
         assert len(emitter.events) == 4
-        assert emitter.events[-1]["payload"]["ok"] is False
-        assert emitter.events[-1]["payload"]["summary"] == "post_report: not confirmed"
+        local = emitter.events[-2]["payload"]["tool_use_id"]
+        assert UUID(local).version == 4 and local not in {PRIVATE, SDK_ID}
+        assert emitter.events[-1]["payload"] == {"tool_use_id": local, "ok": False, "summary": json.dumps(result)}
+        assert "private" not in json.dumps(emitter.events) + json.dumps(result)
         assert not requests and not session.effects
+
+
+async def test_unapproved_stream_registration_has_only_refusal_pairs_and_no_effects(monkeypatch):
+    async with shared_bridge(monkeypatch) as (agent, session, emitter, requests, timeline):
+        output = call_shared(agent, emitter, tools.post_report, {}, approved=False)
+        assert output == {
+            "error": True,
+            "identity": "unverified",
+            "not_run": True,
+            "tool": "post_report",
+            "detail": "no verified tool_use_id for this call",
+        }
+        assert timeline == ["call", "result", "call", "result"] and len(emitter.events) == 4
+        local = emitter.events[0]["payload"]["tool_use_id"]
+        assert UUID(local).version == 4 and local != SDK_ID
+        # D8: one pair for the refused execution and one for the registered ID that never ran.
+        assert emitter.events[0] == {"type": "agent.tool_call", "payload": {"tool": "post_report", "args": {}, "tool_use_id": local}}
+        assert emitter.events[1]["payload"] == {"tool_use_id": local, "ok": False, "summary": json.dumps(output)}
+        assert emitter.events[2] == {"type": "agent.tool_call", "payload": {"tool": "post_report", "args": {}, "tool_use_id": SDK_ID}}
+        registered = emitter.events[3]["payload"]
+        assert registered["tool_use_id"] == SDK_ID and registered["ok"] is False
+        assert json.loads(registered["summary"]) == {
+            "error": True,
+            "not_run": True,
+            "tool": "post_report",
+            "detail": "turn ended before the tool ran",
+        }
+        assert not requests and not session.effects
+        assert "private" not in json.dumps(emitter.events) + json.dumps(output)
 
 
 async def test_shared_bridge_deadline_keeps_unknown_receipt_and_one_failure_pair(monkeypatch):

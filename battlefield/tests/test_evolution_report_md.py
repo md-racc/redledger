@@ -146,3 +146,20 @@ def test_soft_scan_still_warns_on_underscore_prefixed_secrets() -> None:
     assert er.soft_scan(json.dumps({"k": "sk_live_" + "abcdefghijklmnopqrstuvwxyz123456"}))
     assert er.soft_scan(json.dumps({"api_key_" + "x": "api_key_" + "Zq9" * 14}))
     assert not er.soft_scan(json.dumps({"tool": "toolu_01" + "AbCdEf1234567890" * 3}))
+
+
+def test_file_modes_write_the_same_layout_without_the_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """export-file / report-file (used by deploy/prod.sh) read a saved JSON instead of calling the API."""
+    monkeypatch.setenv("RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(er, "get", lambda path: pytest.fail("file modes must not call the API"))
+    doc = {"lineage": {"id": "ln_1"}, "playbooks": {"red": [{"version": 0}]}, "generations": [{"generation": 1, "episode": {"id": "ep_1"}}]}
+    (tmp_path / "export.json").write_text(json.dumps(doc))
+    er.main(["export-file", "ln_1", str(tmp_path / "export.json")])
+    assert er.bundle_files(doc).keys() == {str(p.relative_to(tmp_path / "runs" / "ln_1")) for p in (tmp_path / "runs" / "ln_1").rglob("*") if p.is_file()}
+    with pytest.raises(SystemExit):
+        er.main(["export-file", "ln_1"])  # FILE is required
+    with pytest.raises(SystemExit):
+        er.main(["export-file", "ln;1", str(tmp_path / "export.json")])  # LN shape still checked
+    with pytest.raises(SystemExit) as e:
+        er.main(["report-file", "ln_1", str(tmp_path / "missing.json")])
+    assert "cannot read" in str(e.value.code)
