@@ -1,0 +1,1 @@
+- 2026-10-24T16:00Z · Ad · battlefield: green's gated routes consume their preparation (no second blue call; 409 consumed/pending/stale/expired per D4; 403 for a stored block; fingerprint recomputed under locks; ledger.mutation preparation_id); invoices.match verdicts bound to the PO; next: M's green handler (step 6); blocked: none

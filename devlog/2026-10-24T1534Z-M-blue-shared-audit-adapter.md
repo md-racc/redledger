@@ -1,0 +1,1 @@
+- 2026-10-24T15:34Z · M · blue: adopt shared redacted narration and TurnLock, make audit fakes loop-safe, and verify canned turn-loop overlap/cancellation without weakening live guards; next: independent review and strict-identity adapter after Ad prerequisites; blocked: authenticated SDK/CRS acceptance and three-day all-real shadow checkpoint

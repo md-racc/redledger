@@ -11,6 +11,7 @@ import pytest
 from pydantic import ConfigDict, create_model
 
 from agentkit import ctx, make_agent_app
+from agentkit.sync import TurnLock
 from audit import readiness, tools
 from audit.agent import AUDIT_TOOL_IDS, AuditAgent
 
@@ -126,6 +127,33 @@ async def test_shared_bridge_copies_context_but_does_not_verify_blue_identity(mo
         assert ctx.invocation() is None
     finally:
         tools.INVOCATION.reset(token)
+
+
+async def test_bridge_probe_uses_shared_turn_lock_on_worker_loop(monkeypatch):
+    monkeypatch.setattr(httpx.AsyncClient, "send", forbid)
+    agent = readiness._offline_agent()
+    offload = agent._offload
+    locks = []
+
+    def checked_offload(fn):
+        async def checked(**kwargs):
+            lock = tools.SESSION.get().tool_lock
+            locks.append(lock)
+            async with lock:
+                assert lock.locked()
+                return await fn(**kwargs)
+
+        checked._rl_tool = fn._rl_tool
+        return offload(checked)
+
+    monkeypatch.setattr(agent, "_offload", checked_offload)
+    report = await readiness.inspect_bridge(agent)
+    assert len(locks) == 1 and isinstance(locks[0], TurnLock)
+    assert not locks[0].locked()
+    assert report["blue_tool_lock_shared"] and not report["worker_on_owner_loop"]
+    assert report["shared_narration_pair_recorded"]
+    assert not report["shared_invocation_verified"]
+    assert readiness.live_readiness(sdk_available=True).ready is False
 
 
 @pytest.mark.parametrize("dry_run", [False, True])

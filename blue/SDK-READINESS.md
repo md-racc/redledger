@@ -6,6 +6,27 @@ with no environment bypass.** `/health` retains its shape: `ok=true` means the s
 `droid_ok=false` truthfully reports the
 unavailable live audit, including when SDK imports succeed. Health never runs diagnostics.
 
+## Shared adapter / D14 prerequisite checkpoint after #79
+
+Blue now delegates deterministic narration to `ledger_tool(redact=...)`, retaining the outer
+verified, one-time invocation guard and constant shared outcome summaries. Argument binding
+rejects model metadata before adding the private deterministic UUID. Nonconfirmed results use
+a sanitized internal exception so the shared narrator emits `ok=false`; callers still receive
+the original sanitized JSON result. There is no Blue-owned event pair.
+
+Audit and tool locks use `agentkit.sync.TurnLock`. The fake polls its release flag with a
+bounded wait instead of awaiting an Event owned by another loop. `tests/test_shared_adapter.py`
+opts canned turns into the shared turn loop per instance and checks contended lock handoff,
+cancellation, UUID/receipt identity, replay, unknown-write retention, context restoration, and
+all three overlapping `/audit`/`/turn` combinations with the existing 409 and <50 ms gate
+assertions unchanged. All seven tool names/signatures and the original 27 invocation tests remain.
+
+`UV_OFFLINE=1 UV_NO_SYNC=1 UV_NO_ENV_FILE=1 make lint test-blue TOKEN=test-operator` passed:
+**284 tests**. A full-suite test-only `AuditAgent.turn_loop_dry_run=True` fixture override also
+passed **284 tests**. Shared defaults, autonomy, live guards and readiness were not changed.
+These are in-memory/mocked-HTTP tests, not Docker, authenticated SDK, real ledger/provider or
+live gate-latency proof. Strict identity remains Ad's next step; no live enablement is claimed.
+
 ## Invocation/receipt integration covered offline — not live qualification
 
 `tests/test_shared_invocation.py` uses the real shared `Invocation`, `bind_invocation`,
@@ -33,14 +54,15 @@ Covered integration behavior:
   Unknown receipts are retained without blind retries. Body errors, write cancellation/deadlines
   and cancellation waiting for the lock restore private invocation context and retain receipts;
   direct binding tests also restore the enclosing shared context.
-- Key-free deterministic dispatch still uses fresh UUID4 IDs for its own safe narration pair,
+- Key-free deterministic dispatch still uses fresh UUID4 IDs for the shared decorator's pair,
   writes and receipts. The full Blue suite continues to cover same-day replay and cross-day
   suppression/unknown handling.
 
 Controlled registrations demonstrate **API integration only**, not authenticated live identity.
 No Session, `session.list_tools()`, CLI, listener, model/provider, external HTTP, production or CRS
-call was run for this integration. The shared bridge is still synchronous/blocking on a separate
-worker loop. Uncontended unit-test locks and mocked HTTP do not qualify owner-loop safety.
+call was run for this integration. Shared offload still blocks its calling turn loop while a
+private worker runs; #79 isolates that turn loop from the service loop. The controlled lock and
+fake-client tests above do not qualify actual SDK/client/event-pump ownership or live safety.
 Neither `AuditAgent._droid_turn` nor readiness/health guards were changed: readiness is always false.
 
 ## Session tool-ID discovery
@@ -139,11 +161,11 @@ The readiness helper always returns false; none of these offline observations ca
    validation, prove an actual SDK-reported ID reaches the registry in time, binds the exact write
    and receipt, and produces exactly one shared pair. Copied private markers, model args and
    generated/explicit IDs cannot authorize live tools. Installing SDK does not settle this.
-2. Prove owner-loop safety for Blue's asyncio lock, private worker client and receipt/snapshot
-   access. Copied session/invocation objects do not make cross-loop use safe by themselves.
+2. TurnLock contention and canned turn-loop ownership are now covered offline above. Still
+   qualify actual SDK, worker client, event pump and receipt/snapshot access under cancellation.
    Retain same-day replay, partial/unknown receipts, cross-day suppression and no blind retries.
-3. Make the bridge nonblocking for the service loop while retaining bounded deadlines, event
-   draining and cancellation safety. Prove concurrent `/gate` stays within its 8-second budget.
+3. #79 supplies service/turn-loop isolation. Qualify its bounded deadlines, event draining and
+   cancellation with actual SDK traffic; prove concurrent `/gate` stays within its 8-second budget.
    Do not fork shared lifecycle/offload inside Blue.
 4. The list-only probe above observed the exact seven IDs with CRS present; retain that
    restriction before the first live event and revalidate after tool/SDK changes.

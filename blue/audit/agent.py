@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from agentkit import DroidAgent, TurnRequest, collect_tools, ctx
 from agentkit.config import AgentSettings
 from agentkit.models import TurnResponse, Usage
+from agentkit.sync import TurnLock
 from agentkit.tools import ToolFn
 
 from . import tools
@@ -43,7 +44,7 @@ class AuditAgent(DroidAgent):
     def __init__(self, settings: AgentSettings):
         super().__init__(settings)
         self._tool_ids = list(AUDIT_TOOL_IDS)
-        self.audit_lock = asyncio.Lock()
+        self.audit_lock = TurnLock()
         self.completed: dict[tuple[str, int], tuple[TurnResponse, AuditOutcome]] = {}
         self.receipts: dict[tuple[str, int], list[ConfirmedEffect]] = {}
 
@@ -80,7 +81,7 @@ class AuditAgent(DroidAgent):
                 raise HTTPException(503, "audit receipt capacity reached; reconcile before restarting")
             budget = min(170.0, max(1.0, self.s.turn_timeout_sec - 10.0))
             started = time.monotonic()
-            session = AuditSession(req.episode_id, req.day, self.s.dry_run, started + budget, tool_lock=asyncio.Lock())
+            session = AuditSession(req.episode_id, req.day, self.s.dry_run, started + budget, tool_lock=TurnLock())
             for (episode_id, _), receipts in self.receipts.items():
                 if episode_id != req.episode_id:
                     continue

@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from playbook import reflect_playbook
 from workflow import clerk_scope, run_clerk
 
 import tools as green_tools
 from agentkit import DroidAgent, EventEmitter, TurnRequest, TurnResponse, collect_tools
-from agentkit.models import Usage
+from agentkit.models import ReflectRequest, ReflectResponse, Usage
 from agentkit.tools import ToolFn
 
 PREREQUISITE = (
@@ -34,6 +35,12 @@ class GreenAgent(DroidAgent):
 
     async def build_prompt(self, req: TurnRequest) -> str:
         return f"Day {req.day}. Follow the AP procedure in your system prompt. Start with ap_queue."
+
+    async def reflect(self, req: ReflectRequest) -> ReflectResponse:
+        return reflect_playbook(req)
+
+    async def dry_run_reflect(self, req: ReflectRequest) -> ReflectResponse:
+        return reflect_playbook(req)
 
     async def run_turn(self, req: TurnRequest) -> TurnResponse:
         with clerk_scope():
