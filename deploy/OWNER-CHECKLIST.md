@@ -38,7 +38,7 @@ Do this locally before anyone else starts; it's the proof the skeleton holds.
 - [ ] `make record EP=<id>` and commit the fixture if it differs meaningfully from `sample-enforce-4d.jsonl`.
 - [ ] Open `http://localhost:8000/docs`. That URL goes in the team channel; it's what R and M will stare at.
 - [ ] ⚑ Verify the Droid CLI install line in `red/Dockerfile` against docs.factory.com and fix it in all three agent Dockerfiles. Record the working line in `contracts/CHANGELOG.md` Findings. This is the one line in the repo I wrote from memory.
-- [ ] `uv sync --all-packages --extra dev` at the root to confirm the workspace `pyproject.toml` resolves (it was not exercised here; if it fights you, delete it and let each service `uv sync` on its own).
+- [x] ~~Root uv workspace~~ removed (2026-10-23): it conflicted with each service's `agentkit = { path = "../agentkit" }` source and broke `uv sync` in every service. Each service syncs on its own (`make install`).
 
 ## 5. Hand-off (5 min)
 
