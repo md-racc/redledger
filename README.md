@@ -73,7 +73,8 @@ four people build in parallel against one contract.
 plain HTTP to each other (`http://battlefield:8000`, `http://blue:8003`); there is no reason
 to terminate TLS between containers on one host. HTTPS/WSS exists only at the public edge
 (browser → battlefield, browser → frontend), terminated by Caddy or Cloudflare. Agents
-authenticate to battlefield with a shared bearer token (`INTERNAL_TOKEN`).
+authenticate to battlefield with `AGENT_TOKEN`; the operator and the frontend server use a
+separate `OPERATOR_TOKEN` (§13).
 
 ### Why this shape
 
@@ -168,9 +169,12 @@ Scoring (`battlefield/app/scoring/score.py`, emitted as `score.updated`):
 
 ## 5. Ledger API — `contracts/ledger-api.yaml` is canonical; live docs at `/docs`
 
-Base `http://battlefield:8000/api`. Every request: `Authorization: Bearer $INTERNAL_TOKEN`.
+Base `http://battlefield:8000/api`. Every request: `Authorization: Bearer <token>`, where the
+token is `AGENT_TOKEN` for agents (requests with `X-Agent`) and `OPERATOR_TOKEN` for the
+operator / frontend server (no `X-Agent`); the wrong token for the role is a 401 (§13).
 Agent requests also carry `X-Agent`, `X-Episode`, `X-Day`, and on writes `X-Tool-Use-Id`
 (the idempotency key). Battlefield 403s any agent calling a route it isn't allowed.
+`GET /events` is operator-only: agents emit events, they never read them (`AGENTS.md` inv. 11).
 
 | Group | Routes | Who |
 |---|---|---|
@@ -178,9 +182,10 @@ Agent requests also carry `X-Agent`, `X-Episode`, `X-Day`, and on writes `X-Tool
 | Red writes | `POST /attacks` (declare before executing), `PATCH /attacks/{id}`, `POST /vendors /vendor_changes /invoices /expenses /employees` | red |
 | Green writes (gated) | `POST /invoices/{id}/match\|approve\|reject\|pay`, `/vendor_changes/{id}/approve\|reject`, `/expenses/{id}/approve\|pay`, `POST /gl/entries` | green |
 | Blue writes | `POST /flags`, `/vendors/{id}/freeze\|unfreeze`, `/reports` | blue |
-| Events | `GET /events?episode_id=&after_id=`, `POST /events` (agents: `agent.*` only), `WS /ws?episode_id=&token=&after_id=` | all |
-| Control plane | `POST /episodes`, `GET /episodes[/{id}]`, `/episodes/{id}/start\|pause\|resume\|step`, `GET /episodes/{id}/score`, `PATCH /episodes/{id}/controller`, `POST /episodes/{id}/attack`, `GET /schemes`, `GET /escalations`, `POST /escalations/{id}/resolve`, `GET /replays`, `POST /replays/{id}/play`, `GET /health` | operator/frontend |
-| Frontend read API | `GET /fe/episodes/{ep}/snapshot \| timeline \| ap_aging \| entities/{type}/{id} \| vendors \| attacks \| attacks/leaderboard \| verdicts \| verdicts/rules \| verdicts/confusion \| agents/activity \| agents/{agent}/thinking \| feed \| search \| reports \| escalations`, `GET /fe/compare?a=&b=` | frontend; see `frontend/FRONTEND-API.md` |
+| Events (write) | `POST /events` (agents: `agent.*` and `x.*` only) | agents |
+| Events (read) | `GET /events?episode_id=&after_id=`, `POST /ws/ticket {episode_id?}` → `{ticket, expires_at}`, `WS /ws?episode_id=&ticket=&after_id=` (or `&token=<OPERATOR_TOKEN>` for curl) | operator only |
+| Control plane | `POST /episodes`, `GET /episodes[/{id}]`, `/episodes/{id}/start\|pause\|resume\|step`, `GET /episodes/{id}/score`, `PATCH /episodes/{id}/controller`, `POST /episodes/{id}/attack`, `GET /schemes`, `GET /escalations`, `POST /escalations/{id}/resolve`, `GET /replays`, `POST /replays/{id}/play`, `GET /health` | operator / frontend server |
+| Frontend read API | `GET /fe/episodes/{ep}/snapshot \| timeline \| ap_aging \| entities/{type}/{id} \| vendors \| attacks \| attacks/leaderboard \| verdicts \| verdicts/rules \| verdicts/confusion \| agents/activity \| agents/{agent}/thinking \| feed \| search \| reports \| escalations`, `GET /fe/compare?a=&b=` | operator / frontend server (browser via `/api/bf/*`); see `frontend/FRONTEND-API.md` |
 
 Gated routes return `403 {verdict:"block", reason, verdict_id}` on block, or hold for the
 escalation then return 200 or 403. In `shadow` they succeed and record the verdict anyway.
@@ -248,14 +253,48 @@ redledger/
 ## 11. Environment variables
 
 See `.env.example`; every variable is there with a comment. Add a variable → add it there and
-in your service's `AGENTS.md`.
+in your service's `AGENTS.md`. Frontend-only vars for `npm run dev` are in `frontend/.env.example`.
+Where each credential comes from per environment: the second table below (full spec:
+`deploy/ENVIRONMENT.md` §2).
+
+New with the token split:
+
+| Variable | Read by | Meaning |
+|---|---|---|
+| `AGENT_TOKEN` | battlefield, red, green, blue | Bearer for agent ↔ battlefield calls (any request with `X-Agent`) and green → blue `/gate`. Replaces `INTERNAL_TOKEN`, which still works as a fallback for both tokens |
+| `OPERATOR_TOKEN` | battlefield, frontend server, Makefile | Bearer for everything without `X-Agent`: control plane, `/fe/*`, `GET /events`, `/inputs`, `POST /ws/ticket`. Must differ from `AGENT_TOKEN` |
+| `MAX_CREDITS_PER_EPISODE` | battlefield | Pause an episode once its summed `factory_credits` reach this (`error` event, `where: credit_guard`; resume by hand). `0` = off |
+| `BATTLEFIELD_URL` | frontend **server** (`/api/bf/*` proxy) | Where the proxy forwards. Compose sets `http://battlefield:8000`; `.env.example` value is for `npm run dev` on the host |
+
+Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBLIC_WS_URL` stays
+(a URL, not a secret). Never put a token in a `NEXT_PUBLIC_*` var.
+
+| Variable | Local dev (your own `.env`) | Prod (GitHub Environment `production` → VM `.env`) |
+|---|---|---|
+| `AGENT_TOKEN`, `OPERATOR_TOKEN` | any two different strings | `openssl rand -hex 32` each; secrets |
+| `FACTORY_API_KEY` | **your own key**, or empty with `DRY_RUN=true` | dedicated prod key; secret; exists nowhere else |
+| `DROID_MODEL_RED/GREEN/BLUE` | a cheap / low-multiplier model | pinned prod models; variables |
+| `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
+| `BLUE_GATE_LLM_API_KEY`, `CRS_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
+| `MAX_CREDITS_PER_EPISODE` | `0` (off) | e.g. `40`; variable |
+| `DOMAIN`, `CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` | n/a / `.env.example` defaults | variables (`CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` default from `DOMAIN`) |
+| `GITHUB_REPO` | n/a | not settable (GitHub reserves `GITHUB_`); `deploy.yml` passes `github.repository` |
+| `DATABASE_URL`, `POSTGRES_*` | compose default | compose default (Postgres not exposed) |
+
+Repository-level Actions secrets hold only deploy plumbing: `VULTR_HOST`, `VULTR_USER`,
+`VULTR_SSH_KEY`; repository variable `DEPLOY_ENABLED` (§17).
 
 ---
 
 ## 12. Running it
 
+> **After pulling the token split:** a local `.env` that still has only `INTERNAL_TOKEN` gets
+> compose's default tokens (`change-me-agent` / `change-me`) inside the containers, while the
+> Makefile sends your old `INTERNAL_TOKEN`, so `make episode` 401s. Set `AGENT_TOKEN` and
+> `OPERATOR_TOKEN` (two **different** values) in `.env`, then `make mock-agents` again.
+
 ```
-cp .env.example .env            # set INTERNAL_TOKEN; FACTORY_API_KEY and one LLM key when going live
+cp .env.example .env            # set AGENT_TOKEN and OPERATOR_TOKEN (two different strings); your own FACTORY_API_KEY + one LLM key when going live
 make mock-agents                # postgres + battlefield + stub red/green/blue — no model calls
 make episode MODE=enforce SEED=42 DAYS=4
 make up-dry                     # real agent containers in DRY_RUN with hot reload
@@ -286,9 +325,36 @@ portable truth; if someone gets Containers serving `/health` through a Worker in
 hours, switch — nothing in the code cares.
 
 Edge: `https://api.<domain>` → Caddy → `battlefield:8000`. `wss://api.<domain>/api/ws`
-same path. Frontend env: `NEXT_PUBLIC_BATTLEFIELD_URL=https://api.<domain>`,
-`NEXT_PUBLIC_WS_URL=wss://api.<domain>`. Put Cloudflare Access on the frontend during the
-weekend; the shared bearer token is not a security model.
+same path. Put Cloudflare Access on `app.` and `api.` during the weekend; bearer tokens are not
+user auth.
+
+**Token scopes** (`contracts/agent-service.md` is canonical). Battlefield picks the expected
+token by whether the request carries `X-Agent`:
+
+| Token | Held by | Authorizes |
+|---|---|---|
+| `AGENT_TOKEN` | battlefield, red, green, blue | every Ledger API request with `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes`; green → blue `/gate` mirror |
+| `OPERATOR_TOKEN` | battlefield, frontend **server**, Makefile/curl, Ad | every request without `X-Agent`: control plane, `/fe/*`, `GET /events`, `/inputs`, `POST /ws/ticket`, `/ws?token=` |
+| WS ticket | browser, 60 s, single use | one `/ws` connection for one episode (or `*`) |
+| none | anyone | `battlefield/extensions/fe_*` routes deliberately marked public |
+
+`OPERATOR_TOKEN` + `X-Agent` → 401; `AGENT_TOKEN` without `X-Agent` → 401. If either token is
+unset it falls back to `INTERNAL_TOKEN`; battlefield logs a warning when the two are equal.
+
+**Frontend proxy.** The browser holds no token. `lib/api.ts` calls same-origin `/api/bf/<path>`,
+a Next route handler that forwards to `${BATTLEFIELD_URL}/api/<path>` with
+`Authorization: Bearer ${OPERATOR_TOKEN}` added server-side (both server env, read per request).
+It forwards only `content-type`/`accept`, streams the response back, and refuses cross-site
+mutations (`Sec-Fetch-Site: cross-site` → 403). Details: `frontend/FRONTEND-API.md`. Because the
+proxy is a Node route handler, the frontend needs a Node runtime (the `frontend` container);
+a static Cloudflare Pages export can't serve `/api/bf/*`.
+
+**WS tickets.** `lib/ws.ts` calls `GET /api/bf/ws-ticket?episode_id=` (Next route → battlefield
+`POST /api/ws/ticket` with the operator token) → `{ticket, expires_at, ws_url}`, then opens
+`${ws_url}/api/ws?episode_id=&ticket=&after_id=`. Tickets are HMAC-signed with
+`OPERATOR_TOKEN`, valid 60 s, single use; a bad one closes with `4401`, and every reconnect
+fetches a new ticket. `ws_url` is the server's `NEXT_PUBLIC_WS_URL` (e.g. `wss://api.<domain>`)
+read at request time, so one frontend image serves every environment.
 
 ---
 
@@ -342,19 +408,33 @@ lives in `frontend/`, the server side is one extension file.
 `ownership-guard` fails a PR whose branch prefix touched files outside its area;
 `contracts-guard` fails a `contracts/` change without a CHANGELOG line.
 
-**CD** (`.github/workflows/deploy.yml`, on merge to `main`): builds five images to GHCR tagged
-`latest` and the commit SHA, then SSHes to the VM and runs
-`docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && up -d`. Roughly 4–6
-minutes merge-to-live; `workflow_dispatch` for manual redeploys. Rollback = rerun with an older
-SHA as `IMAGE_TAG`, or `git revert` and merge.
+**CD** (`.github/workflows/deploy.yml`, on merge to `main` or `workflow_dispatch`), two jobs:
 
-**VM** (one-time): `deploy/bootstrap.sh <org>/redledger <domain>` installs Docker, clones the
-repo to `/opt/redledger`, writes `.env` with a random `INTERNAL_TOKEN`, opens 80/443. Then fill
-`FACTORY_API_KEY` and the LLM key in `/opt/redledger/.env`, add `VULTR_HOST / VULTR_USER /
-VULTR_SSH_KEY` as repo secrets, `docker login ghcr.io` once on the box, point Cloudflare DNS
-`api.<domain>` and `app.<domain>` at the IP. Caddy (`deploy/Caddyfile`) terminates TLS.
-Frontend ideally on Cloudflare Pages pointed at `https://api.<domain>`; the `frontend`
-container behind `app.<domain>` is the fallback.
+| Job | Environment | Does |
+|---|---|---|
+| `build` | none; sees no app secrets | builds five images to GHCR tagged `latest` and the commit SHA. No build args: images carry no secrets and no per-environment values, so they can be public |
+| `roll` | GitHub Environment `production` (required reviewer: Ad) | runs only if repo variable `DEPLOY_ENABLED` is `true`. SSHes to the VM, `git reset` to `origin/main`, renders `/opt/redledger/.env` with `deploy/render-env.sh` from the environment's secrets/variables, then `docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && up -d` with `IMAGE_TAG=<sha>`, and probes battlefield from inside its container |
+
+`render-env.sh` writes atomically with mode 600, never prints values, and refuses to write if
+`AGENT_TOKEN` or `OPERATOR_TOKEN` is empty or the two are equal. `docker-compose.prod.yml` fails
+closed: compose won't start if either token is unset. Nobody edits the VM's `.env` by hand; the
+next deploy overwrites it. Rotation = change the secret in `production`, re-run the workflow.
+Until `DEPLOY_ENABLED=true`, merges build and push images and skip the roll.
+
+Rollback = `git revert` + merge (the durable fix; it redeploys), or re-run an older successful
+deploy run from the Actions tab: it pulls that commit's images (`IMAGE_TAG` = its SHA) but with
+current `main`'s compose files and env render, and the next merge rolls forward again. The
+workflow has no `IMAGE_TAG` input.
+
+**VM** (one-time): `deploy/bootstrap.sh <org>/redledger [<domain>]` installs Docker, creates
+the `deploy` user, clones the repo to `/opt/redledger`, opens 80/443. It does **not** write
+`.env`; the first deploy renders it. Then: `deploy` user's SSH key → repo secrets
+`VULTR_HOST / VULTR_USER / VULTR_SSH_KEY`; fill the `production` environment (§11 table);
+`docker login ghcr.io` once on the box (or make the packages public); point Cloudflare DNS
+`api.<domain>` and `app.<domain>` at the IP; set `DEPLOY_ENABLED=true` and run the workflow.
+Caddy (`deploy/Caddyfile`) terminates TLS. The `frontend` container serves `app.<domain>` (it
+needs a Node runtime for the `/api/bf/*` proxy, §13). Step by step: `deploy/OWNER-CHECKLIST.md`
+§2–§3; design and rationale: `deploy/ENVIRONMENT.md`.
 
 What is not automated: database migrations (schema is `IF NOT EXISTS`; a column change means
-`make db-reset` on the box, which wipes episodes — record fixtures first), and secrets rotation.
+`make db-reset` on the box, which wipes episodes — record fixtures first).

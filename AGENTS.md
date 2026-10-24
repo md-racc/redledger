@@ -61,8 +61,12 @@ one `DEVLOG.md` line per PR.
 8. **Everything must run under `DRY_RUN=true` with no Factory or LLM keys.** Agents return canned
    turns; blue's gate runs rules only. Frontend must run with `NEXT_PUBLIC_MOCK=true` and no
    backend. Don't break these paths; they are how four of five people develop.
-9. **No secrets in the repo.** `.env` is gitignored. `.env.example` has every variable with an
-   empty or dummy value. Keys arrive via the shared vault, not Slack.
+9. **No secrets in the repo, in images, or in `NEXT_PUBLIC_*`.** Secrets live in your local
+   `.env` (gitignored) or in the GitHub `production` environment, which the deploy job renders
+   into the VM's `.env` (`deploy/ENVIRONMENT.md`). Never bake one into an image or a build arg,
+   never put one in a `NEXT_PUBLIC_*` var (those ship to the browser). `.env.example` has every
+   variable with an empty or dummy value. Each dev uses their own `FACTORY_API_KEY` locally;
+   the prod key exists only in `production`. Keys arrive via the shared vault, not Slack.
 10. **Timeouts everywhere.** Every HTTP call has a timeout. Every Droid `stream()` has `timeout=`.
     A hung agent must fail a turn, not the episode.
 11. **Agents read the books, never the scoreboard or each other.** Battlefield does not yet
@@ -83,6 +87,13 @@ one `DEVLOG.md` line per PR.
       beyond what the role implies.
     A reviewer checks every agent's tool list against this invariant. Code-level enforcement
     (filtering `/events` and `audit_log` for `X-Agent` callers) is a pending contracts change.
+12. **Two tokens, chosen by `X-Agent`.** A request with `X-Agent` presents `AGENT_TOKEN`; a
+    request without it presents `OPERATOR_TOKEN`. The wrong one for the role is a 401, so an
+    agent cannot make an operator call and the frontend cannot act as an agent. Agents hold only
+    `AGENT_TOKEN` (via `agentkit.AgentSettings`; `INTERNAL_TOKEN` is a legacy fallback). The
+    browser holds neither: REST goes through the frontend server's `/api/bf/*` proxy, and the
+    WebSocket connects with a 60 s single-use ticket from `/api/bf/ws-ticket`. Never pass
+    `?token=` from browser code. `GET /api/events` already rejects agents (403).
 
 ## 4. Tech conventions
 
@@ -145,8 +156,13 @@ make mock-agents        # battlefield + postgres + stub agents; use this if you 
 # then in your own dir:
 uv sync && uv run uvicorn server:app --port 800X --reload
 ```
+Tokens: your `.env` sets `AGENT_TOKEN` and `OPERATOR_TOKEN` to two different local strings
+(invariant 12). A service you run on the host needs the same `AGENT_TOKEN` battlefield has
+(compose default `change-me-agent`); `make` targets send `OPERATOR_TOKEN`.
+
 Frontend: `cd frontend && NEXT_PUBLIC_MOCK=true npm run dev` until battlefield is stable, then
-point `NEXT_PUBLIC_BATTLEFIELD_URL` at the shared staging box.
+set the server-side `BATTLEFIELD_URL` and `OPERATOR_TOKEN` (`frontend/.env.example`) to point
+the `/api/bf/*` proxy at a battlefield, normally your local `make mock-agents`.
 
 Backend: `make up-dry` runs the real stack with agents in DRY_RUN.
 
