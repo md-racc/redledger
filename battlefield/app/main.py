@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import db, turns
-from .api import blue_writes, control, events_api, extension_points, frontend, green_writes, playbooks, preparations, reads, red_writes
+from .api import blue_writes, control, events_api, extension_points, fixtures, frontend, green_writes, playbooks, preparations, reads, red_writes
 from .config import settings
 from .events import bus
 from .gate import gatekeeper
@@ -99,6 +99,7 @@ app.include_router(control.router, prefix="/api", tags=["control"])
 app.include_router(frontend.router, prefix="/api", tags=["frontend"])
 app.include_router(extension_points.router, prefix="/api", tags=["extension-points"])
 app.include_router(playbooks.router, prefix="/api", tags=["playbooks"])
+app.include_router(fixtures.router, prefix="/api", tags=["control"])
 
 # Team extensions: battlefield/extensions/<area>_*.py → /api/x/<area>/...
 import extensions as _ext  # noqa: E402

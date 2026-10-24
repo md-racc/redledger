@@ -1,0 +1,12 @@
+{
+  "employees": [
+    {"name": "MARGARET OKAFOR", "role": "AP Specialist", "department": "Finance", "salary": 68000, "bank_account": "CRS-P01-40213377", "start_day": 0, "hr_record": true, "status": "active"},
+    {"name": "VICTOR ANAND", "role": "Procurement Analyst", "department": "Operations", "salary": 74000, "bank_account": "CRS-P12-40213378", "start_day": 0, "hr_record": true, "status": "active"},
+    {"name": "SAMUEL OYELARAN", "role": "Field Sales Rep", "department": "Sales", "salary": 71000, "bank_account": "CRS-P16-40213379", "start_day": 0, "hr_record": true, "status": "active"}
+  ],
+  "expenses": [
+    {"employee_ref": 0, "amount": 184.50, "category": "travel", "submitted_day": 2, "memo": "client visit mileage"},
+    {"employee_ref": 1, "amount": 212.00, "category": "meals", "submitted_day": 2, "memo": "supplier lunch"},
+    {"employee_ref": 2, "amount": 167.25, "category": "travel", "submitted_day": 2, "memo": "regional sales trip"}
+  ]
+}

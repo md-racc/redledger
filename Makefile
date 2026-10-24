@@ -32,9 +32,9 @@ LN_DAYS = $(if $(filter command line,$(origin DAYS)),$(DAYS),6)
 
 .PHONY: help up up-dry mock-agents down logs ps db-reset db-shell seed episode step toggle attack escalations score record replay \
         local-stack local-stack-status local-stack-stop \
-        evolve lineage-status lineage-pause lineage-resume evolution-report lineage-export \
+        evolve lineage-status lineage-pause lineage-resume evolution-report lineage-export fixtures \
         prod-health prod-ps prod-logs prod-episode prod-step prod-pause prod-resume prod-toggle prod-attack prod-escalations \
-        prod-resolve prod-score prod-wait prod-record prod-credits \
+        prod-resolve prod-score prod-wait prod-record prod-credits prod-fixtures \
         prod-evolve prod-lineage-status prod-lineage-pause prod-lineage-resume prod-lineage-wait prod-lineage-export prod-evolution-report \
         install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog devlog-show
 
@@ -81,6 +81,9 @@ episode: ## create + start an episode: make episode MODE=enforce SEED=42 DAYS=10
 	@curl -s $(AUTH) -X POST $(API)/api/episodes -d '{"controller_mode":"$(MODE)","seed":$(SEED),"days":$(DAYS)}' | tee /tmp/rl_ep.json; echo
 	@EP=$$(python3 -c 'import json;print(json.load(open("/tmp/rl_ep.json"))["id"])'); echo "episode $$EP"; \
 	 curl -s $(AUTH) -X POST $(API)/api/episodes/$$EP/start; echo; echo "export EP=$$EP"
+fixtures: ## seed operator fixtures into $(EP) from a JSON $(FILE): make fixtures EP=... FILE=personas.json
+	@test -n "$(EP)" -a -f "$(FILE)" || { echo "usage: make fixtures EP=<episode> FILE=<json>"; exit 2; }
+	@curl -s $(AUTH) -X POST $(API)/api/episodes/$(EP)/fixtures --data-binary @"$(FILE)"; echo
 step: ## run one day of $(EP)
 	curl -s $(AUTH) -X POST $(API)/api/episodes/$(EP)/step; echo
 toggle: ## set controller mode on $(EP): make toggle EP=... MODE=enforce
@@ -143,6 +146,7 @@ prod-%: export PRODARG_REVEAL_DAYS := $(call prodarg,REVEAL_DAYS)
 prod-%: export PRODARG_REVEAL_GENERATIONS := $(call prodarg,REVEAL_GENERATIONS)
 prod-%: export PRODARG_MAX_CREDITS := $(call prodarg,MAX_CREDITS)
 prod-%: export PRODARG_GEN := $(call prodarg,GEN)
+prod-%: export PRODARG_FILE := $(call prodarg,FILE)
 prod-health: ## prod: battlefield /health (incl. agents), from inside the VM
 	@$(PROD) health
 prod-ps: ## prod: docker compose ps on the VM
@@ -161,6 +165,8 @@ prod-toggle: ## prod: set controller mode: EP=... MODE=off|shadow|enforce
 	@$(PROD) toggle "$$PRODARG_EP" "$$PRODARG_MODE"
 prod-attack: ## prod: force a scheme on next red turn: EP=... SCHEME=... [PARAMS='<json>']
 	@$(PROD) attack "$$PRODARG_EP" "$$PRODARG_SCHEME" "$$PRODARG_PARAMS"
+prod-fixtures: ## prod: seed operator fixtures (legit employees/expenses) into EP from a local JSON FILE
+	@$(PROD) fixtures "$$PRODARG_EP" "$$PRODARG_FILE"
 prod-escalations: ## prod: open escalations [EP=...]
 	@$(PROD) escalations "$$PRODARG_EP"
 prod-resolve: ## prod: resolve an escalation: ESC=... DECISION=approve|block

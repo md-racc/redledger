@@ -1,0 +1,1 @@
+- 2026-10-24T21:47Z · Ad · battlefield: operator fixtures route POST /episodes/{id}/fixtures + make fixtures / prod-fixtures + shipped battlefield/fixtures/crs-personas.json (P01/P12/P16 employees + one expense each) for M's CRS acceptance (#102); next: merge after contracts PR; blocked: none
