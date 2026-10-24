@@ -15,7 +15,7 @@ URLS = {"red": settings.red_url, "green": settings.green_url, "blue": settings.b
 
 
 def _headers() -> dict[str, str]:
-    return {"Authorization": f"Bearer {settings.internal_token}"}
+    return {"Authorization": f"Bearer {settings.agent_token}"}
 
 
 async def turn(agent: str, episode_id: str, day: int, controller_mode: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
