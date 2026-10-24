@@ -217,7 +217,8 @@ A subagent that spends 40k tokens rediscovering the repo is your planning failur
 **Verification is a separate subagent.** After implementers finish, spawn one reviewer per
 worktree that has not seen the implementation: it runs `make lint test-<area>` (and
 `make mock-agents` + an episode for battlefield-touching work), reads the diff against the
-directory's `AGENTS.md` boundaries and the contract, and reports pass/fail with specifics.
+directory's `AGENTS.md` boundaries and the contract, checks any agent tool list against §3
+invariant 11 (no peeking), and reports pass/fail with specifics.
 Implementers grading their own work is not verification.
 
 **Boundaries propagate.** A subagent you spawn from a `red/` task inherits the `red/`
