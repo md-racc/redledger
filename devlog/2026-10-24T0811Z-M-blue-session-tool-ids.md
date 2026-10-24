@@ -1,0 +1,1 @@
+- 2026-10-24T08:11Z · M · docs: record all seven Blue/CRS session tool IDs from a real list-only SDK probe; no stream, ledger write or sponsor request; next: Ad shared-bridge safety and M authenticated receipt/profile acceptance; blocked: live audit remains disabled, B2 not complete

@@ -8,6 +8,7 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
 
 ## Findings
 
+- 2026-10-24 · M · **Blue's seven in-process session tool IDs were observed, not inferred.** With droid-sdk 0.5.0 / mcp 1.30.0 and the CRS tool set, a real `Session.list_tools()` matched `blue-ledger___benford_check`, `blue-ledger___crs_identity_check`, `blue-ledger___day_activity`, `blue-ledger___freeze_vendor`, `blue-ledger___post_report`, `blue-ledger___raise_flag`, `blue-ledger___vendor_dedupe`. Command: `cd blue && UV_OFFLINE=1 UV_NO_ENV_FILE=1 uv run --extra dev --extra droid python` with the list-only here-document in `blue/SDK-READINESS.md` §Session tool-ID discovery (companion Blue invocation PR, after #64). No stream, agent tool, ledger write or CRS request ran; this does not qualify invocation delivery, owner-loop safety or live audit. FYI Ad/M.
 - 2026-10-24 · Ad · **The Droid CLI never passes the tool_use_id to an MCP tool handler.** CLI
   0.249.0 calls in-process tools with `_meta: {assemblySessionId, caller}` only; the id is visible
   in the permission request (`McpToolAction.tool_use.id`) and the stream (`ToolCall.tool_use_id`).
