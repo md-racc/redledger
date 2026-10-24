@@ -69,8 +69,9 @@ def fold(content: dict[str, Any], items: Any, generation: int, episode_id: str, 
     """Return changed content or None. Repeated daily/AAR items are a set, not counters.
 
     Retain the latest 128 launches, including hashed episode/attack identity. Replayed older
-    items cannot displace this window. AAR may include unresolved attacks, but pending outcomes
-    remain neutral. Unknown namespaces are preserved rather than migrated or overwritten.
+    items cannot displace this window. AAR may include unresolved attacks; one still pending at
+    episode end never paid, so it counts as a failure. Unknown namespaces are preserved rather
+    than migrated or overwritten.
     """
     memory = _memory(content)
     if memory is None or type(generation) is not int or generation < 0 or not episode_id or not isinstance(items, list) or len(items) > 4096:
@@ -81,6 +82,8 @@ def fold(content: dict[str, Any], items: Any, generation: int, episode_id: str, 
             continue
         attack, scheme, launched = item.get("attack_id"), item.get("scheme_id"), item.get("day_launched")
         resolved, outcome, detected = item.get("resolved_day"), item.get("outcome"), item.get("detected_day")
+        if ended and outcome == "pending":
+            outcome = "failed"
         if (
             item.get("kind") != "attack"
             or not isinstance(attack, str)
