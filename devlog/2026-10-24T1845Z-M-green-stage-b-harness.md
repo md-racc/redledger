@@ -1,0 +1,1 @@
+- 2026-10-24T1845Z · M · green: Stage B acceptance driver (fake fixtures) for off/shadow/enforce-block/escalation-timeout stacked on #103, CLI refuses all invocations pre-SDK; next: independent verification + Ad isolated-runtime coordination; blocked: real Stage B needs Ad fixtures and spending approval

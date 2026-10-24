@@ -68,6 +68,20 @@ The restriction case currently refuses before SDK access; a future observable re
 is required before that row can spend credits or qualify restriction enforcement.
 No real-Ledger Stage B or production-guard change is part of this harness milestone.
 
+## Stage B harness (fake-first)
+
+The separate manual driver is `tests/sdk_stage_b_harness.py`; it is not a pytest entrypoint.
+It covers the four Stage B rows (off allow, shadow would-block/effective-allow, enforce block,
+enforce escalation timeout) against synthetic mocked preparations and fixture books, checking
+preparation semantics and key parity, consumption state, write cardinality, exact cancel causes
+(`control_hold` vs `escalation_timeout`, never conflated), cancel-comment nonce delivery, and
+fixture mutation/payment counts. It adds a fourth CLI gate, `--isolated-ledger URL`, attesting
+an Ad-coordinated stack. Every CLI invocation currently refuses before SDK/auth/settings/network
+access, even with all gates: a real Session against the mocked runner would spend credits without
+qualifying real-Ledger behavior. A separately reviewed PR adds the real-Ledger mode once Ad's
+isolated fixtures and an active-turn window exist; the 135-second budget includes the real
+escalation hold and is never shortened.
+
 Keyless verification from the checkout root:
 `UV_OFFLINE=1 UV_NO_SYNC=1 UV_NO_ENV_FILE=1 UV_PROJECT_ENVIRONMENT=/tmp/redledger-green-tests PYTHONPATH="$PWD/green:$PWD/agentkit" make lint test-green TOKEN=test-operator`
 These checks establish harness behavior with fakes only, not any acceptance-matrix result.
