@@ -83,21 +83,72 @@ def _new_vendor(seed: str) -> tuple[dict[str, Any], str]:
     return body, name
 
 
+CAP_RATIO = 0.93  # every part stays under this fraction of the approval line (blue's near_threshold band starts at 0.95)
+GAP = 0.0101  # pairwise spacing, just over blue's 1% duplicate tolerance
+
+
+def _max_total(parts: int, cap: float) -> float:
+    """Largest total for which `parts` amounts can all sit under `cap` while staying >1% apart.
+
+    The spread is symmetric around the mean with half-width h = (parts-1)/2 steps, so the top part is
+    mean + h*step and the pairwise rule needs step >= GAP*top. Solving leaves mean <= cap*(1 - GAP*h);
+    the extra 0.0005 is rounding margin.
+    """
+    h = (parts - 1) / 2
+    return float(int(parts * cap * (1 - GAP * h - 0.0005) * 100) / 100)
+
+
 def _resolve(total: float, parts: int, threshold: float, max_parts: int) -> tuple[float, int]:
-    """Keep the per-part mean under 0.93*threshold: raise parts first, then lower total."""
-    cap = 0.93 * threshold
+    """Keep the per-part mean under the cap: raise parts first, then clamp the total."""
+    cap = CAP_RATIO * threshold
     parts = max(2, min(parts, max_parts))
-    while total / parts >= cap and parts < max_parts:
+    while total > _max_total(parts, cap) and parts < max_parts:
         parts += 1
-    if total / parts >= cap:
-        parts = max_parts
-        total = parts * 0.9 * threshold
-    return total, parts
+    return min(total, _max_total(parts, cap)), parts
 
 
 def _collides(amount: float, others: list[float]) -> bool:
-    """True if `amount` is within max($0.05, 1%) of any value in `others` (blue's duplicate rule)."""
-    return any(abs(amount - o) <= max(0.05, 0.01 * min(amount, o)) for o in others if o > 0)
+    """True if `amount` is within max($0.05, 1%) of any value in `others` (blue's duplicate rule, conservative)."""
+    return any(abs(amount - o) <= max(0.05, 0.01 * max(amount, o)) for o in others if o > 0)
+
+
+def _ok(amount: float, cap: float, paid: list[float], others: list[float]) -> bool:
+    return 0 < amount < cap and not _collides(amount, paid) and not _collides(amount, others)
+
+
+def _dodge(amounts: list[float], total: float, cap: float, paid: list[float]) -> list[float] | None:
+    """Move any part that sits within 1% of a paid invoice, keeping every part under the cap, >1% from the
+    others, and the total exact. Returns None when no arrangement is found (caller lowers the total)."""
+    amounts = list(amounts)
+    for _ in range(len(amounts) * 2):
+        bad = [i for i, a in enumerate(amounts) if _collides(a, paid)]
+        if not bad:
+            break
+        i = bad[0]
+        others = [a for j, a in enumerate(amounts) if j != i]
+        moved = False
+        for delta in (37, -37, 74, -74, 111, -111, 148, -148):
+            cand = round(amounts[i] + delta, 2)
+            if not _ok(cand, cap, paid, others):
+                continue
+            # rebalance the residual onto a different part that still passes every check
+            residual = round(total - (sum(others) + cand), 2)
+            for j in range(len(amounts)):
+                if j == i:
+                    continue
+                fixed = round(amounts[j] + residual, 2)
+                rest = [cand] + [a for k, a in enumerate(amounts) if k not in (i, j)]
+                if _ok(fixed, cap, paid, rest):
+                    amounts[i], amounts[j] = cand, fixed
+                    moved = True
+                    break
+            if moved:
+                break
+        if not moved:
+            return None
+    if any(_collides(a, paid) for a in amounts) or abs(sum(amounts) - total) > 0.011:
+        return None
+    return amounts
 
 
 class ThresholdSplit(SchemeBase):
@@ -114,7 +165,7 @@ class ThresholdSplit(SchemeBase):
             "threshold": {"type": "number", "default": 5000},
         },
     }
-    expected_impact = {"min": 9000, "max": 15000}
+    expected_impact = {"min": 6000, "max": 15000}
 
     async def viable(self, ledger: LedgerClient) -> bool:
         return True
@@ -145,15 +196,17 @@ class ThresholdSplit(SchemeBase):
             by_vendor: dict[str, list[dict]] = {}
             for inv in all_paid:
                 by_vendor.setdefault(inv["vendor_id"], []).append(inv)
-            best = None
-            best_mean = -1.0
-            for v in actives:
-                amts = [float(i["amount"]) for i in by_vendor.get(v["id"], [])]
-                if amts:
-                    m = sum(amts) / len(amts)
-                    if m > best_mean:
-                        best_mean = m
-                        best = v
+
+            # Blue's no_po_from_po_vendor rule flags a no-PO invoice from a vendor whose >=3 paid invoices all
+            # carry a PO. Prefer vendors already paid without a PO, then thin histories, then the biggest bills.
+            def _rank(v: dict) -> tuple[int, float, str]:
+                paids = by_vendor.get(v["id"], [])
+                amts = [float(i["amount"]) for i in paids]
+                tier = 0 if any(not i.get("po_id") for i in paids) else (1 if len(paids) < 3 else 2)
+                return (tier, -(sum(amts) / len(amts)), str(v["id"]))
+
+            candidates = [v for v in actives if by_vendor.get(v["id"])]
+            best = min(candidates, key=_rank) if candidates else None
             if best is not None:
                 vendor_id = best["id"]
                 vendor_name = best.get("name")
@@ -168,18 +221,16 @@ class ThresholdSplit(SchemeBase):
         max_parts = 3 if creating else 4
         total, parts = _resolve(total, parts, threshold, max_parts)
 
-        amounts = self._amounts(total, parts, threshold)
-        # Avoid blue's duplicate_invoice rule: nudge any amount too close to a paid one by $37 steps.
-        cap = 0.93 * threshold
-        for idx in range(len(amounts)):
-            tries = 0
-            while tries < 20 and _collides(amounts[idx], paid_amounts):
-                cand = round(amounts[idx] + 37, 2)
-                others = [a for j, a in enumerate(amounts) if j != idx]
-                if cand >= cap or _collides(cand, others):
-                    cand = round(amounts[idx] - 37, 2)
-                amounts[idx] = cand
-                tries += 1
+        # Avoid blue's duplicate_invoice rule; if no arrangement works at this total, lower it and retry.
+        cap = CAP_RATIO * threshold
+        amounts: list[float] | None = None
+        for _ in range(15):
+            amounts = _dodge(self._amounts(total, parts, threshold), total, cap, paid_amounts)
+            if amounts is not None:
+                break
+            total = float(int(total * 0.985 * 100) / 100)
+        if amounts is None:  # pathological ledger; fall back to the clean spread and let the dice roll
+            amounts = self._amounts(total, parts, threshold)
 
         seed = (vendor_name or vendor_id or "threshold_split") + f":{total}"
         invoice_numbers = _invoice_numbers(latest_number, parts, seed)
@@ -196,17 +247,19 @@ class ThresholdSplit(SchemeBase):
 
     @staticmethod
     def _amounts(total: float, parts: int, threshold: float) -> list[float]:
-        """Uneven amounts summing to `total`, each < 0.93*threshold, pairwise >1% apart."""
+        """Uneven amounts summing to `total`, each < CAP_RATIO*threshold, pairwise >1% apart.
+
+        `total` must already be <= _max_total(parts, cap) (see _resolve), which guarantees a step exists.
+        """
         mean = total / parts
-        cap = 0.93 * threshold
-        step_lo = 0.0101 * mean  # just above the 1% pairwise rule
-        step_hi = 2 * (cap - mean) / (parts - 1)  # keep max amount under cap
-        step = (step_lo + step_hi) / 2 if step_lo < step_hi else step_lo * 0.999
-        offsets = [step * (i - (parts - 1) / 2) for i in range(parts)]
-        amounts = [round(mean + off, 2) for off in offsets]
-        # Restore exact sum by adjusting an element near the mean (keeps extremes within band).
-        mid = parts // 2
-        amounts[mid] = round(amounts[mid] + round(total - sum(amounts), 2), 2)
+        cap = CAP_RATIO * threshold
+        h = (parts - 1) / 2
+        step_lo = GAP * mean / (1 - GAP * h)  # pairwise gap measured against the largest part
+        step_hi = (cap - mean) / h * 0.999  # keep the largest part under the cap
+        step = min(step_lo * 1.3, step_hi) if step_lo <= step_hi else step_lo
+        amounts = [round(mean + step * (i - h), 2) for i in range(parts)]
+        # Restore the exact sum on the smallest part: the residue is rounding noise, so the gap and cap hold.
+        amounts[0] = round(amounts[0] + round(total - sum(amounts), 2), 2)
         return amounts
 
     async def execute(self, ledger: LedgerClient, plan: dict[str, Any]) -> str:

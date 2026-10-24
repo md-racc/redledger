@@ -15,9 +15,13 @@ def _pairwise_ok(amounts):
     for i in range(len(amounts)):
         for j in range(i + 1, len(amounts)):
             a, b = amounts[i], amounts[j]
-            if abs(a - b) <= 0.01 * min(a, b):
+            if abs(a - b) <= max(0.05, 0.01 * max(a, b)):  # blue measures 1% of the amount being judged
                 return False
     return True
+
+
+def _clear_of(amounts, paid):
+    return all(abs(a - p) > max(0.05, 0.01 * max(a, p)) for a in amounts for p in paid)
 
 
 def test_catalog_shape():
@@ -25,7 +29,77 @@ def test_catalog_shape():
     assert c.id == "threshold_split"
     assert c.display_name == "Threshold Splitting"
     assert c.story.endswith(".")
-    assert c.expected_impact == {"min": 9000, "max": 15000}
+    assert c.expected_impact == {"min": 6000, "max": 15000}
+    assert c.params_schema["properties"]["total"]["minimum"] == c.expected_impact["min"]
+
+
+@respx.mock
+async def test_plan_near_cap_total_keeps_invariants():
+    # mean 4616.67 sits within 1% of the 4650 cap: the total must be clamped so every part stays under the
+    # cap and the parts stay >1% apart (the old step fallback broke both).
+    async with LedgerClient(S, episode_id="ep", day=1) as L:
+        plan = await ThresholdSplit().plan(L, {"new_vendor": True, "total": 13850, "threshold": 5000})
+    amts = plan["amounts"]
+    assert len(amts) == 3
+    assert all(a < 4650 for a in amts)
+    assert _pairwise_ok(amts)
+    assert abs(sum(amts) - plan["target_amount"]) <= 0.01
+    assert 13700 <= plan["target_amount"] <= 13850
+
+
+@respx.mock
+async def test_plan_dodges_paid_amount_collision_and_keeps_total_exact():
+    respx.get("http://bf/api/vendors", params={"status": "active"}).mock(
+        return_value=httpx.Response(200, json=[{"id": "ven_a", "name": "Globex Logistics LLC", "status": "active"}])
+    )
+    paid = [4630.0, 4600.0, 4570.0]  # sits right on top of the default spread around 4600
+    respx.get("http://bf/api/invoices", params={"status": "paid"}).mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"id": f"i{k}", "vendor_id": "ven_a", "po_id": None, "amount": p, "invoice_number": f"GLX-0004{k}", "status": "paid"}
+                for k, p in enumerate(paid)
+            ],
+        )
+    )
+    async with LedgerClient(S, episode_id="ep", day=1) as L:
+        plan = await ThresholdSplit().plan(L, {"threshold": 5000})
+    amts = plan["amounts"]
+    assert all(a < 4650 for a in amts)
+    assert _pairwise_ok(amts)
+    assert _clear_of(amts, paid)
+    assert abs(sum(amts) - plan["target_amount"]) <= 0.01
+    assert plan["target_amount"] <= 13800
+
+
+@respx.mock
+async def test_plan_prefers_vendor_already_paid_without_po():
+    respx.get("http://bf/api/vendors", params={"status": "active"}).mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"id": "ven_po", "name": "All-PO Vendor", "status": "active"},
+                {"id": "ven_nopo", "name": "No-PO Vendor", "status": "active"},
+            ],
+        )
+    )
+    respx.get("http://bf/api/invoices", params={"status": "paid"}).mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                # higher mean, but every paid invoice is PO-backed (>=3) -> blue's no_po_from_po_vendor would fire
+                {"id": "p1", "vendor_id": "ven_po", "po_id": "po1", "amount": 9000, "invoice_number": "A-1", "status": "paid"},
+                {"id": "p2", "vendor_id": "ven_po", "po_id": "po2", "amount": 9100, "invoice_number": "A-2", "status": "paid"},
+                {"id": "p3", "vendor_id": "ven_po", "po_id": "po3", "amount": 9200, "invoice_number": "A-3", "status": "paid"},
+                {"id": "n1", "vendor_id": "ven_nopo", "po_id": None, "amount": 2000, "invoice_number": "B-1", "status": "paid"},
+                {"id": "n2", "vendor_id": "ven_nopo", "po_id": "po9", "amount": 2100, "invoice_number": "B-2", "status": "paid"},
+            ],
+        )
+    )
+    async with LedgerClient(S, episode_id="ep", day=1) as L:
+        plan = await ThresholdSplit().plan(L, {"threshold": 5000})
+    assert plan["vendor_id"] == "ven_nopo"
+    assert plan["invoice_numbers"][0] == "B-4"
 
 
 @respx.mock
