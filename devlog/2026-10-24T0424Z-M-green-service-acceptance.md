@@ -1,0 +1,1 @@
+- 2026-10-24T04:24Z · M · green: add 20 keyless HTTP acceptance/recovery cases and SDK-free DRY_RUN health; 77 tests pass; update merged handoffs; next: independent review and live follow-up; blocked: shared identity/preflight/replay, local frontend tsc missing
