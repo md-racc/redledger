@@ -43,6 +43,8 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
 
 ## Changes
 
+- 2026-10-24 · Ad · ledger-api.yaml, events.md · agent-facing /audit_log excludes red's rows; legit_injected gains vendor_changes/new_vendors · blue (M), red (Al), frontend (R)
+
 - 2026-10-24 · Ad · schema.sql, ledger-api.yaml · attacks.created_at (in Attack responses); vendor_changes.attack_id (hidden from agents) · red (Al), frontend (R)
 
 - 2026-10-23 · Ad · agent-service.md, ledger-api.yaml, events.md · split INTERNAL_TOKEN into AGENT_TOKEN/OPERATOR_TOKEN, POST /ws/ticket, GET /events operator-only, credit_guard error · all

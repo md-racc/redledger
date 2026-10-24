@@ -456,7 +456,9 @@ paths:
     get: { security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { $ref: '#/components/parameters/id' } ], responses: { '200': { description: report } } }
 
   /audit_log:
-    get: { x-agents: [blue], security: [ { agentBearer: [] }, { operatorBearer: [] } ], parameters: [ { name: agent, in: query, schema: { type: string } }, { name: day, in: query, schema: { type: integer } } ],
+    get: { x-agents: [blue], security: [ { agentBearer: [] }, { operatorBearer: [] } ],
+           description: "Audit rows for the caller's episode, newest first. Agents (any X-Agent caller) see only green and blue rows; red's rows and every attacks.* action are operator-only, because only red's legwork writes audit rows for sim-shaped entities and those rows would reveal provenance. An agent filtering agent=red gets [] (200, not 403). Operator view is unfiltered.",
+           parameters: [ { name: agent, in: query, schema: { type: string } }, { name: day, in: query, schema: { type: integer } } ],
            responses: { '200': { description: rows } } }
 
   /attacks:
