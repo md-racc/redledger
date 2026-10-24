@@ -11,10 +11,12 @@ ones when the controller is off so the baseline loses money. Don't make green su
 blue's job.
 
 `battlefield` remains the enforcement point. Live Green is intentionally disabled before
-Droid Session/tool execution pending Ad's merged shared preflight protocol, verified invocation
-identity propagation and exact tool restrictions. The permission handler cancels with a static
-prerequisite message. Never send incomplete context or fabricated keys to Blue's cache.
-See [INTEGRATION.md](INTEGRATION.md) for shipped shared fixes, remaining prerequisites and acceptance checks.
+Droid Session/tool execution pending canonical preflight/replay support and authorized SDK
+acceptance, including exact tool restrictions and verified invocation correlation. Shared identity,
+cancellation and worker-context plumbing landed in #34; see [IDENTITY.md](IDENTITY.md).
+The permission handler still cancels with a static prerequisite message. Never send incomplete
+context or fabricated keys to Blue's cache. [INTEGRATION.md](INTEGRATION.md) records the protocol
+handoff and earlier integration baseline.
 
 ## Boundaries
 
@@ -44,6 +46,8 @@ See [INTEGRATION.md](INTEGRATION.md) for shipped shared fixes, remaining prerequ
    Keep autonomy off until evidence exists; unit fakes are not SDK findings.
 3. DRY_RUN is keyless and uses the same decorated tools as the eventual live surface. It emits
    only `agent.thinking`, `agent.tool_call`, `agent.tool_result`, not gate/mutation events.
+   Its `/health` reports `droid_ok=false` without inspecting SDK availability; the SDK is not
+   required or imported for this path. Live health still uses the shared diagnostic.
 
 ## Current AP milestone
 
@@ -66,9 +70,10 @@ See [INTEGRATION.md](INTEGRATION.md) for shipped shared fixes, remaining prerequ
 - There is no automatic GL tool in this milestone. Do not claim balanced accounting.
   Posting GL requires a separate accounting milestone; this staged foundation deliberately
   does not yet implement the full agent-service contract's GL/live mirror behavior.
-- Shared `ledger_tool` event IDs and LedgerClient write-header IDs remain separate.
-  Verified correlation, canonical preflight context and complete canceled invocation event
-  pairs remain shared blockers. Green logs episode/day/agent/action/entity without invented IDs.
+- Shared #33/#34 carry invocation IDs into tool events and the first ledger write, with
+  `:<n>` keys for subsequent writes, canceled-call pairs and copied clerk ContextVars.
+  Adapter fixtures are not live SDK evidence. Canonical preflight/replay and verified SDK
+  correlation remain release prerequisites. Green never invents an SDK identity.
 
 ## Realism work (shared with Ad)
 

@@ -1,7 +1,7 @@
 """Small decorated AP surface shared by deterministic and eventual live turns.
 
-The shared decorator still generates event IDs independently of LedgerClient write IDs.
-This module does not repair or claim SDK invocation/header correlation.
+Shared agentkit carries one invocation ID across tool events and ledger write headers.
+Live SDK acceptance and the canonical gate preflight remain separate prerequisites.
 """
 
 from __future__ import annotations

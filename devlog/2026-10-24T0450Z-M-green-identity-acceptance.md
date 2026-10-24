@@ -1,0 +1,1 @@
+- 2026-10-24T04:50Z · M · green: cover eight AP mutations through merged shared identity adapter, cross-worker holds and cancel pairs; next: combined verification and integration review; blocked: canonical preflight/replay and authorized SDK acceptance; live guard unchanged

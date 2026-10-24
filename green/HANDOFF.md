@@ -1,6 +1,7 @@
 # Green AP protocol checkpoint
 
-Prepared for Dev Ad and the parallel Blue session, 2026-10-23. This is a review
+Initial proposal prepared for Dev Ad and the parallel Blue session, 2026-10-23.
+Status updated against merged main `899c133`. The protocol below remains a review
 proposal, not a merged contract or an implemented HTTP endpoint. No cross-owner
 implementation is included in this Green branch.
 
@@ -19,18 +20,20 @@ events into ledger writes; event presence is not proof of identity parity.
 
 ## Response to integration review on #13 and #14
 
-Ad's review on #13 holds both PRs for a live Green demo. The minimal shared
-handoff is now in [INTEGRATION.md](INTEGRATION.md); Green can integrate once that
-reviewed support is merged. There is no confirmed merge date or live-release ETA.
+Ad released the hold and merged #13 then #14 as **DRY_RUN-only Green**. The minimal
+shared handoff is in [INTEGRATION.md](INTEGRATION.md). Ad requested a small live
+follow-up after shared support merges; this does not authorize bypassing it.
+There is no confirmed live-release ETA.
 
-Main `68ef4eb` includes `9736639`: shared Droid tools now run on worker loops,
+Main `899c133` includes `9736639`: shared Droid tools now run on worker loops,
 and the first executable session has a restricted allowlist built using the
 observed `<server>___<tool>` IDs. Those fixes do not propagate the SDK invocation
 identity into permission callbacks, tool events and ledger headers, and do not
 add authoritative preflight or replay-only cache semantics. Reinstating the old
 mirror with only a different key would still risk priming the cache with
-incomplete context. The live guard therefore remains, and the review hold is not
-claimed resolved.
+incomplete context. The live guard therefore remains despite the DRY_RUN milestone
+being accepted. Ad owns `battlefield/agentkit-tool-identity` and will propose the
+Battlefield preparation/Blue replay-only contract.
 
 The unsupported-action regression is addressed in the preceding workflow PR:
 unsupported action/entity pairs must fail before any ledger I/O, not escape via
@@ -79,11 +82,11 @@ Additional shared plumbing prerequisites:
   ownership guard currently excludes `contracts/CHANGELOG.md` on Green branches;
   Green will not bypass it.
 
-### Independently reproduced event-delivery blocker
+### Resolved shared event-delivery blocker
 
-**P1, Ad-owned baseline:** `agentkit/agentkit/events.py` calls `flush()` once
-during `EventEmitter.__aexit__`, then cancels its pump. `_drain()` processes at
-most `max_batch` events (default 50), leaving the rest undelivered.
+**Historical P1 on pre-hardening main `68ef4eb`:**
+`EventEmitter.__aexit__` flushed only one batch before canceling its pump, leaving
+events beyond `max_batch` (default 50) undelivered.
 
 Reproduction: use a mocked event endpoint, queue 55 events without yielding
 inside an `EventEmitter` context, exit, and count posted events. Expected 55;
@@ -91,12 +94,12 @@ observed 50. A standalone emitter probe reproduces this without Green. A fast
 12-invoice Green turn likewise confirmed 24 mutations and $14,400 paid, but sent
 only 50 of 55 expected events, including an unmatched received tool-call.
 
-The independent verifier's two temporary regression probes both fail on this
-same unchanged shared behavior. Ad must drain all remaining batches at shutdown
-and test event-pair completeness. Green does not patch or wrap shared event
-delivery to hide it. Full event-pair acceptance remains blocked.
-Ad reports the fix is in `battlefield/agentkit-hardening`; it is not present in
-the checked main `68ef4eb`. This is a handoff, not a Green-owned workaround.
+The independent verifier's two temporary regression probes failed on that
+unchanged baseline. Ad's hardening fix is now merged as `51ebf1a` (#20): shutdown
+drains remaining batches within a bounded flush budget and tool offload is
+bounded. Green does not patch or wrap shared delivery. The old batch-loss defect
+is no longer a blocker; true SDK invocation-ID parity and canceled-call event
+accounting still require the separate shared identity work.
 
 ## Blue session: requested replay contract and cache changes
 
@@ -162,7 +165,7 @@ references. Expense-debit/AP-credit is recognition, not payment settlement.
 Do not invent cash-account conventions, treat two line writes as atomic, or
 repay an invoice to repair its accounting.
 
-## Foundation verification record
+## Historical foundation verification record
 
 Before review fixes, the original implementation passed 42 Green tests and a fresh independent review.
 Splitting the work adds eight clerk-primitive cases without removing or skipping
@@ -171,7 +174,8 @@ fragment; `DEVLOG.md` is now frozen history.
 
 - Green Ruff check and format check: passed.
 - At the initial split, the combined Green suite passed **50 tests** on Python 3.11.
-- Repository lint passes Python checks but stops at frontend `tsc: command not found`.
+- At that checkpoint repository lint passed Python checks but stopped at frontend
+  `tsc: command not found`; current validation must be reported separately.
 - The first slice passes nine tests; the activated workflow slice passes 18 tests.
 - The current main base includes the root uv-workspace fix. Service imports still
   need the same `PYTHONPATH` used by CI; plain Makefile invocation omits it.
@@ -186,22 +190,44 @@ fragment; `DEVLOG.md` is now frozen history.
 
 - Whitespace and changed-path ownership checks: passed.
 - Two temporary probes from the original independent review failed, demonstrating
-  only the shared event-shutdown defect above; those are not passing tests.
+  the shared event-shutdown defect later fixed by #20. That historical run is not
+  relabeled as passing.
 - No live SDK sessions, credentials, local stacks, or coordinated episodes were
   used. Live permissions, invocation identity, canonical replay, and accounting
   acceptance remain deferred.
 
+## Service acceptance milestone
+
+`green/tests/test_service.py` adds 20 keyless HTTP cases through the real
+`make_agent_app(GreenAgent)` and `LedgerClient`, using ASGI transport and a mocked
+Ledger API. The full Green suite passes 77 cases on Python 3.11.
+
+- Public health, agent-token authentication, validation and overlapping-turn 409.
+- AP sequence, inclusive invoice limit and expense backlogs in all three accepted
+  controller modes. These are mocked Ledger responses, not a Blue gate test.
+- Separate blocks/auth failures/conflicts/unknowns and recovery across requests,
+  with no repayment after a reconciled lost commit response.
+- Episode/day headers, turn-context cleanup and complete 55-event delivery before
+  the HTTP response, exercising the merged shared shutdown fix.
+- DRY_RUN health skips SDK inspection and reports `droid_ok=false` (not probed);
+  live health still delegates to the shared diagnostic. Tests track SDK imports
+  and availability probes across keyless health and turns.
+
+Python lint and formatting pass. The local combined `make lint test-green` still
+stops at frontend `tsc: command not found`; separate `test-green` passes. No SDK
+sessions, credentials, stacks or coordinated episodes were used. This coverage
+does not prove shared invocation-ID parity, live mirroring or balanced accounting.
+
 ## Current PR and integration handoff
 
 The original `green/ap-workflow` branch is preserved locally. The three initial
-slices were created from main `3f41c4e`; #12 has since been merged. #14 remains
-stacked on #13 and must not be merged before it.
+slices were created from main `3f41c4e` and have all merged in dependency order.
 
-| PR | Head | Dependency | Scope |
-|---|---|---|---|
-| #12, merged | `green/ap-foundation-1` | None | Clerk primitives, fixtures, direct tests |
-| #13, held | `green/ap-workflow-2` | #12 | Activate AP, live guard, DRY_RUN and dispatch tests |
-| #14, held | `green/ap-verification-3` | #13 | Failure/recovery tests and protocol handoffs |
+| PR | Merged main commit | Scope |
+|---|---|---|
+| #12 | `a0ebafe` | Clerk primitives, fixtures, direct tests |
+| #13 | `d71698c` | Activate AP, live guard, DRY_RUN and dispatch tests |
+| #14 | `0c26a2b` | Failure/recovery tests and protocol handoffs |
 
 Keep incremental review diffs below 600 lines. Use the PR template and leave
 checks incomplete when their validation is blocked; no green-CI claim is made.
