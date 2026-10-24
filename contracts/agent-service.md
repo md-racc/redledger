@@ -161,7 +161,8 @@ POST /reflect
                 "rules": [ { "rule_id": "…", "fired": 9, "on_red": 6, "on_legit": 3 } ],   # blue only
                 "history": [ { "generation": 1, "seed": 43, "score": Score,
                                "summary": { … per-agent counts by scheme / rule / outcome … } } ] },
-    "playbook": { "version": 7, "content": { … } } }
+    "playbook": { "version": 7, "parent_version": 6, "generation": 2, "episode_id": "ep_…", "day": 4,
+                  "source": "turn", "content": { … }, "rationale": "…" } }
   → 200 { "ok": true, "playbook": { … new content … } | null, "rationale": "…",
           "usage": { "factory_credits": …, … } | null }
 ```

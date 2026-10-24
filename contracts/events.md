@@ -51,7 +51,6 @@ from the ordered stream of these; it never queries ledger tables.
 | `where` | `message` | when / effect |
 |---|---|---|
 | `credit_guard` | `"episode paused at <n> credits (limit <m>)"` | `MAX_CREDITS_PER_EPISODE > 0` and the episode's summed `turn.ended.factory_credits` (missing/`null` counts as 0, e.g. `DRY_RUN`) reaches the limit after a turn. Battlefield emits the `error`, then pauses the episode and emits `episode.paused` (if the episode is already paused, e.g. during a manual `step`, only the `error` is emitted). It resumes only by an explicit `POST /api/episodes/{id}/resume`; it is never auto-resumed. |
-
 | `credit_guard` | `"lineage paused at <n> credits (limit <m>)"` | Lineage `config.max_credits > 0` and the lineage's summed credits (every generation's `turn.ended.factory_credits` plus `/reflect` usage) reach it. Emitted into the current generation's episode, followed by `lineage.paused` and `episode.paused` (when an episode is running). Resumes only by `POST /api/lineages/{id}/resume`. |
 
 `Score`:
@@ -74,7 +73,9 @@ Lineage episodes add, in this order:
   (`source: "reflect"`) per agent whose reflection on the previous generation produced a new
   version → `generation.started` → `episode.started`;
 - a `playbook.updated` (`source: "turn"`) inside the writing agent's turn, among its `agent.*` events;
-- at the end of each day: … `score.updated` → `debrief.delivered`* → `day.ended`;
+- at the end of each day except the last: … `score.updated` → `debrief.delivered`* → `day.ended` (the last day
+  has no next turn, so it emits no `debrief.delivered` and writes no `debriefs` row; that generation's
+  truth reaches agents only through the after-action review);
 - after the last day: `episode.ended` → `generation.ended`.
 
 So a viewer of the real-time demo episode (the lineage's next generation) sees the agents arrive

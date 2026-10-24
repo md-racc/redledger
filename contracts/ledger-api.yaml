@@ -539,7 +539,7 @@ paths:
 
   /audit_log:
     get: { x-agents: [blue], security: [ { agentBearer: [] }, { operatorBearer: [] } ],
-           description: "Audit rows for the caller's episode, newest first. Agents (any X-Agent caller) see only green and blue rows; red's rows and every attacks.* action are operator-only, because only red's legwork writes audit rows for sim-shaped entities and those rows would reveal provenance. An agent filtering agent=red gets [] (200, not 403). Operator view is unfiltered.",
+           description: "Audit rows for the caller's episode, newest first. Agents (any X-Agent caller) see only green and blue rows; red's rows, every attacks.* action and every playbook.* action are operator-only (playbook rows would show another agent's playbook), because only red's legwork writes audit rows for sim-shaped entities and those rows would reveal provenance. An agent filtering agent=red gets [] (200, not 403). Operator view is unfiltered.",
            parameters: [ { name: agent, in: query, schema: { type: string } }, { name: day, in: query, schema: { type: integer } } ],
            responses: { '200': { description: rows } } }
 
@@ -585,7 +585,7 @@ paths:
       responses:
         '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Episode' } } } }
         '404': { description: unknown lineage_id }
-        '409': { description: the lineage is running (its runner owns generation creation) }
+        '409': { description: 'the lineage is created, running or paused: its runner owns generation creation; a demo generation needs a finished (or failed) lineage' }
         '422': { description: 'invalid body, or seed already used by an episode of this lineage' }
     get: { security: [ { operatorBearer: [] } ], responses: { '200': { description: list } } }
   /episodes/{id}:
@@ -716,9 +716,10 @@ paths:
     put:
       summary: Write a new playbook version (source turn). Only inside the caller's active turn.
       description: |
-        Audited; emits `playbook.updated`. A retry with the same X-Tool-Use-Id returns the version it
-        created (200) instead of writing again. There is no route that reads or writes another
-        agent's playbook.
+        Audited (operator-only rows; agents never see playbook.* in /audit_log); emits `playbook.updated`.
+        A retry with the same X-Tool-Use-Id and the same body returns the version it created (200)
+        instead of writing again; the same key with a different body is a 409 (invariant 7). There is
+        no route that reads or writes another agent's playbook.
       x-agents: [red, green, blue]
       security: [ { agentBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/XToolUseId' } ]
@@ -727,7 +728,7 @@ paths:
         '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Playbook' } } } }
         '200': { description: retry of an earlier write with the same X-Tool-Use-Id; body is that version }
         '404': { description: "{error: 'not a lineage episode'}" }
-        '409': { description: "{error: 'stale base_version', latest: <int>} on a lost race, or {error: 'no active turn for this agent'}" }
+        '409': { description: "{error: 'stale base_version', latest: <int>} on a lost race, {error: 'idempotency key reused for a different playbook write'}, or {error: 'no active turn for this agent'}" }
         '413': { description: content over 64 KiB serialized }
   /playbook/history:
     get:
