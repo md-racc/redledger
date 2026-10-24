@@ -164,6 +164,9 @@ For a machine with no Docker or system Postgres. It runs Postgres 16 via `pgserv
 in `.local-stack/pgdata`), battlefield on :8000 and red/green/blue on :8001–8003 as plain processes.
 `.local-stack/` ignores itself and holds the per-data-dir tokens (`env`, mode 600, never printed),
 logs (`logs/<name>.log`, each run starts with a `=== local-stack start` line) and pid files.
+Requirements: `python3`, `uv` (it fetches `pgserver` via `uvx`) and `curl`. It runs on Linux and on
+stock macOS: bash 3.2 or newer, no `setsid` or GNU-only tools needed (each service gets its own process
+group through a small `python3` `os.setsid()` shim).
 
 ```
 make local-stack                 # all three agents mocked (AGENTS=mock)
