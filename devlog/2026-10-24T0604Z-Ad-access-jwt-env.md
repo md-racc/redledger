@@ -1,0 +1,1 @@
+- 2026-10-24T06:04Z · Ad · battlefield: pass CF_ACCESS_TEAM_DOMAIN/CF_ACCESS_AUD (production vars) to the frontend so it can verify the Access JWT at the origin; next: frontend/access-jwt; blocked: none

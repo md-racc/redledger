@@ -131,6 +131,10 @@ services:
       OPERATOR_TOKEN: ${OPERATOR_TOKEN:-change-me}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
       NEXT_PUBLIC_MOCK: ${NEXT_PUBLIC_MOCK:-false}
+      # Cloudflare Access JWT check at the origin (frontend middleware). Blank = check disabled
+      # (local dev); prod sets both, so a request that didn't pass our Access app gets 403.
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
     depends_on: [battlefield]
     networks: [edge]
     ports: ["3000:3000"]
