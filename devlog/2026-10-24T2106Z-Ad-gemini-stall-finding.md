@@ -1,0 +1,1 @@
+- 2026-10-24T21:06Z · Ad · contracts: Finding — gemini-3.8-flash stalled live red turns via Factory; prod red now gpt-5.4-mini (11 s, ~2.6k credits/turn); next: rehearsal lineage on prod; blocked: none
