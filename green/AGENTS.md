@@ -11,27 +11,29 @@ ones when the controller is off so the baseline loses money. Don't make green su
 blue's job.
 
 `battlefield` remains the enforcement point. Live Green is intentionally disabled before
-Droid Session/tool execution pending canonical preflight/replay support and authorized SDK
-acceptance, including exact tool restrictions and verified invocation correlation. Shared identity,
-cancellation and worker-context plumbing landed in #34; see [IDENTITY.md](IDENTITY.md).
-The permission handler still cancels with a static prerequisite message. Never send incomplete
-context or fabricated keys to Blue's cache. [INTEGRATION.md](INTEGRATION.md) records the protocol
-handoff and earlier integration baseline.
+Droid Session/tool execution pending permission-handler integration and Green SDK acceptance,
+including exact tool restrictions and verified invocation correlation. The merged contract
+uses Battlefield preparations, not a Green → Blue mirror (#80, Option P). Shared strict identity
+and `LedgerClient.prepare` landed in #84; preparation creation/consumption landed in #87/#89.
+The permission handler still cancels with a static prerequisite message. Dormant helpers in
+`preparation.py` do not enable it. [INTEGRATION.md](INTEGRATION.md) separates current prerequisites
+from the superseded handoff; [IDENTITY.md](IDENTITY.md) records identity evidence limits.
 
 ## Boundaries
 
 - You own `green/`. Branch prefix `green/`.
 - Talk to the world only through `agentkit.LedgerClient` (green routes). No DB, no imports from
   other services. Need another route or field? `contracts/` PR to Ad.
-- The only cross-service call you may make is `POST $BLUE_URL/gate` from the permission handler,
-  with the same idempotency key battlefield uses (the Droid `tool_use_id`).
+- Green never calls Blue. Prepare only through `LedgerClient.prepare` against Battlefield;
+  the later gated write uses the same verified SDK `tool_use_id`.
 
 ## Files
 
 | File | What goes there |
 |---|---|
 | `tools.py` | model-facing tools; wrappers over LedgerClient; the descriptions are prompt material |
-| `agent.py` | `GreenAgent(DroidAgent)`: prompt, permission handler mirror, DRY_RUN clerk |
+| `agent.py` | `GreenAgent(DroidAgent)`: prompt, guarded permission handler, DRY_RUN clerk |
+| `preparation.py` | dormant Option-P mapping and decision helpers; no SDK/session or execution writes |
 | `workflow.py` | shared turn-local procedure, eligibility, reconciliation and confirmed summary |
 | `prompts/system.md` | persona; a string replacing Droid's default |
 | `server.py` | leave alone |
@@ -69,11 +71,24 @@ handoff and earlier integration baseline.
   actual status; error bodies and bank/account details are not narrated.
 - There is no automatic GL tool in this milestone. Do not claim balanced accounting.
   Posting GL requires a separate accounting milestone; this staged foundation deliberately
-  does not yet implement the full agent-service contract's GL/live mirror behavior.
+  does not yet implement balanced GL or the live preparation handler.
 - Shared #33/#34 carry invocation IDs into tool events and the first ledger write, with
   `:<n>` keys for subsequent writes, canceled-call pairs and copied clerk ContextVars.
-  Adapter fixtures are not live SDK evidence. Canonical preflight/replay and verified SDK
-  correlation remain release prerequisites. Green never invents an SDK identity.
+  #84 refuses missing, ambiguous or conflicting identities in strict live turns; local UUIDs
+  remain valid for DRY_RUN, not live Green. Adapter fixtures are not live SDK evidence.
+  Handler/cause integration and verified Green SDK behavior remain release prerequisites.
+
+## Preparation staging, not live enablement
+
+`preparation.py` maps the eight existing AP mutation tools to the exact route body; `ap_queue`
+is read-only and GL is not registered. Its decisions follow `contracts/agent-service.md` (Green):
+validation/key/turn conflicts cancel in every mode; availability or malformed-response failures
+fall back to inline gating only in off/shadow; enforce fails closed. Block decisions carry
+`control_hold` or `escalation_timeout`; failures carry `invalid_state` or `integration_failure`.
+Helpers never retry, consume a write key, execute a mutation, or invent an identity.
+Consumption (#89) is merged; connecting these helpers to `on_permission` and turn-local cause
+accounting is a separate follow-up, not part of this dormant staging.
+Do not remove the pre-SDK guard or static CANCEL without separate Green acceptance.
 
 ## Realism work (shared with Ad)
 
@@ -91,7 +106,7 @@ PO amounts that drift a few percent, legit no-PO vendors, occasional legit bank-
 make mock-agents                       # battlefield + stub red/blue
 docker compose stop green
 cd green && uv sync --extra dev
-AGENT_NAME=green BATTLEFIELD_URL=http://localhost:8000 BLUE_URL=http://localhost:8003 INTERNAL_TOKEN=change-me DRY_RUN=true \
+AGENT_NAME=green BATTLEFIELD_URL=http://localhost:8000 INTERNAL_TOKEN=change-me DRY_RUN=true \
   uv run uvicorn server:app --port 8002 --reload
 make episode MODE=enforce
 ```
@@ -118,6 +133,9 @@ CI allows exactly those extra paths on a `green/` branch. Nothing else outside `
 In lineage episodes your `/turn` gets `options.lineage` and `options.debrief`: `fraud` items of
 **resolved** red attacks you actually acted on (invoices, expenses, vendor changes; outcome
 paid/approved/blocked/rejected). Legit items you had blocked arrive only in the after-action review.
+- Playbook: `ledger.get_playbook()` / `ledger.put_playbook(...)` inside your turn (procedures as data).
+  These shared APIs are not current Green model tools. Writes require an active turn;
+  reflection returns content for Battlefield to persist, never calls `put_playbook`.
 - `reflect(req)` and `dry_run_reflect(req)` share deterministic, keyless AAR reflection in
   `playbook.py`; Battlefield persists the returned content. Reflection performs no ledger I/O.
 - The reserved `green_reflection` object stores schema version 1, latest-review counts of unique
@@ -145,7 +163,7 @@ if not, create `green/<topic>` from origin/main. Edit only inside `green/`,
 Never force-push, never merge, never touch another directory; if you need a contracts change,
 write the proposed diff into the PR description and stop. Run `make lint test-green` before
 each push. Everything must work with DRY_RUN=true. Current scope: trusting AP clerk foundation;
-live/mirror/identity integration waits for Ad's merged shared protocol and SDK experiments.
+live preparation execution waits for handler integration and Green SDK acceptance. Never call Blue.
 ```
 
 ## Don't
