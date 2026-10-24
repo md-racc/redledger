@@ -14,6 +14,7 @@ from typing import Any
 
 from agentkit import ctx
 from agentkit.ledger_client import LedgerError
+from agentkit.tools import ledger_tool
 
 from .crs import CHECK_TIMEOUT, crs_client
 from .evidence import add_crs_findings, benford, model_view
@@ -37,10 +38,49 @@ def _json(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"))
 
 
+def _safe_args(args: dict[str, Any]) -> dict[str, Any]:
+    safe = {}
+    for key, value in args.items():
+        if key == "finding_ids" and isinstance(value, list):
+            safe[key] = [v for v in value[:20] if valid_id(v)]
+        elif valid_id(value):
+            safe[key] = value
+    return safe
+
+
+class _NotConfirmed(Exception):
+    """Tell the shared narrator this failed, without exposing the result or source errors."""
+
+    def __init__(self, result: str):
+        super().__init__("Verification unavailable; no unsupported action authorized.")
+        self.result = result
+
+
 def blue_tool(name: str, description: str) -> Callable:
-    """Bind verified shared identity to private receipts; only deterministic calls narrate here."""
+    """Guard identity before the shared decorator can treat a reused invocation as nested."""
 
     def decorate(fn):
+        signature = inspect.signature(fn)
+
+        @ledger_tool(name, description, redact=_safe_args)
+        @functools.wraps(fn)
+        async def narrated(*args, **kwargs):
+            session = current()
+            try:
+                async with session.tool_lock:
+                    output = await fn(*args, **kwargs)
+                    result = _json(output)
+                    if not output.get("ok", True):
+                        raise _NotConfirmed(result)
+                    return result
+            except asyncio.CancelledError:
+                raise
+            except _NotConfirmed:
+                raise
+            except Exception:
+                session.gaps.append(f"{name}: verification unavailable")
+                raise _NotConfirmed(_json({"ok": False, "error": "Verification unavailable; no unsupported action authorized."})) from None
+
         @functools.wraps(fn)
         async def wrapped(*args, **kwargs):
             session = current()
@@ -58,25 +98,14 @@ def blue_tool(name: str, description: str) -> Callable:
             token = INVOCATION.set(invocation)
             ok = False
             try:
-                async with session.tool_lock:
-                    # Shared offload owns its outer pair. Do not duplicate it or record source prose.
-                    emitter = None if shared is not None else ctx.emitter()
-                    safe_args = {}
-                    for key, value in kwargs.items():
-                        if key == "finding_ids" and isinstance(value, list):
-                            safe_args[key] = [v for v in value[:20] if valid_id(v)]
-                        elif valid_id(value):
-                            safe_args[key] = value
-                    if emitter:
-                        emitter.tool_call(name, safe_args, invocation)
-                    try:
-                        output = await fn(*args, **kwargs)
-                        result = _json(output)
-                        ok = bool(output.get("ok", True))
-                        return result
-                    finally:
-                        if emitter:
-                            emitter.tool_result(invocation, ok, f"{name}: {'completed' if ok else 'not confirmed'}")
+                # Reject all model-supplied metadata BEFORE adding our private deterministic ID.
+                signature.bind(*args, **kwargs)
+                try:
+                    result = await narrated(*args, **kwargs, **({"_tool_use_id": invocation} if shared is None else {}))
+                except _NotConfirmed as exc:
+                    result = exc.result
+                ok = bool(json.loads(result).get("ok", True))
+                return result
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -90,6 +119,7 @@ def blue_tool(name: str, description: str) -> Callable:
                     INVOCATION.reset(token)
 
         wrapped._rl_tool = (name, description)
+        wrapped._rl_redact = narrated._rl_redact
         # Shared MCP tools return JSON text, while the private implementations return dictionaries.
         wrapped.__signature__ = inspect.signature(fn).replace(return_annotation=str)
         wrapped.__annotations__ = {**fn.__annotations__, "return": str}
