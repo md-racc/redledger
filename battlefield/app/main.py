@@ -6,10 +6,11 @@ import logging
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from . import db
+from . import db, turns
 from .api import blue_writes, control, events_api, extension_points, frontend, green_writes, reads, red_writes
 from .config import settings
 from .events import bus
@@ -59,6 +60,13 @@ async def recover_after_restart() -> None:
 
 
 app = FastAPI(title="Red Ledger — battlefield", version="0.1.0", lifespan=lifespan)
+
+
+@app.exception_handler(turns.NoActiveTurnError)
+async def _no_active_turn(request: Request, exc: turns.NoActiveTurnError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"error": turns.NO_ACTIVE_TURN})
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],

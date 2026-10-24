@@ -110,7 +110,7 @@ async def test_a_fresh_day_still_injects(monkeypatch: pytest.MonkeyPatch) -> Non
     runner._states.pop(eid, None)
 
 
-async def test_resume_on_day_zero_skips_finished_turns_and_does_not_restart_the_episode(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_resume_on_day_zero_skips_started_turns_and_does_not_restart_the_episode(monkeypatch: pytest.MonkeyPatch) -> None:
     eid = f.uid("ep")
     await db.execute("INSERT INTO episodes (id, seed, controller_mode, days) VALUES ($1,$2,'enforce',1)", eid, SEED)
     await seed_episode(eid, SEED)
@@ -148,9 +148,52 @@ async def test_resume_on_day_zero_skips_finished_turns_and_does_not_restart_the_
     task = runner.state(eid).task
     assert task is not None
     await task
-    assert turns == ["blue"]  # red and green had ended on day 0
+    assert turns == []  # red and green had ended; blue's audit had started (flags/reports aren't idempotent)
     assert await _count(eid, "episode.started") == 1  # not announced again on resume
     assert await _count(eid, "day.started", 0) == 1 and await _count(eid, "day.ended", 0) == 1
     assert await db.fetchval("SELECT COUNT(*) FROM attacks WHERE episode_id=$1", eid) == 1
     assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", eid) == "finished"
+    runner._states.pop(eid, None)
+
+
+@pytest.mark.parametrize("evidence", ["turn_started", "attack_only"])
+async def test_crash_after_red_wrote_its_attack_resumes_with_one_attack(monkeypatch: pytest.MonkeyPatch, evidence: str) -> None:
+    """Red declared its attack, then battlefield died before turn.ended(red): red is not re-run."""
+    eid = f.uid("ep")
+    await db.execute("INSERT INTO episodes (id, seed, controller_mode, days, status, current_day) VALUES ($1,$2,'enforce',3,'running',1)", eid, SEED)
+    await seed_episode(eid, SEED)
+    await bus.emit(eid, 0, "episode.started", {"controller_mode": "enforce", "days": 3, "seed": SEED})
+    turns: list[tuple[str, int]] = []
+    crash = {"on": True}
+
+    async def turn(agent: str, episode_id: str, day: int, mode: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        turns.append((agent, day))
+        if agent == "red":
+            await f.attack(episode_id, day=day, scheme_id="ghost_vendor")
+            if crash["on"]:
+                raise _Crash  # died mid-turn: no turn.ended(red)
+        return {"ok": True, "summary": "stub", "duration_sec": 0}
+
+    async def audit(*_: Any, **__: Any) -> dict[str, Any]:
+        return {"ok": True, "summary": "stub"}
+
+    monkeypatch.setattr(agents, "turn", turn)
+    monkeypatch.setattr(agents, "audit", audit)
+    with pytest.raises(_Crash):
+        await runner.run_day(eid)
+    assert await _count(eid, "turn.ended", 1) == 0
+    if evidence == "attack_only":  # e.g. events from before turn.started was recorded: the attack row alone is enough
+        await db.execute("DELETE FROM events WHERE episode_id=$1 AND type='turn.started' AND day=1", eid)
+
+    runner._states.pop(eid, None)
+    await main.recover_after_restart()
+    crash["on"] = False
+    turns.clear()
+    await runner.resume(eid)
+    task = runner.state(eid).task
+    assert task is not None
+    await task
+    assert await db.fetchval("SELECT COUNT(*) FROM attacks WHERE episode_id=$1 AND day_launched=1", eid) == 1
+    assert [t for t in turns if t[1] == 1] == [("green", 1)]  # red skipped, green ran
+    assert ("red", 2) in turns  # the next day is normal
     runner._states.pop(eid, None)

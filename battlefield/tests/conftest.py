@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from app import db
+from app import db, turns
 from app.config import settings
 from tests.factories import AGENT_TOKEN, OPERATOR_TOKEN, uid
 
@@ -23,6 +23,18 @@ from tests.factories import AGENT_TOKEN, OPERATOR_TOKEN, uid
 def _tokens(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "agent_token", AGENT_TOKEN)
     monkeypatch.setattr(settings, "operator_token", OPERATOR_TOKEN)
+
+
+@pytest.fixture(autouse=True)
+def _no_turn_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests call agent write routes directly, outside any orchestrator turn. The active-turn guard
+    (app/turns.py) has its own tests, which switch it back on with the `turn_guard` fixture."""
+    monkeypatch.setattr(turns, "ENFORCE", False)
+
+
+@pytest.fixture
+def turn_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(turns, "ENFORCE", True)
 
 
 # ---------- DB tier ----------

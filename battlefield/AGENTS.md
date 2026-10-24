@@ -109,7 +109,17 @@ Goal for this session: <fill in>
   `failed` with `error {where:"replay"}`. Resuming such an episode re-runs its current
   day, but `run_day` is idempotent per day: if the episode already has that day's `day.started`, it
   skips legit traffic and the event (logs `day_resumed`) and every agent turn that already has a
-  `turn.ended` that day (logs `turn_skipped_resumed`); `episode.started` is emitted once per episode.
+  `turn.ended` that day (logs `turn_skipped_resumed`); red and blue count as done once their turn
+  *started* (red also if an attack of that day exists), since their writes aren't idempotent; only
+  green (gated, compare-and-set) re-runs an interrupted turn. `episode.started` is emitted once.
+- Active-turn guard (`app/turns.py`): the runner marks (episode, agent, day) active only while it
+  waits on that agent's `/turn` or blue's `/audit`; `auth.caller` answers any other X-Agent write
+  (POST/PATCH/PUT/DELETE, incl. `/events`, `/state`, `/inputs`) with an audited 409
+  `{"error":"no active turn for this agent"}`. Reads stay open; operator calls and the
+  orchestrator's own DB writes don't pass through it. A turn battlefield stopped waiting on, or one
+  orphaned by a restart, can't write; a gated write admitted during the turn (an escalation hold)
+  still completes. **In-process**, like the escalation waiters: battlefield must run as one
+  uvicorn worker. Tests disable it by default (`conftest._no_turn_guard`; `turn_guard` re-enables).
   Gate checks are single-flight per (episode, X-Tool-Use-Id). Mock blue
   escalates on demand with `MOCK_BLUE_ESCALATE`; drive it with `scripts/escalation_smoke.py`. **Docs PR needed:** README §11
   should list `MOCK_BLUE_ESCALATE` (mock only), and events.md could list `where: orchestrator`.
