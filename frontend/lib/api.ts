@@ -1,11 +1,12 @@
 // Thin REST client for battlefield. Owner: Dev R. Full surface: battlefield /docs and FRONTEND-API.md.
-const BASE = process.env.NEXT_PUBLIC_BATTLEFIELD_URL ?? "http://localhost:8000";
-const TOKEN = process.env.NEXT_PUBLIC_INTERNAL_TOKEN ?? "change-me";
+// Calls go same-origin to the Next proxy: `/api/bf<path>` → `${BATTLEFIELD_URL}/api<path>`
+// (app/api/bf/[...path]/route.ts), which adds the operator token server-side. No token here, ever.
+const BASE = "/api/bf";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const r = await fetch(`${BASE}/api${path}`, {
+  const r = await fetch(`${BASE}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    headers: body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
