@@ -1,6 +1,16 @@
 # Red Ledger — one Makefile for every branch. Owner: Dev Ad.
 # Every dev runs the same targets; CI runs `make lint test`.
 SHELL := /bin/bash
+# GNU make exports command-line variables into the environment of every recipe AND of every
+# $(shell ...), and EXPANDS them to do so: `make help EP='$(shell touch x)'` would run `touch x`
+# on your machine. So the user-input variables are never exported; targets that need one pass it
+# explicitly (prod-*, devlog below). This must stay above the first $(shell ...) (env_get/TOKEN).
+# Defaults for the local episode targets. Must precede `unexport` below: GNU make 4.4 `unexport`
+# defines the names (empty), after which `?=` would be a no-op. Prod targets ignore these (prodarg).
+MODE ?= shadow
+DAYS ?= 10
+SEED ?= 42
+unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG
 COMPOSE := docker compose
 DEV := -f docker-compose.yml -f docker-compose.dev.yml
 MOCK := -f docker-compose.yml -f docker-compose.mock.yml
@@ -15,10 +25,12 @@ TOKEN := $(if $(TOKEN),$(TOKEN),change-me)
 AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
 
 .PHONY: help up up-dry mock-agents down logs ps db-reset db-shell seed episode step toggle attack escalations score record replay \
+        prod-health prod-ps prod-logs prod-episode prod-step prod-pause prod-resume prod-toggle prod-attack prod-escalations \
+        prod-resolve prod-score prod-wait prod-record prod-credits \
         install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog devlog-show
 
 help: ## list targets
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ---------- stack ----------
 up: ## full stack, agents live (needs FACTORY_API_KEY)
@@ -39,9 +51,6 @@ db-shell: ## psql into the running db
 	$(COMPOSE) exec postgres psql -U redledger redledger
 
 # ---------- episode control (curl against battlefield) ----------
-MODE ?= shadow
-DAYS ?= 10
-SEED ?= 42
 episode: ## create + start an episode: make episode MODE=enforce SEED=42 DAYS=10
 	@curl -s $(AUTH) -X POST $(API)/api/episodes -d '{"controller_mode":"$(MODE)","seed":$(SEED),"days":$(DAYS)}' | tee /tmp/rl_ep.json; echo
 	@EP=$$(python3 -c 'import json;print(json.load(open("/tmp/rl_ep.json"))["id"])'); echo "episode $$EP"; \
@@ -61,6 +70,61 @@ record: ## dump $(EP) events to battlefield/fixtures/episodes/$(EP).jsonl
 	@wc -l battlefield/fixtures/episodes/$(EP).jsonl
 replay: ## stream a fixture to connected UIs: make replay FILE=ep_abc SPEED=4
 	curl -s $(AUTH) -X POST $(API)/api/replays/$(FILE)/play -d '{"speed":$(or $(SPEED),4)}'; echo
+
+# ---------- prod operator (runs ON the VM over ssh; OPERATOR_TOKEN never leaves the VM) ----------
+# Thin wrappers over deploy/prod.sh; guide: deploy/PROD-OPS.md. Host/key/timeouts: PROD_* env vars
+# (see the script header). User values reach the script as PRODARG_* environment variables holding
+# the raw text ($(value ...): make does not evaluate `$(...)` in them; the user variables themselves
+# are unexported above), so JSON arrives exactly as typed:
+#   make prod-episode MODE=enforce SEED=42 DAYS=10 PLAN='[{"day":2,"scheme_id":"bank_swap"}]'
+#   make prod-attack EP=ep_123 SCHEME=ghost_vendor PARAMS='{"amount":4999}'
+# Only values you actually give (command line or environment) are passed: the MODE/SEED/DAYS
+# defaults above are for the local targets and never reach prod, so a bare `make prod-episode`
+# fails with usage instead of starting a paid episode.
+# Self-check: deploy/PROD-OPS.md "Testing prod.sh without prod" (a $(shell) canary in EP).
+PROD := deploy/prod.sh
+prodarg = $(if $(filter command line environment,$(origin $(1))),$(value $(1)))
+prod-%: export PRODARG_EP := $(call prodarg,EP)
+prod-%: export PRODARG_MODE := $(call prodarg,MODE)
+prod-%: export PRODARG_SEED := $(call prodarg,SEED)
+prod-%: export PRODARG_DAYS := $(call prodarg,DAYS)
+prod-%: export PRODARG_PLAN := $(call prodarg,PLAN)
+prod-%: export PRODARG_SCHEME := $(call prodarg,SCHEME)
+prod-%: export PRODARG_PARAMS := $(call prodarg,PARAMS)
+prod-%: export PRODARG_SVC := $(call prodarg,SVC)
+prod-%: export PRODARG_ESC := $(call prodarg,ESC)
+prod-%: export PRODARG_DECISION := $(call prodarg,DECISION)
+prod-%: export PRODARG_NAME := $(call prodarg,NAME)
+prod-health: ## prod: battlefield /health (incl. agents), from inside the VM
+	@$(PROD) health
+prod-ps: ## prod: docker compose ps on the VM
+	@$(PROD) ps
+prod-logs: ## prod: last 200 log lines (SVC=red to filter)
+	@$(PROD) logs "$$PRODARG_SVC"
+prod-episode: ## prod: create + start: MODE=enforce SEED=42 DAYS=10 [PLAN='<json array>']
+	@$(PROD) episode "$$PRODARG_MODE" "$$PRODARG_SEED" "$$PRODARG_DAYS" "$$PRODARG_PLAN"
+prod-step: ## prod: run one day of EP (pause first)
+	@$(PROD) step "$$PRODARG_EP"
+prod-pause: ## prod: pause EP
+	@$(PROD) pause "$$PRODARG_EP"
+prod-resume: ## prod: resume EP (also re-arms the credit guard)
+	@$(PROD) resume "$$PRODARG_EP"
+prod-toggle: ## prod: set controller mode: EP=... MODE=off|shadow|enforce
+	@$(PROD) toggle "$$PRODARG_EP" "$$PRODARG_MODE"
+prod-attack: ## prod: force a scheme on next red turn: EP=... SCHEME=... [PARAMS='<json>']
+	@$(PROD) attack "$$PRODARG_EP" "$$PRODARG_SCHEME" "$$PRODARG_PARAMS"
+prod-escalations: ## prod: open escalations [EP=...]
+	@$(PROD) escalations "$$PRODARG_EP"
+prod-resolve: ## prod: resolve an escalation: ESC=... DECISION=approve|block
+	@$(PROD) resolve "$$PRODARG_ESC" "$$PRODARG_DECISION"
+prod-score: ## prod: score for EP
+	@$(PROD) score "$$PRODARG_EP"
+prod-wait: ## prod: poll EP until finished (PROD_WAIT_TIMEOUT, default 3600 s)
+	@$(PROD) wait "$$PRODARG_EP"
+prod-record: ## prod: EP events -> battlefield/fixtures/episodes/<NAME or EP>.jsonl, secret-scanned
+	@$(PROD) record "$$PRODARG_EP" "$$PRODARG_NAME"
+prod-credits: ## prod: factory_credits per agent/day for EP vs MAX_CREDITS_PER_EPISODE
+	@$(PROD) credits "$$PRODARG_EP"
 
 # ---------- dev tooling ----------
 install: ## install python deps for all services + frontend
@@ -94,8 +158,9 @@ test-frontend:
 schema-dump: ## copy canonical schema into battlefield/db (for local non-docker runs)
 	cp contracts/schema.sql battlefield/db/schema.sql && rm -rf battlefield/db/ext && cp -r contracts/ext battlefield/db/ext
 # devlog: one fragment file per PR, so PRs never conflict on DEVLOG.md (GIT.md §6).
-# WHO/MSG/SLUG reach the shell via the environment, unexpanded ($(value ...)), so a MSG like
-# '$11,004 "quoted"' is written verbatim: make never sees `$1`, the shell never re-parses it.
+# WHO/MSG/SLUG reach the shell via the environment as raw text ($(value ...); the variables
+# themselves are unexported above), so a MSG like '$11,004 "quoted"' is written verbatim: make
+# never expands `$1`, the shell never re-parses it.
 devlog: export DEVLOG_WHO := $(value WHO)
 devlog: export DEVLOG_MSG := $(value MSG)
 devlog: export DEVLOG_SLUG := $(value SLUG)
