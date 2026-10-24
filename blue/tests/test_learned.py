@@ -160,7 +160,77 @@ async def test_timeout_is_bounded_and_cancellation_propagates(gate_request, monk
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert not cache.lock.locked()
+    assert not cache.refreshes
+
+
+async def test_same_key_refreshes_share_one_read_and_release_tracking(gate_request, monkeypatch):
+    calls, _ = fake_books(monkeypatch)
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def wait(self):
+        started.set()
+        await release.wait()
+        return {"version": 1, "content": {}}
+
+    monkeypatch.setattr(playbooks.LedgerClient, "get_playbook", wait)
+    cache = playbooks.Playbooks(AgentSettings(_env_file=None))
+    req = gate_request(playbook_version=1)
+    first = asyncio.create_task(cache.hits(req))
+    await started.wait()
+    others = [asyncio.create_task(cache.hits(req)) for _ in range(8)]
+    try:
+        await asyncio.sleep(0)
+        assert len(calls) == 1
+        release.set()
+        assert await asyncio.gather(first, *others) == [[]] * 9
+        assert len(calls) == 1
+        assert not cache.refreshes
+    finally:
+        release.set()
+        await asyncio.gather(first, *others, return_exceptions=True)
+
+
+async def test_cached_gate_never_waits_for_unrelated_cold_refreshes(gate_request, respx_mock):
+    settings = AgentSettings(AGENT_NAME="blue", DRY_RUN=True, AGENT_TOKEN="test-agent", BATTLEFIELD_URL="http://ledger", _env_file=None)
+    app = make_agent_app(AuditAgent, settings=settings, extra_routes=extra)
+    started, release = asyncio.Event(), asyncio.Event()
+    cold_reads = set()
+
+    async def book(request):
+        episode = request.headers["X-Episode"]
+        if episode != "warm":
+            cold_reads.add(episode)
+            if len(cold_reads) == 2:
+                started.set()
+            await release.wait()
+        return httpx.Response(200, json={"version": 1, "content": {}})
+
+    route = respx_mock.get("http://ledger/api/playbook").mock(side_effect=book)
+
+    def request(episode, key):
+        req = gate_request(episode_id=episode, idempotency_key=key, amount=400, playbook_version=1)
+        for entity in ("invoice", "vendor"):
+            req.context[entity]["episode_id"] = episode
+        return req
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://blue", headers={"Authorization": "Bearer test-agent"}) as client:
+        warm = request("warm", "warm-prime")
+        assert (await client.post("/gate", json=warm.model_dump())).json()["verdict"] == "allow"
+        cold = [asyncio.create_task(client.post("/gate", json=request(ep, ep).model_dump())) for ep in ("cold-one", "cold-two")]
+        try:
+            await asyncio.wait_for(started.wait(), 0.3)
+            warm.idempotency_key = "warm-while-refreshing"
+            result = await asyncio.wait_for(client.post("/gate", json=warm.model_dump()), 0.3)
+            assert result.json()["verdict"] == "allow"
+            assert not result.json()["rules_fired"]
+            assert cold_reads == {"cold-one", "cold-two"}
+            assert route.call_count == 1
+            release.set()
+            assert all(response.json()["verdict"] == "allow" for response in await asyncio.gather(*cold))
+            assert route.call_count == 3
+        finally:
+            release.set()
+            await asyncio.gather(*cold, return_exceptions=True)
 
 
 async def test_learning_never_weakens_a_baseline_hold_or_changes_same_key_replay(gate_request):
