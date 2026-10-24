@@ -168,5 +168,30 @@ streaming and rejects missing/extra/lookalike IDs or listing failures.
 `tests/test_strict_adapter.py` exercises that policy with controlled module/session doubles
 and synthetic ledger context, not an authenticated SDK or provider. This is not a live
 adapter: the real `_droid_turn` hard stop and false readiness/health remain unchanged.
-Owner-loop/narration work in #85 is separate; no authenticated invocation proof or guard lift
-is claimed here.
+Owner-loop/narration work in #85 remains a separate prerequisite.
+
+### Controlled authenticated SDK checkpoint
+
+A local combined snapshot (`7889fba`, #85 + strict policy, shared #84) passed **299 tests**.
+A bounded real CLI-authenticated SDK turn with `gemini-3.8-flash` / low reasoning then
+observed one OFF permission callback, one `PROCEED_ONCE` approval, one verified invocation
+whose ID matched the intercepted report header and confirmed receipt, and exactly one
+shared narration pair. Session discovery matched all seven pinned IDs. A concurrent local
+ASGI `/gate` returned allow in **3.284 ms** during the report's two-second intercepted HTTP
+delay. Reported usage was **2,989 Factory credits**. An earlier attempt was inconclusive;
+successful model discovery after removing an empty `FACTORY_API_KEY` justified the retry.
+
+`tests/sdk_authenticated_probe.py` preserves a portable, explicitly opt-in form of that
+temporary probe; it is not collected by pytest. After #85 and this policy are integrated,
+with the existing CLI authenticated and the `dev` + `droid` extras installed:
+
+```sh
+cd blue
+UV_NO_ENV_FILE=1 uv run --no-sync python tests/sdk_authenticated_probe.py --allow-model-call
+```
+
+This command is billable. It uses an empty temporary cwd, disables dotenv, clears sponsor
+credentials in its child process, forbids CRS construction and intercepts all Ledger HTTP.
+Only its test subclass bypasses the guard. This proves controlled SDK identity delivery,
+not a real Ledger commit, production gate latency, CRS access or the three-day shadow
+checkpoint. The real live hard stop and false readiness/health remain unchanged.
