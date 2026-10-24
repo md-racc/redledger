@@ -272,7 +272,8 @@ components:
             the agents' latest playbooks, daily debriefs and the lineage's reveal window. This is how the
             real-time demo runs evolved agents: such an episode is never headless (human escalations,
             DAY_PAUSE_SEC as usual). `seed` must not be a seed any episode of the lineage used; omitted →
-            `base_seed + generation`.
+            `base_seed + generation`. The lineage must be finished or failed (409 while it is created,
+            running or paused: its runner owns generation creation).
     Score:
       type: object
       properties:
@@ -539,7 +540,7 @@ paths:
 
   /audit_log:
     get: { x-agents: [blue], security: [ { agentBearer: [] }, { operatorBearer: [] } ],
-           description: "Audit rows for the caller's episode, newest first. Agents (any X-Agent caller) see only green and blue rows; red's rows, every attacks.* action and every playbook.* action are operator-only (playbook rows would show another agent's playbook), because only red's legwork writes audit rows for sim-shaped entities and those rows would reveal provenance. An agent filtering agent=red gets [] (200, not 403). Operator view is unfiltered.",
+           description: "Audit rows for the caller's episode, newest first. Agents (any X-Agent caller) see only green and blue rows; red's rows and every attacks.* action are operator-only, because only red's legwork writes audit rows for sim-shaped entities and those rows would reveal provenance. Every playbook.* action is operator-only too, because its rows would show another agent's playbook. An agent filtering agent=red gets [] (200, not 403). Operator view is unfiltered.",
            parameters: [ { name: agent, in: query, schema: { type: string } }, { name: day, in: query, schema: { type: integer } } ],
            responses: { '200': { description: rows } } }
 

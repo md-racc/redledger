@@ -146,7 +146,7 @@ Information policy (amends `AGENTS.md` invariant 4 for lineage episodes only):
 
 **Playbook routes** (Ledger API; `LedgerClient.get_playbook/put_playbook/playbook_history`):
 `GET /api/playbook`, `PUT /api/playbook {content, rationale, base_version}` (active turn only;
-409 on a stale `base_version` or outside a turn; 413 over 64 KiB), `GET /api/playbook/history`.
+409 on a stale `base_version`, on an `X-Tool-Use-Id` reused with a different body, or outside a turn; 413 over 64 KiB), `GET /api/playbook/history`.
 
 **`POST /reflect`** (every agent). Called by battlefield after a generation's episode finished,
 once per agent, sequentially:
