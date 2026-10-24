@@ -85,20 +85,20 @@ async def check(
     # the same key on a different action is refused, never replayed
     existing = await db.fetchrow("SELECT * FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", c.episode_id, c.tool_use_id)
     if existing:
-        if not same_action(existing, action, entity_type, entity_id, amount, args or {}):
-            log.warning("idempotency_key_reused", key=c.tool_use_id, verdict_id=existing["id"], stored_action=existing["action"], action=action)
-            raise IdempotencyConflictError(existing["id"])
-        return await _apply(existing["id"], existing["verdict"], existing["reason"], mode, c, action, entity_type, entity_id, amount, replay=True)
+        return await _replay(existing, mode, c, action, entity_type, entity_id, amount, args or {})
 
     t0 = time.monotonic()
     verdict, reason, confidence, rules = await _ask_blue(c, mode, action, entity_type, entity_id, amount, args or {}, context or {})
     latency_ms = int((time.monotonic() - t0) * 1000)
 
-    vid = db.new_id("vd")
-    await db.execute(
+    # Race-safe: two requests that both saw no verdict for this key both asked blue; only the first
+    # INSERT wins. The loser persists and emits nothing and is treated exactly like a later request:
+    # replay the winner's verdict for the same action, 409 for a different one.
+    vid = await db.fetchval(
         "INSERT INTO verdicts (id, episode_id, idempotency_key, day, agent, action, entity_type, entity_id, amount, args, verdict, reason, confidence, rules_fired, enforced, latency_ms) "
-        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
-        vid,
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) "
+        "ON CONFLICT (episode_id, idempotency_key) DO NOTHING RETURNING id",
+        db.new_id("vd"),
         c.episode_id,
         c.tool_use_id,
         c.day,
@@ -115,6 +115,11 @@ async def check(
         mode == "enforce",
         latency_ms,
     )
+    if vid is None:
+        winner = await db.fetchrow("SELECT * FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", c.episode_id, c.tool_use_id)
+        assert winner is not None  # verdicts are never deleted while the episode exists
+        log.info("verdict_insert_lost_race", key=c.tool_use_id, verdict_id=winner["id"], action=action)
+        return await _replay(winner, mode, c, action, entity_type, entity_id, amount, args or {})
     await bus.emit(
         c.episode_id,
         c.day,
@@ -135,6 +140,16 @@ async def check(
         agent="blue",
     )
     return await _apply(vid, verdict, reason, mode, c, action, entity_type, entity_id, amount)
+
+
+async def _replay(
+    existing: Any, mode: str, c: Caller, action: str, entity_type: str | None, entity_id: str | None, amount: float | None, args: dict[str, Any]
+) -> Decision:
+    """A verdict already exists for this key: replay it for the same action, refuse a different one."""
+    if not same_action(existing, action, entity_type, entity_id, amount, args):
+        log.warning("idempotency_key_reused", key=c.tool_use_id, verdict_id=existing["id"], stored_action=existing["action"], action=action)
+        raise IdempotencyConflictError(existing["id"])
+    return await _apply(existing["id"], existing["verdict"], existing["reason"], mode, c, action, entity_type, entity_id, amount, replay=True)
 
 
 def same_action(existing: Any, action: str, entity_type: str | None, entity_id: str | None, amount: float | None, args: dict[str, Any]) -> bool:

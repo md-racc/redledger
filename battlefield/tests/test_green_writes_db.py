@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -128,3 +129,76 @@ async def test_rejections_before_the_gate_are_audited(episode: str, blue: list, 
     assert row["http_status"] == status
     assert row["result"] == {"error": detail}
     assert blue == []  # rejected before the gate
+
+
+# ---------- races and retries ----------
+async def _episode(mode: str) -> str:
+    eid = f.uid("ep")
+    await db.execute("INSERT INTO episodes (id, seed, controller_mode) VALUES ($1, 42, $2)", eid, mode)
+    return eid
+
+
+@pytest.fixture
+def slow_blue(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Blue that takes a moment, so two concurrent first uses of a key both miss the verdict lookup."""
+    asked: list[str] = []
+
+    async def ask(c: Caller, mode: str, action: str, et: str | None, eid: str | None, amount: float | None, args: dict, context: dict):
+        asked.append(str(eid))
+        await asyncio.sleep(0.05)
+        return "allow", "ok", 0.9, []
+
+    monkeypatch.setattr(gate, "_ask_blue", ask)
+    return asked
+
+
+@pytest.mark.parametrize("mode", ["shadow", "enforce"])
+async def test_concurrent_first_use_of_a_key_for_two_actions_is_one_verdict_and_one_409(pg: None, slow_blue: list, mode: str) -> None:
+    ep = await _episode(mode)
+    vid = await f.vendor(ep)
+    j1, j2 = await f.invoice(ep, vid, amount=100.0), await f.invoice(ep, vid, amount=200.0)
+    key = f"tu_{uuid.uuid4().hex}"
+    async with _client() as c:
+        a, b = await asyncio.gather(
+            c.post(f"/api/invoices/{j1}/approve", headers=_green(ep, key)), c.post(f"/api/invoices/{j2}/approve", headers=_green(ep, key))
+        )
+    assert len(slow_blue) == 2  # both really raced past the lookup
+    assert sorted([a.status_code, b.status_code]) == [200, 409]  # never a 500
+    loser = a if a.status_code == 409 else b
+    assert loser.json()["error"] == "idempotency key reused for a different action"
+    assert await db.fetchval("SELECT count(*) FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", ep, key) == 1
+    assert await db.fetchval("SELECT count(*) FROM events WHERE episode_id=$1 AND type='gate.verdict'", ep) == 1
+    statuses = sorted([await db.fetchval("SELECT status FROM invoices WHERE id=$1", i) for i in (j1, j2)])
+    assert statuses == ["approved", "pending"]
+    assert sorted(r["http_status"] for r in await _audit(ep, key)) == [200, 409]  # both audited
+
+
+@pytest.mark.parametrize("mode", ["shadow", "enforce"])
+async def test_concurrent_first_use_of_a_key_for_the_same_action_replays(pg: None, slow_blue: list, mode: str) -> None:
+    ep = await _episode(mode)
+    inv = await f.invoice(ep, await f.vendor(ep), amount=100.0)
+    key = f"tu_{uuid.uuid4().hex}"
+    async with _client() as c:
+        a, b = await asyncio.gather(*(c.post(f"/api/invoices/{inv}/approve", headers=_green(ep, key)) for _ in range(2)))
+    assert (a.status_code, b.status_code) == (200, 200)
+    assert await db.fetchval("SELECT count(*) FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", ep, key) == 1
+    assert await db.fetchval("SELECT count(*) FROM events WHERE episode_id=$1 AND type='gate.verdict'", ep) == 1
+
+
+@pytest.mark.parametrize("mode", ["off", "shadow", "enforce"])
+async def test_gl_post_retry_with_the_same_key_posts_once(pg: None, blue: list, mode: str) -> None:
+    ep = await _episode(mode)
+    key = f"tu_{uuid.uuid4().hex}"
+    entry = {"account": "6100", "debit": 10.0, "credit": 0.0, "memo": "m"}
+    async with _client() as c:
+        first = await c.post("/api/gl/entries", json=entry, headers=_green(ep, key))
+        retry = await c.post("/api/gl/entries", json=entry, headers=_green(ep, key))
+        racing = await asyncio.gather(*(c.post("/api/gl/entries", json=entry, headers=_green(ep, key)) for _ in range(3)))
+        other = await c.post("/api/gl/entries", json={**entry, "debit": 20.0}, headers=_green(ep, key))
+    assert first.status_code == retry.status_code == 201 and all(r.status_code == 201 for r in racing)
+    assert {r.json()["id"] for r in (first, retry, *racing)} == {first.json()["id"]}
+    assert other.status_code == 409 and other.json()["error"] == "idempotency key reused for a different action"
+    assert await db.fetchval("SELECT count(*) FROM gl_entries WHERE episode_id=$1", ep) == 1
+    assert await db.fetchval("SELECT count(*) FROM events WHERE episode_id=$1 AND type='ledger.mutation'", ep) == 1
+    assert [r["http_status"] for r in await _audit(ep, key)] == [201] * 5 + [409]
+    assert len(blue) == (0 if mode == "off" else 1)

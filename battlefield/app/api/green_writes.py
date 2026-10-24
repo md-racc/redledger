@@ -12,6 +12,7 @@ and a 409 when the X-Tool-Use-Id was already judged for a different action (the 
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +26,7 @@ from . import audit
 
 router = APIRouter()
 GREEN = allow("green", operator=False)
+_gl_locks: dict[tuple[str | None, str | None], list[Any]] = {}  # key -> [Lock, users]
 
 
 class Reason(BaseModel):
@@ -380,6 +382,40 @@ async def pay_expense(expense_id: str, c: Caller = Depends(GREEN)):
 
 @router.post("/gl/entries", status_code=201)
 async def post_gl(body: GlEntryCreate, c: Caller = Depends(GREEN)):
+    """Idempotent on X-Tool-Use-Id in every controller mode: a retry with the same key and body returns
+    the entry already posted (no second row, no second ledger.mutation); a different body under that
+    key is a 409 conflict. gl_entries has no key column, so the link is the 201 audit_log row of the
+    first posting. Attempts sharing a key are serialized by an in-process lock so two concurrent
+    retries can't both post (battlefield is one process; the gate's escalation waiters assume the same).
+    No DB connection is held while waiting, so a slow escalation can't starve the pool."""
+    lock_key = (c.episode_id, c.tool_use_id)
+    slot = _gl_locks.setdefault(lock_key, [asyncio.Lock(), 0])
+    slot[1] += 1  # holders + waiters; the lock is dropped only when nobody can still need it
+    try:
+        async with slot[0]:
+            return await _post_gl(body, c)
+    finally:
+        slot[1] -= 1
+        if slot[1] == 0:
+            del _gl_locks[lock_key]
+
+
+async def _post_gl(body: GlEntryCreate, c: Caller) -> Any:
+    args = body.model_dump()
+    prior = await db.fetchrow(
+        "SELECT args, result, verdict_id FROM audit_log WHERE episode_id=$1 AND agent=$2 AND action='gl.post' AND tool_use_id=$3 AND http_status=201 "
+        "ORDER BY id LIMIT 1",
+        c.episode_id,
+        c.agent,
+        c.tool_use_id,
+    )
+    if prior is not None:
+        if dict(prior["args"] or {}) != args:
+            await audit.record(c, "gl.post", args, {"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": prior["verdict_id"]}, 409)
+            return JSONResponse(status_code=409, content={"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": prior["verdict_id"]})
+        posted = prior["result"]["id"]
+        await audit.record(c, "gl.post", args, {"id": posted, "replayed": True}, 201, prior["verdict_id"])
+        return db.row_to_dict(await db.fetchrow("SELECT * FROM gl_entries WHERE id=$1", posted))
     gid = db.new_id("gl")
     try:
         d = await gate.check(
@@ -388,8 +424,8 @@ async def post_gl(body: GlEntryCreate, c: Caller = Depends(GREEN)):
             entity_type="gl_entry",
             entity_id=gid,
             amount=max(body.debit, body.credit),
-            args=body.model_dump(),
-            context={"entry": body.model_dump()},
+            args=args,
+            context={"entry": args},
         )
     except gate.GateBlockedError as e:
         await audit.record(c, "gl.post", body.model_dump(), {"blocked": True, "reason": e.reason}, 403, e.verdict_id)
