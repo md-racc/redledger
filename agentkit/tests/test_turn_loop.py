@@ -368,3 +368,48 @@ def test_a_failing_redactor_never_leaks():
 
     fn = type("F", (), {"_rl_redact": staticmethod(boom)})()
     assert redacted_args(fn, {"secret": "x"}) == {"redacted": True}
+
+
+# ---------- verifier follow-ups ----------
+
+
+async def test_a_normal_cancel_logs_info_not_a_join_timeout_and_no_unretrieved_exception(capsys):
+    started = threading.Event()
+
+    async def fn():
+        started.set()
+        await asyncio.sleep(3600)
+
+    task = asyncio.create_task(run_on_turn_loop(fn, name="quiet", join_sec=1.0))
+    assert await asyncio.to_thread(started.wait, 2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    import gc
+
+    gc.collect()
+    await asyncio.sleep(0.05)
+    out = capsys.readouterr()
+    text = out.out + out.err
+    assert "turn_loop_cancelled" in text
+    assert "turn_loop_join_timeout" not in text and "never retrieved" not in text
+
+
+async def test_late_worker_narration_after_the_loop_closed_is_dropped_not_raised():
+    loop = asyncio.new_event_loop()
+    loop.close()
+    proxy = da._WorkerEmitter(_Rec(), loop)  # type: ignore[arg-type]
+    proxy.drain()  # the call closed: narration now posts to the (closed) loop
+    proxy.tool_call("x", {}, "id")  # must not raise inside the tool body
+
+
+def test_record_cancelled_without_a_registry_redacts_the_args():
+    rec = _Rec()
+    agent = _Agent(settings())
+    tokens = ctx.bind(None, rec, TURN)  # type: ignore[arg-type]
+    try:
+        agent.record_cancelled(da.ToolUse("toolu_c", "pay", {"amount": 3, "secret": "x"}, "permission"), "no")
+    finally:
+        ctx.unbind(tokens)
+    (call,) = [a for k, a, _ in rec.calls if k == "tool_call"]
+    assert call[1] == {"amount": 3}

@@ -91,6 +91,7 @@ async def run_on_turn_loop(
     thread = threading.Thread(target=caller_ctx.run, args=(target,), name=name, daemon=True)
     thread.start()
     outer = asyncio.wrap_future(done)
+    outer.add_done_callback(_retrieve)  # a turn we stopped waiting for must not log "never retrieved"
     try:
         if ceiling_sec is None:
             return await asyncio.shield(outer)
@@ -115,13 +116,19 @@ async def _cancel_and_join(name: str, handle: dict[str, Any], ready: threading.E
         except RuntimeError:  # the loop closed in between: nothing left to cancel
             pass
     try:
-        await asyncio.wait_for(asyncio.shield(outer), timeout=join_sec)
-    except (TimeoutError, asyncio.CancelledError):
-        log.error("turn_loop_join_timeout", turn_loop=name, reason=reason, join_sec=join_sec, detail="turn thread still winding down; left as a daemon")
-    except BaseException:  # the turn's own error after cancellation: already logged inside the turn
+        await asyncio.wait({outer}, timeout=join_sec)
+    except asyncio.CancelledError:  # cancelled again while joining: stop waiting, the thread is a daemon
         pass
+    if outer.done():
+        _retrieve(outer)  # the turn's own error after cancellation was already logged inside the turn
+        log.info("turn_loop_cancelled", turn_loop=name, reason=reason)
     else:
-        log.warning("turn_loop_cancelled", turn_loop=name, reason=reason)
+        log.error("turn_loop_join_timeout", turn_loop=name, reason=reason, join_sec=join_sec, detail="turn thread still winding down; left as a daemon")
+
+
+def _retrieve(fut: asyncio.Future[Any]) -> None:
+    if not fut.cancelled():
+        fut.exception()
 
 
 class _Waiter:

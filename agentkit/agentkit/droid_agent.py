@@ -108,7 +108,10 @@ class _WorkerEmitter:
                 if self._open:
                     self._buf.append(bound)
                     return
-            self._loop.call_soon_threadsafe(bound)
+            try:
+                self._loop.call_soon_threadsafe(bound)
+            except RuntimeError:  # the turn ended and its loop closed: never fail the tool over narration
+                log.warning("narration_dropped_loop_closed", call=name)
 
         return call
 
@@ -192,10 +195,10 @@ class DroidAgent(ABC):
     name: str = "agent"
     autonomy: str = "high"  # off | low | medium | high
     system_prompt: str = "You are an agent."
-    # Live turns and reflections always run on their own thread + loop. D14 wants DRY_RUN there too so
-    # keyless suites exercise the threading; opt in per agent once your test fakes are loop-safe (an
-    # asyncio.Event/Lock a test shares with the turn breaks the agentkit.sync ownership rule). Default
-    # off because Blue's test FakeLedger waits on a test-loop asyncio.Event (red and green pass with it on).
+    # Live turns and reflections always run on their own thread + loop. D14 (DRY_RUN turns there too, so
+    # keyless suites exercise the threading) is deferred: default off until Blue's test FakeLedger stops
+    # waiting on an asyncio.Event created on the test's loop (a cross-loop wait; M to fix). Red and green
+    # pass with it on, so they may opt in now (Al: set `turn_loop_dry_run = True` on RedAgent).
     turn_loop_dry_run: bool = False
 
     def __init__(self, settings: AgentSettings):
@@ -252,7 +255,8 @@ class DroidAgent(ABC):
         if reg is None:  # outside a live turn: nothing else can narrate it
             em = ctx.emitter()
             if em:
-                em.tool_call(use.tool, use.args, use.tool_use_id)
+                fn = next((f for (n, _, f) in self.tools() if n == use.tool), None)
+                em.tool_call(use.tool, redacted_args(fn, use.args), use.tool_use_id)
                 em.tool_result(use.tool_use_id, False, json.dumps({"cancelled": True, "tool": use.tool, "reason": reason}))
             return
         reg.observe(use.tool_use_id, use.tool, use.args, use.source)
