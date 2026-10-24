@@ -140,3 +140,9 @@ def test_demo_generations_never_retire_a_rule() -> None:
     out = report._rule_lifecycle(gens)
     assert [r["rule_id"] for r in out["retired_rules"]] == ["b"]  # learned:x only went quiet in the shorter demos
     assert out["learned_rules"] == [{"rule_id": "learned:x", "first_generation": 2}]
+
+
+def test_soft_scan_still_warns_on_underscore_prefixed_secrets() -> None:
+    assert er.soft_scan(json.dumps({"k": "sk_live_" + "abcdefghijklmnopqrstuvwxyz123456"}))
+    assert er.soft_scan(json.dumps({"api_key_" + "x": "api_key_" + "Zq9" * 14}))
+    assert not er.soft_scan(json.dumps({"tool": "toolu_01" + "AbCdEf1234567890" * 3}))

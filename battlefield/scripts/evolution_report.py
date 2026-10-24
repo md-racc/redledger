@@ -52,7 +52,11 @@ ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # or anything carrying a short id prefix (ep_, ln_, inv_, atk_, toolu_, ...). Base64 hits also follow
 # deploy/prod.sh: random strings have >= 4 digits and a letter, and URL paths are skipped.
 UUID4_HEX = re.compile(r"[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}")
-ID_PREFIX = re.compile(r"[A-Za-z]{2,8}_$")
+# Our own id prefixes (db.new_id + Droid tool-use ids). Deliberately a closed list: `sk_live_…`-style
+# secrets also start with a short word and an underscore, and must still warn.
+_IDS = "atk|bnk|emp|ep|esc|exp|flg|gl|inv|ln|pay|po|rpt|vch|vd|ven|toolu"
+ID_PREFIX = re.compile(rf"(?<![A-Za-z])(?:{_IDS})_$")
+ID_SELF = re.compile(rf"(?:{_IDS})_")
 
 
 def scan(text: str, patterns: list[str]) -> list[str]:
@@ -74,10 +78,10 @@ def soft_scan(text: str) -> list[str]:
         for m in re.finditer(p, text):
             s = m.group(0)
             before = text[max(0, m.start() - 9) : m.start()]
-            if ID_PREFIX.search(before) or re.match(r"[A-Za-z]{2,8}_", s):
+            if ID_PREFIX.search(before) or ID_SELF.match(s):
                 continue  # ep_<hex>, toolu_<base64>, ...
             if p == SOFT[0] and len(s) == 32 and UUID4_HEX.fullmatch(s.lower()):
-                continue  # uuid4().hex: a generated key, not a secret
+                continue  # uuid4().hex: a generated key, not a secret (a real 32-hex secret has ~1/64 odds of this shape)
             if p == SOFT[1] and (sum(c.isdigit() for c in s) < 4 or not any(c.isalpha() for c in s) or s.startswith("/")):
                 continue
             hits.append(f"{s[:4]}…({len(s)} chars)")
