@@ -46,6 +46,8 @@ handoff and earlier integration baseline.
    Keep autonomy off until evidence exists; unit fakes are not SDK findings.
 3. DRY_RUN is keyless and uses the same decorated tools as the eventual live surface. It emits
    only `agent.thinking`, `agent.tool_call`, `agent.tool_result`, not gate/mutation events.
+   Its `/health` reports `droid_ok=false` without inspecting SDK availability; the SDK is not
+   required or imported for this path. Live health still uses the shared diagnostic.
 
 ## Current AP milestone
 
