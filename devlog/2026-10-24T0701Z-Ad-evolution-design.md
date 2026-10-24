@@ -1,0 +1,1 @@
+- 2026-10-24T07:01Z · Ad · docs: evolution design (lineages, versioned playbooks, daily debrief + AAR with sliding opponent-reveal window, headless make evolve, log bundles, evolution report, ops-console guidance for R); next: contracts/evolution (E1) before integration PR1; blocked: none
