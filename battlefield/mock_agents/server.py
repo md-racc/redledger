@@ -8,6 +8,7 @@ orchestrator, gate, scoring, events and frontend can be exercised with zero Fact
 
 from __future__ import annotations
 
+import hmac
 import os
 import time
 
@@ -22,7 +23,7 @@ THRESHOLD = float(os.environ.get("APPROVAL_THRESHOLD", "5000"))
 
 
 def _auth(authorization: str | None) -> None:
-    if authorization != f"Bearer {s.internal_token}":
+    if not hmac.compare_digest((authorization or "").encode(), f"Bearer {s.internal_token}".encode()):
         raise HTTPException(401)
 
 
