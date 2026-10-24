@@ -12,6 +12,7 @@ Red adds /schemes and blue adds /gate and /audit by passing `extra_routes`.
 from __future__ import annotations
 
 import asyncio
+import hmac
 from collections.abc import Callable
 from typing import Any
 
@@ -39,7 +40,7 @@ def make_agent_app(
     turn_lock = asyncio.Lock()
 
     def auth(authorization: str | None = Header(default=None)) -> None:
-        if authorization != f"Bearer {s.internal_token}":
+        if not hmac.compare_digest((authorization or "").encode(), f"Bearer {s.internal_token}".encode()):
             raise HTTPException(401, "bad token")
 
     @app.get("/health", response_model=HealthResponse)
@@ -63,7 +64,7 @@ def make_agent_app(
 
 def bearer_dependency(settings: AgentSettings) -> Callable[..., None]:
     def auth(authorization: str | None = Header(default=None)) -> None:
-        if authorization != f"Bearer {settings.internal_token}":
+        if not hmac.compare_digest((authorization or "").encode(), f"Bearer {settings.internal_token}".encode()):
             raise HTTPException(401, "bad token")
 
     return auth

@@ -16,12 +16,13 @@ import pytest
 
 from app import db
 from app.config import settings
-from tests.factories import TOKEN, uid
+from tests.factories import AGENT_TOKEN, OPERATOR_TOKEN, uid
 
 
 @pytest.fixture(autouse=True)
-def _token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "internal_token", TOKEN)
+def _tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "agent_token", AGENT_TOKEN)
+    monkeypatch.setattr(settings, "operator_token", OPERATOR_TOKEN)
 
 
 # ---------- DB tier ----------
