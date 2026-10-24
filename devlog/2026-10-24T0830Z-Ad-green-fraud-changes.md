@@ -1,0 +1,1 @@
+- 2026-10-24T08:30Z · Ad · contracts: green fraud debrief items cover vendor changes (bank swaps) and an approved outcome; revealed_attacks counts green's attacks; next: evolution polish implements it; blocked: none
