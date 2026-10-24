@@ -1,0 +1,1 @@
+- 2026-10-24T17:07Z · M · blue: retain sanitized portable SDK probe failure stages and require confirmed single-call evidence, with offline regressions and remaining acceptance handoff; next: approved authenticated replay and coordinated real-Ledger/seeded acceptance; blocked: model-spending approval and Docker/Postgres

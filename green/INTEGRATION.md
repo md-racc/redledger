@@ -1,5 +1,38 @@
 # Green integration status for Ad
 
+## Current Option-P checkpoint (2026-10-24)
+
+Contracts #80 supersede the mirror proposal: **Green never calls Blue**. Shared
+strict identity and `LedgerClient.prepare` are merged (#84), as are nullable pending
+deciders (#86), preparation creation (#87), and consumption (step 2b, #89,
+`5d3dc03`). The handler follow-up uses this merged protocol.
+
+`preparation.py` supplies the eight existing mutation mappings and the contract's
+per-mode decisions against mocked Ledger HTTP. Preparation uses the SDK key
+without consuming the first mutation's key. Its JSON cancellation comment carries
+the cause. `on_permission` applies the decision with `PROCEED_ONCE`/`CANCEL`;
+turn-local state suppresses held entities and separates unique cancellation causes.
+The pre-SDK live guard remains. No new model tools or AP policy.
+
+Unknown/empty permission requests and multi-use batches fail closed without preparing;
+the SDK's response applies to the whole batch, so callers must request tools individually.
+Callback granularity remains part of Green acceptance, not an asserted SDK finding.
+
+Finding #96 records the nine observed AP IDs from a list-only Session on canonical #94.
+`AP_TOOL_IDS` pins them before the first Session; expected-ID lists are fresh copies.
+This is discovery/configuration evidence, not restriction-enforcement or live acceptance.
+See [SDK-ACCEPTANCE.md](SDK-ACCEPTANCE.md) for the unexecuted, explicitly budgeted proposal.
+
+Next, prove exact first-session restriction enforcement, OFF callbacks, CANCEL comment delivery,
+identity/header/event parity, bounded escalation holds, and no duplicate gating or
+writes in isolated acceptance. Mocked HTTP is not real SDK or database evidence.
+Phase C still needs Ad's three-day all-real-agent shadow run; Bright Data is not cleared.
+This follow-up is stacked on preparation foundation #93. Keyless TurnLoop #92 and
+merged reflection #82 remain separate concerns; preserve both, including reflection hooks
+and explicit playbook API guidance. No active-turn memory consumption is added here.
+
+## Historical baseline (superseded where it conflicts with the checkpoint above)
+
 Baseline: merged main `899c133`. Ad released the DRY_RUN-only hold; Green #12,
 #13 (`d71698c`) and #14 (`0c26a2b`) are merged. Live Green stays disabled before
 SDK execution. No constant `mirror` key or local identity workaround.

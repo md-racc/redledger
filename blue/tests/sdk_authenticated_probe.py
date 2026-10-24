@@ -5,18 +5,90 @@ import asyncio
 import contextlib
 import io
 import json
+import math
 import os
 import sys
 import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 
-def main() -> int:
+def _binding_matches(
+    permissions: list[tuple[str, str]], writes: list[dict[str, Any]], calls: list[dict[str, Any]], results: list[dict[str, Any]], receipts: list[Any]
+) -> bool:
+    if not len(writes) == len(calls) == len(results) == len(receipts) == len(permissions) == 1:
+        return False
+    write, call, result, receipt = writes[0], calls[0], results[0], receipts[0]
+    key = write.get("key")
+    return bool(
+        isinstance(key, str)
+        and key
+        and write.get("verified") is True
+        and write.get("source") in {"permission", "stream", "mcp_meta"}
+        and write.get("bound_id") == key
+        and write.get("role") == "blue"
+        and permissions == [(key, "post_report")]
+        and call.get("tool") == "post_report"
+        and call.get("tool_use_id") == result.get("tool_use_id") == getattr(receipt, "tool_use_id", None) == key
+        and result.get("ok") is True
+        and getattr(receipt, "kind", None) == "report"
+        and getattr(receipt, "state", None) == "confirmed"
+    )
+
+
+def _turn_failure(result: Any) -> str | None:
+    if result is None:
+        return "turn_not_returned"
+    if isinstance(result, TimeoutError):
+        return "turn_timeout"
+    if not isinstance(result, Exception) and result.ok:
+        return None
+    summary = (str(result) if isinstance(result, Exception) else result.summary).lower()
+    for marker, code in (
+        ("timed out", "turn_timeout"),
+        ("strict identity", "strict_identity_failure"),
+        ("droid turn ended:", "sdk_unsuccessful_result"),
+        ("live audit unavailable", "runtime_guard_reached"),
+    ):
+        if marker in summary:
+            return code
+    return "turn_not_successful"
+
+
+def _failure_codes(output: dict[str, Any]) -> list[str]:
+    """Fixed reason codes only. Neither model output nor exception prose is published."""
+    codes = []
+    if output.get("error_type"):
+        codes.append("probe_exception")
+    if output.get("cleanup_pending"):
+        codes.append("turn_cleanup_incomplete")
+    if "actual_session_ids_matched" not in output.get("stages", []):
+        codes.append("session_ids_unverified")
+    if output.get("turn_ok") is not True:
+        codes.append(output.get("turn_failure") or "turn_not_successful")
+    for field in ("permission_count", "intercepted_report_writes", "tool_calls", "tool_results"):
+        if output.get(field) != 1:
+            codes.append(f"{field}_not_one")
+    for field in ("authenticated_id_binding", "gate_during_intercepted_write"):
+        if output.get(field) is not True:
+            codes.append(f"{field}_unverified")
+    if output.get("gate_http_status") != 200 or output.get("gate_verdict") != "allow":
+        codes.append("gate_not_allowed")
+    latency, credits = output.get("gate_ms"), output.get("factory_credits")
+    for value, maximum, code in ((latency, 8000, "gate_latency_unqualified"), (credits, math.inf, "usage_unavailable")):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value < maximum:
+            codes.append(code)
+    if output.get("runtime_guard_changed") is not False or output.get("real_ledger_or_crs_access") is not False:
+        codes.append("probe_isolation_unqualified")
+    return codes
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--allow-model-call", action="store_true", help="Allow one bounded, billable Factory SDK turn using CLI authentication.")
-    if not parser.parse_args().allow_model_call:
+    if not parser.parse_args(argv).allow_model_call:
         parser.error("--allow-model-call is required; this probe can consume Factory credits")
     blue = Path(__file__).resolve().parents[1]
     sys.path[:0] = [str(blue), str(blue.parent / "agentkit")]
@@ -58,6 +130,7 @@ def main() -> int:
             assert self._tool_ids == list(AUDIT_TOOL_IDS)
 
         async def on_permission(self, request):
+            stages.append("permission_callback")
             permissions.extend((u.tool_use_id, u.tool) for u in self.tool_uses(request))
             return await super().on_permission(request)
 
@@ -75,7 +148,12 @@ def main() -> int:
 
         async def _droid_turn(self, req, emitter):
             stages.append("shared_sdk_entry")
-            return await DroidAgent._droid_turn(self, req, emitter)
+            try:
+                return await DroidAgent._droid_turn(self, req, emitter)
+            except Exception as exc:
+                # AuditAgent rewrites the returned summary, so retain a fixed SDK failure code here.
+                stages.append(_turn_failure(exc))
+                raise
 
     def forbid_provider():
         raise AssertionError("Sponsor/provider construction is forbidden")
@@ -118,7 +196,8 @@ def main() -> int:
         )
         app = make_agent_app(ProbeAudit, settings=settings, extra_routes=extra)
         agent = app.state.agent
-        gate_ms, overlapping, verdict = None, False, None
+        gate_ms, overlapping, verdict, gate_status = None, False, None, None
+        result, error_type, cleanup_pending = None, None, False
         with respx.mock(assert_all_mocked=True, assert_all_called=False) as router:
             router.post("http://ledger.invalid/api/reports").mock(side_effect=report)
             router.post("http://ledger.invalid/api/events").mock(side_effect=narration)
@@ -163,31 +242,32 @@ def main() -> int:
                             async with asyncio.timeout(8):
                                 response = await client.post("/gate", json=req.model_dump())
                             gate_ms = round((time.perf_counter() - start) * 1000, 3)
+                            gate_status = response.status_code
                             overlapping, verdict = not write_done.is_set(), response.json().get("verdict")
                     result = await task
+                    stages.append("turn_returned")
+            except Exception as exc:
+                # Preserve partial observations; never print raw SDK/HTTP/model errors.
+                error_type = type(exc).__name__
             finally:
                 if not task.done():
                     task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+                _, pending = await asyncio.wait({task}, timeout=3)
+                cleanup_pending = bool(pending)
+                if not pending:
+                    await asyncio.gather(task, return_exceptions=True)
         calls = [e["payload"] for e in events if e["type"] == "agent.tool_call"]
         results = [e["payload"] for e in events if e["type"] == "agent.tool_result"]
-        key = writes[0]["key"] if len(writes) == 1 else None
-        matched = bool(
-            key
-            and writes[0]["verified"]
-            and writes[0]["bound_id"] == key
-            and writes[0]["role"] == "blue"
-            and (key, "post_report") in permissions
-            and [c["tool_use_id"] for c in calls if c["tool"] == "post_report"] == [key]
-            and len([r for r in results if r["tool_use_id"] == key and r["ok"]]) == 1
-            and agent.receipts[("ep", 5)][0].tool_use_id == key
-        )
+        matched = _binding_matches(permissions, writes, calls, results, agent.receipts.get(("ep", 5), []))
         return {
             "model": settings.droid_model,
             "autonomy": agent.autonomy,
             "identity": agent.identity_policy(),
-            "turn_ok": result.ok,
-            "factory_credits": float(result.usage.factory_credits) if result.usage else None,
+            "turn_ok": result.ok if result else False,
+            "turn_failure": _turn_failure(result),
+            "error_type": error_type,
+            "cleanup_pending": cleanup_pending,
+            "factory_credits": float(result.usage.factory_credits) if result and result.usage else None,
             "permission_count": len(permissions),
             "intercepted_report_writes": len(writes),
             "tool_calls": len(calls),
@@ -196,6 +276,7 @@ def main() -> int:
             "invocation_source": writes[0]["source"] if writes else None,
             "stages": stages,
             "gate_ms": gate_ms,
+            "gate_http_status": gate_status,
             "gate_during_intercepted_write": overlapping,
             "gate_verdict": verdict,
             "real_ledger_or_crs_access": False,
@@ -205,20 +286,26 @@ def main() -> int:
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         try:
             with tempfile.TemporaryDirectory(prefix="blue-isolated-sdk-") as cwd:
-                os.chdir(cwd)
-                output = asyncio.run(probe())
+                previous_cwd = Path.cwd()
+                try:
+                    os.chdir(cwd)
+                    output = asyncio.run(probe())
+                finally:
+                    os.chdir(previous_cwd)
         except Exception as exc:
-            output = {"error_type": type(exc).__name__, "runtime_guard_changed": False, "real_ledger_or_crs_access": False}
+            output = {
+                "error_type": type(exc).__name__,
+                "stages": stages,
+                "permission_count": len(permissions),
+                "intercepted_report_writes": len(writes),
+                "runtime_guard_changed": False,
+                "real_ledger_or_crs_access": False,
+            }
+    output["failure_codes"] = _failure_codes(output)
+    output["controlled_probe_passed"] = not output["failure_codes"]
+    output["ready"] = False
     print(json.dumps(output, sort_keys=True))
-    passed = (
-        output.get("turn_ok")
-        and output.get("authenticated_id_binding")
-        and output.get("gate_during_intercepted_write")
-        and output.get("gate_verdict") == "allow"
-        and output.get("gate_ms", 8000) < 8000
-        and output.get("permission_count") == output.get("tool_calls") == output.get("tool_results") == 1
-    )
-    return 0 if passed else 2
+    return 0 if output["controlled_probe_passed"] else 2
 
 
 if __name__ == "__main__":
