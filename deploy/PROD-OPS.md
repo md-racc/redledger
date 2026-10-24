@@ -41,9 +41,9 @@ logs as sensitive anyway.
 ## Prerequisites
 
 - The deploy key at `~/.ssh/redledger_deploy` (override: `PROD_KEY`), the VM's host key already
-  in `~/.ssh/known_hosts` (`ssh -i ~/.ssh/redledger_deploy deploy@45.77.6.23 true` once; `prod.sh`
+  in `~/.ssh/known_hosts` (`ssh -i ~/.ssh/redledger_deploy deploy@"$PROD_HOST" true` once; `prod.sh`
   runs ssh with `BatchMode=yes`, so it never prompts).
-- `PROD_HOST` if the VM is not `45.77.6.23`.
+- `PROD_HOST`: the VM address. It is deliberately not in this public repo: export it, or put it on the first line of `~/.config/redledger/prod_host` (override the path with `PROD_HOST_FILE`). The owner has it in the Vultr console / the `VULTR_HOST` repo secret.
 - A deployed stack (`deploy.yml` roll job ran, so `.env` exists; compose refuses to start
   battlefield otherwise). `make prod-health` is the first thing to run.
 - Local tools: bash, ssh, base64, coreutils `timeout` (macOS: `brew install coreutils`).

@@ -20,7 +20,8 @@
 # argument travel base64-encoded (shell-safe alphabet, single-quoted) and are decoded in Python.
 #
 # Environment (all optional):
-#   PROD_HOST (45.77.6.23)  PROD_USER (deploy)  PROD_KEY (~/.ssh/redledger_deploy)
+#   PROD_HOST (required for ssh; else first line of $PROD_HOST_FILE, default ~/.config/redledger/prod_host —
+#     kept out of this public repo)  PROD_USER (deploy)  PROD_KEY (~/.ssh/redledger_deploy)
 #   PROD_DIR (/opt/redledger)  PROD_COMPOSE ("docker compose -f docker-compose.yml -f docker-compose.prod.yml")
 #   PROD_BF_EXEC ("$PROD_COMPOSE exec -T battlefield") — prefix that runs argv inside battlefield
 #   PROD_SSH  — transport override: a command that takes ONE argument, the shell command to run
@@ -31,7 +32,9 @@
 #   PROD_RESOLVE_BY (judge)  PROD_RECORD_OVERWRITE=1 — let `record` replace an existing fixture.
 set -euo pipefail
 
-PROD_HOST="${PROD_HOST:-45.77.6.23}"
+PROD_HOST_FILE="${PROD_HOST_FILE:-$HOME/.config/redledger/prod_host}"
+if [[ -z "${PROD_HOST:-}" && -r "$PROD_HOST_FILE" ]]; then PROD_HOST="$(head -n1 "$PROD_HOST_FILE" | tr -d "[:space:]")"; fi
+PROD_HOST="${PROD_HOST:-}"
 PROD_USER="${PROD_USER:-deploy}"
 PROD_KEY="${PROD_KEY:-$HOME/.ssh/redledger_deploy}"
 PROD_DIR="${PROD_DIR:-/opt/redledger}"
@@ -264,6 +267,8 @@ transport() {
   if [[ -n "${PROD_SSH:-}" ]]; then
     read -r -a TRANSPORT <<<"$PROD_SSH"
   else
+    [[ -n "$PROD_HOST" ]] || die "PROD_HOST is not set: export PROD_HOST=<vm ip or host>, or put it in $PROD_HOST_FILE"
+    [[ "$PROD_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.:-]*$ ]] || die "PROD_HOST has unexpected characters"
     TRANSPORT=(ssh -i "$PROD_KEY" -o IdentitiesOnly=yes -o BatchMode=yes
       -o ConnectTimeout="$CONNECT_TIMEOUT" -o ServerAliveInterval=15 -o ServerAliveCountMax=4
       -T "$PROD_USER@$PROD_HOST")
