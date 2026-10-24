@@ -34,6 +34,8 @@ class EpisodeState:
         # credit guard: None = not yet seeded from `turn.ended` events in this process
         self.credits_total: float | None = None
         self.credit_guard_armed = True
+        self.day_pause_sec: float | None = None  # a headless lineage generation's pause; None = DAY_PAUSE_SEC
+        self.lineage_id: str | None = None  # set by the lineage runner for the generations it runs (credit cap)
 
 
 _states: dict[str, EpisodeState] = {}
@@ -110,8 +112,11 @@ async def _loop(episode_id: str) -> None:
                 await _finish(episode_id, ep["current_day"])
                 return
             await run_day(episode_id)
-            if settings.day_pause_sec:
-                await asyncio.sleep(settings.day_pause_sec)
+            pause_sec = state(episode_id).day_pause_sec
+            if pause_sec is None:
+                pause_sec = settings.day_pause_sec
+            if pause_sec:
+                await asyncio.sleep(pause_sec)
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -308,6 +313,10 @@ async def _charge_credits(episode_id: str, day: int, factory_credits: Any) -> No
         await _seed_credits(episode_id)
     else:
         st.credits_total += spent
+    if st.lineage_id is not None:
+        from . import lineage  # late: lineage imports this module
+
+        await lineage.charge_turn(st.lineage_id, episode_id, day, spent)  # the lineage's config.max_credits
     limit = settings.max_credits_per_episode  # MAX_CREDITS_PER_EPISODE; 0 disables the guard
     total = st.credits_total or 0.0
     if not (st.credit_guard_armed and spent > 0 and credit_guard_tripped(total, limit)):
@@ -329,3 +338,6 @@ async def _finish(episode_id: str, day: int) -> None:
     final = await score.compute(episode_id)
     await db.execute("UPDATE episodes SET status='finished', finished_at=now() WHERE id=$1", episode_id)
     await bus.emit(episode_id, day, "episode.ended", {"final_score": final})
+    gen = await db.fetchrow("SELECT lineage_id, generation FROM episodes WHERE id=$1 AND lineage_id IS NOT NULL", episode_id)
+    if gen is not None:  # every lineage generation, runner-owned or a demo: episode.ended → generation.ended
+        await bus.emit(episode_id, day, "generation.ended", {"lineage_id": gen["lineage_id"], "generation": gen["generation"], "score": final})
