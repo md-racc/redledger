@@ -21,7 +21,8 @@ class GhostVendor(SchemeBase):
 
     async def plan(self, ledger: LedgerClient, params: dict[str, Any]) -> dict[str, Any]:
         return {
-            "target_amount": float(params.get("amount", 4920.0)),
+            # default sits under blue's near_threshold band ([4750, 5000)) and green's $5k auto-pay line
+            "target_amount": float(params.get("amount", 4380.0)),
             "vendor_name": params.get("vendor_name", "Acme Office Supply LLC"),
             "category": params.get("category", "office"),
         }
