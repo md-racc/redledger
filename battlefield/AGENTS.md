@@ -87,6 +87,11 @@ Goal for this session: <fill in>
   before any declaration that day stay unlinked.
 - `legit_traffic` doesn't yet produce legit bank-detail changes or legit new vendors, so blue
   has no false-positive bait for those rules. Dev M will want that.
+- `GET /audit_log` for agents (fixed): only red's legwork writes audit rows for sim-shaped
+  entities, so red's rows (entity ids in `result`, the scheme story in `attacks.declare`) were
+  provenance. `list_audit` now gives any X-Agent caller only `agent IN ('green','blue')` rows and
+  never an `attacks.*` action; `agent=red` returns `[]`, not 403. Operator view is unfiltered.
+  A new agent that writes audit rows stays hidden from agents until added to that allowlist.
 - Replays broadcast via `bus._broadcast` under a virtual episode id and are not persisted.
 - No pagination on `/api/events` beyond `limit`; fine for 10-day episodes.
 - Day pacing for demos is `DAY_PAUSE_SEC`; there is no per-turn pacing.
