@@ -5,17 +5,19 @@ info:
   description: |
     The only interface to the books. Agents (red/green/blue) and the frontend call this.
     Two bearer tokens, chosen by whether the request carries `X-Agent`:
-      - `agentBearer` (`AGENT_TOKEN`): required on every request that carries `X-Agent`.
-        Held by battlefield, red, green, blue.
+      - `agentBearer` (the claimed agent's own token, `AGENT_TOKEN_<A>`): required on every request
+        that carries `X-Agent: <a>`. Battlefield holds all three; each agent holds only its own.
       - `operatorBearer` (`OPERATOR_TOKEN`): required on every request without `X-Agent`.
         Held by battlefield, the frontend *server* (never the browser), Makefile/curl, the owner.
-    Wrong token for the role → 401: `OPERATOR_TOKEN` + `X-Agent` → 401; `AGENT_TOKEN` without
-    `X-Agent` → 401. A correctly authenticated agent calling a route its role may not use → 403
+    Wrong token for the role → 401: `OPERATOR_TOKEN` + `X-Agent` → 401; another agent's token for
+    the claimed `X-Agent` → 401 (audited); any agent token without `X-Agent` → 401. A correctly authenticated agent calling a route its role may not use → 403
     (e.g. any agent on `GET /events` or a control-plane route).
-    Transition: when `AGENT_TOKEN` / `OPERATOR_TOKEN` is unset, battlefield falls back to the
-    legacy `INTERNAL_TOKEN` for it, and logs a warning when the two resolved tokens are equal.
+    Transition: each `AGENT_TOKEN_<A>` falls back to the shared `AGENT_TOKEN`, then `INTERNAL_TOKEN`
+    (battlefield warns that per-agent separation is off); `OPERATOR_TOKEN` falls back to
+    `INTERNAL_TOKEN`. Battlefield warns whenever any two resolved tokens (the three agent tokens and
+    `OPERATOR_TOKEN`) are equal, from any source; the prod deploy refuses equal values. See contracts/agent-service.md Tokens.
     Per-operation `security` below says which token(s) a route accepts. A route listing both
-    accepts either: an agent with `X-Agent` + `AGENT_TOKEN`, or the operator without `X-Agent`
+    accepts either: an agent with `X-Agent` + its own token, or the operator without `X-Agent`
     + `OPERATOR_TOKEN`.
     Not every route is listed here. Every `/fe/*` route (frontend.py reads, `/fe/query`,
     `/fe/episodes/{id}/state/{agent}`) is operatorBearer. `/x/{area}/...` extension routes set
@@ -38,7 +40,7 @@ components:
     agentBearer:
       type: http
       scheme: bearer
-      description: '`AGENT_TOKEN` (falls back to `INTERNAL_TOKEN` when unset). Required on, and only valid on, requests carrying `X-Agent`.'
+      description: 'The claimed agent''s own token `AGENT_TOKEN_<A>` (per agent; falls back to the shared `AGENT_TOKEN`, then `INTERNAL_TOKEN`, when unset). Required on, and only valid on, requests carrying `X-Agent`; another agent''s token → 401.'
     operatorBearer:
       type: http
       scheme: bearer
@@ -453,7 +455,7 @@ security: [ { operatorBearer: [] } ]
 
 paths:
   # ---------- reads (all agents + frontend) ----------
-  # Reads accept either token: agent with X-Agent + AGENT_TOKEN, operator without X-Agent + OPERATOR_TOKEN.
+  # Reads accept either token: agent with X-Agent + its own token, operator without X-Agent + OPERATOR_TOKEN.
   /vendors:
     get:
       summary: List vendors
@@ -870,7 +872,7 @@ paths:
       summary: Leave a message for an agent's next turn (arrives in options.inputs). Agents (with X-Agent) or the operator (without).
       security: [ { agentBearer: [] }, { operatorBearer: [] } ]
       requestBody: { content: { application/json: { schema: { type: object, required: [episode_id, target], properties: { episode_id: { type: string }, target: { type: string, enum: [red, green, blue] }, source: { type: string }, payload: { type: object } } } } } }
-      responses: { '201': { description: queued } }
+      responses: { '201': { description: queued }, '403': { description: "an agent caller whose body episode_id differs from its X-Episode (audited)" }, '422': { description: invalid body or target } }
     get: { security: [ { operatorBearer: [] } ], parameters: [ { name: episode_id, in: query, required: true, schema: { type: string } }, { name: target, in: query, schema: { type: string } }, { name: pending_only, in: query, schema: { type: boolean, default: true } } ], responses: { '200': { description: rows } } }
   /fe/query:
     post:
@@ -912,7 +914,7 @@ paths:
           - `ticket` from `POST /ws/ticket`: signature valid, unexpired, not yet used, and scope
             `*` or equal to `episode_id`.
           - `token=<OPERATOR_TOKEN>`: curl/debug only; never from a browser.
-        AGENT_TOKEN is never accepted. On any auth failure the server closes with code 4401.
+        No agent token (`AGENT_TOKEN_<A>` or the shared `AGENT_TOKEN`) is ever accepted. On any auth failure the server closes with code 4401.
       security: []
       parameters:
         - { name: episode_id, in: query, schema: { type: string } }
