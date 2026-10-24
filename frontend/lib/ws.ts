@@ -3,6 +3,7 @@
 // (`/api/bf/ws-ticket`, which holds OPERATOR_TOKEN). The socket URL comes back with the ticket
 // (`ws_url`, read at request time) rather than from NEXT_PUBLIC_WS_URL here, because client-side
 // NEXT_PUBLIC_* values are inlined at build and one image must serve every environment.
+import { clientId } from "./sync/client";
 import type { RLEvent } from "./types";
 
 interface Ticket {
@@ -14,7 +15,7 @@ const MIN_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 15_000;
 
 async function fetchTicket(episodeId: string): Promise<Ticket> {
-  const r = await fetch(`/api/bf/ws-ticket?episode_id=${encodeURIComponent(episodeId)}`, { cache: "no-store" });
+  const r = await fetch(`/api/bf/ws-ticket?episode_id=${encodeURIComponent(episodeId)}`, { cache: "no-store", headers: { "X-RL-Client": clientId() } });
   if (!r.ok) throw new Error(`ws-ticket → ${r.status}`);
   return r.json();
 }

@@ -14,11 +14,12 @@ import {
   upstreamRequestHeaders,
   upstreamUrl,
 } from "@/lib/proxy";
+import { hub } from "@/lib/sync/hub";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-async function forward(req: Request): Promise<Response> {
+async function forwardInner(req: Request): Promise<Response> {
   const method = req.method.toUpperCase();
   if (isCrossSiteMutation(method, req.headers)) return jsonError(403, "cross-site request refused");
 
@@ -54,6 +55,17 @@ async function forward(req: Request): Promise<Response> {
   // Stream the upstream body straight through (large /events pages, report markdown, ...).
   const out = isNullBodyStatus(upstream.status) || method === "HEAD" ? null : upstream.body;
   return new Response(out, { status: upstream.status, statusText: upstream.statusText, headers });
+}
+
+/** Every call is noted (method, path, status, time, which laptop) for the backstage traffic log; see lib/sync/hub.ts. */
+async function forward(req: Request): Promise<Response> {
+  const t0 = performance.now();
+  const res = await forwardInner(req);
+  try {
+    const u = new URL(req.url);
+    hub().recordTraffic({ method: req.method.toUpperCase(), path: `${upstreamPath(u.pathname) ?? u.pathname}${u.search.length > 60 ? "?…" : u.search}`, status: res.status, ms: performance.now() - t0, client: req.headers.get("x-rl-client") ?? "" });
+  } catch { /* logging must never break a request */ }
+  return res;
 }
 
 export const GET = forward;

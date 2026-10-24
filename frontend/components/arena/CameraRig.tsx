@@ -12,8 +12,9 @@ import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useArena } from "@/lib/arena/store";
 import { cinema } from "@/lib/arena/cinema";
+import { CUT_Y } from "./cutaway";
 import { railOf } from "@/lib/arena/pacing";
-import { emitTimeline, INTRO_SECONDS, timeline } from "@/lib/arena/timeline";
+import { emitTimeline, timeline } from "@/lib/arena/timeline";
 import { figures } from "./figures";
 
 type Key = [number, number, number, number, number, number]; // pos xyz, look xyz
@@ -54,7 +55,7 @@ export function CameraRig() {
   const stage = useArena((s) => s.stage);
   const curves = useMemo(() => ({ ip: curveOf(INTRO, 0), il: curveOf(INTRO, 3), rp: curveOf(RAIL, 0), rl: curveOf(RAIL, 3) }), []);
   const v = useMemo(() => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), tp: new THREE.Vector3(), tl: new THREE.Vector3(), off: new THREE.Vector3(), right: new THREE.Vector3(), up: new THREE.Vector3(), want: new THREE.Vector3(), dir: new THREE.Vector3() }), []);
-  const s = useRef({ scroll: 0, mx: 0, my: 0, ready: false, baseDist: 122, returning: false, lastFov: 0, shX: 0, shY: 0, shT: 0 });
+  const s = useRef({ scroll: 0, mx: 0, my: 0, ready: false, baseDist: 122, returning: false, lastFov: 0, shX: 0, shY: 0, shT: 0, shotK: 0, narrow: 0 });
 
   // place the camera on the first intro frame before anything is drawn
   useEffect(() => {
@@ -75,13 +76,14 @@ export function CameraRig() {
     if (!S.ready) return;
 
     let fov = 40;
+    let shotNow = false;
     // portrait screens: widen the lens and dolly back so the three groups still fit side to side
     const aspect = state.size.width / Math.max(1, state.size.height);
     const narrow = clamp01((1.5 - aspect) / 1.0);
     const back = 1 + narrow * 0.9;
     if (st.stage === "loading" || st.stage === "intro") {
       if (st.stage === "intro") timeline.introTime += st.skipIntro ? 99 : dt;
-      const p = clamp01(timeline.introTime / INTRO_SECONDS);
+      const p = clamp01(timeline.introTime / timeline.introLen);
       timeline.intro = p;
       const u = smoother(p);
       curves.ip.getPoint(u, v.pos); curves.il.getPoint(u, v.look);
@@ -115,6 +117,14 @@ export function CameraRig() {
         applyPose(camera, v, state.pointer, S, dt, 1);
         if (S.scroll > 0.994 && raw > 0.99) {
           S.baseDist = camera.position.distanceTo(ARENA_LOOK);
+          // a narrow or portrait window (the pane beside the chat, a phone): the rail's pose is pulled back to fit the three
+          // groups side by side, which leaves the ring tiny in the middle. In the arena, come in until the ring fills the width.
+          if (narrow > 0.02) {
+            const wide = 54; // metres across: the red ring is 36 m, plus room for the HUD
+            const fit = wide / (2 * Math.tan(THREE.MathUtils.degToRad((40 + narrow * 22) / 2)) * aspect);
+            S.baseDist = Math.min(S.baseDist, Math.max(60, fit));
+            S.returning = true;
+          }
           st.setStage("arena");
         }
       } else if (st.stage === "arena") {
@@ -125,10 +135,13 @@ export function CameraRig() {
           v.tp.sub(v.tl).multiplyScalar(1 / back).add(v.tl); // the rail stores the pose before the portrait dolly
           st.setStage("scroll");
         } else {
-          orbitFocus(state.controls as unknown as OrbitControlsImpl | null, camera, st.selectedId, S, v, dt);
+          S.narrow = narrow;
+          shotNow = orbitFocus(state.controls as unknown as OrbitControlsImpl | null, camera, st.selectedId, S, v, dt);
         }
       }
-      fov = 40;
+      // a cut-in uses a longer lens: the action fills the frame and the background compresses
+      S.shotK = damp(S.shotK, shotNow ? 1 : 0, shotNow ? 5 : 3, dt);
+      fov = 40 - 7 * S.shotK;
     }
     fov += narrow * 22;
 
@@ -136,7 +149,9 @@ export function CameraRig() {
     const open = st.stage === "arena" && !!st.selectedId;
     const phone = state.size.width <= 760;
     S.shX = damp(S.shX, open && !phone ? 0.2 : 0, 4, dt);
-    S.shY = damp(S.shY, open && phone ? 0.22 : 0, 4, dt);
+    // a card over the lower third (compare, evolution) lifts the picture so the arena stays above it
+    const card = st.stage === "arena" && !!st.panel;
+    S.shY = damp(S.shY, open && phone ? 0.22 : card ? (phone ? 0.2 : 0.17) : 0, 4, dt);
     // while the title is up, slide the picture so the Palace sits centred in the gap between "red" and "ledger"
     const titleOn = st.stage === "intro" || st.stage === "loading" ? smooth01((timeline.intro - 0.55) / 0.45) : st.stage === "scroll" ? 1 - smooth01(timeline.scroll / 0.1) : 0;
     S.shT = damp(S.shT, phone ? 0 : (0.5 - timeline.gapX) * titleOn, 5, dt);
@@ -179,13 +194,13 @@ const orbitState = { lastTouch: -1e9 };
  * client and the guard, from a three-quarter angle, swinging slowly round them), else the default view, which drifts slowly
  * when left alone. The auto-cam backs off while the visitor is dragging.
  */
-function orbitFocus(c: OrbitControlsImpl | null, camera: THREE.PerspectiveCamera, selected: string | null, S: { baseDist: number; returning: boolean }, v: { want: THREE.Vector3; dir: THREE.Vector3 }, dt: number) {
-  if (!c) return;
+function orbitFocus(c: OrbitControlsImpl | null, camera: THREE.PerspectiveCamera, selected: string | null, S: { baseDist: number; returning: boolean; narrow: number }, v: { want: THREE.Vector3; dir: THREE.Vector3 }, dt: number): boolean {
+  if (!c) return false;
   const h = selected ? figures.get(selected) : null;
   const idle = performance.now() - orbitState.lastTouch > 4500;
   const shot = !h && idle && useArena.getState().cinematic && cinema.active;
   const wantTarget = h ? v.want.copy(h.root.position).setY(h.root.position.y + 2.2) : shot ? v.want.set(cinema.x, cinema.y, cinema.z) : ARENA_LOOK;
-  c.target.lerp(wantTarget, 1 - Math.exp(-dt * (shot ? 2.4 : 3)));
+  c.target.lerp(wantTarget, 1 - Math.exp(-dt * (shot ? 5 : 3)));
   if (!h && !shot && idle) {
     // slow drift around the target, independent of frame rate
     v.dir.copy(camera.position).sub(c.target);
@@ -195,23 +210,24 @@ function orbitFocus(c: OrbitControlsImpl | null, camera: THREE.PerspectiveCamera
   }
   if (h || shot) S.returning = true;
   if (h || shot || S.returning) {
-    const wantDist = h ? 26 : shot ? cinema.dist : S.baseDist;
+    const wantDist = h ? 26 : shot ? cinema.dist * (1 - 0.16 * cinema.push) * (1 + 0.8 * S.narrow) : S.baseDist; // narrow windows see less sideways: stand further back
     v.dir.copy(camera.position).sub(c.target);
     const len = v.dir.length();
     v.dir.normalize();
     if (shot) {
-      // a three-quarter angle (at least 53 degrees up, and always above the rotunda's cut rim), swinging slowly round the action
-      const need = Math.asin(Math.min(0.98, Math.max(0, (31 - c.target.y) / Math.max(1, cinema.dist))));
-      const want = Math.max(0.92, need);
+      // a low three-quarter angle, just clear of the rotunda's cut rim, swinging round the action while it plays out
+      const need = Math.asin(Math.min(0.98, Math.max(0, (CUT_Y + 2.5 - c.target.y) / Math.max(1, cinema.dist))));
+      const want = Math.max(0.5, need);
       const cur = Math.asin(Math.min(1, Math.max(-1, v.dir.y)));
-      const el = cur + (want - cur) * (1 - Math.exp(-dt * 1.6));
-      const az = Math.atan2(v.dir.z, v.dir.x) + dt * 0.12;
+      const el = cur + (want - cur) * (1 - Math.exp(-dt * 3));
+      const az = Math.atan2(v.dir.z, v.dir.x) + dt * 0.3;
       v.dir.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
     }
-    const next = len + (wantDist - len) * (1 - Math.exp(-dt * 2.2));
+    const next = len + (wantDist - len) * (1 - Math.exp(-dt * (shot ? 3.4 : 2.2)));
     if (!h && !shot && Math.abs(next - wantDist) < 0.5) S.returning = false;
     camera.position.copy(c.target).addScaledVector(v.dir, next);
   }
+  return shot;
 }
 
 function ArenaOrbit() {

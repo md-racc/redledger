@@ -152,6 +152,15 @@ export class ArenaSim {
     }
   }
 
+  /** Between acts: drop every live scene and put everyone back on their slot, un-caught and un-drained. */
+  reset() {
+    this.scenes.length = 0;
+    for (const a of this.agents.values()) {
+      a.status = "ok";
+      if (a.mode !== "hold" && a.mode !== "idle" && a.mode !== "travel") { a.delay = 0; this.sendTo(a, a.slot, "return"); }
+    }
+  }
+
   /** Everyone walks back to the perimeter. */
   disperse() {
     this.phase = "dispersing";
