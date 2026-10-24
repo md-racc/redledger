@@ -1,0 +1,1 @@
+- 2026-10-24T21:58Z · Ad · chore: document CRS_LIVE in .env.example and README §11 (unblocks #120); next: merge #120; blocked: none

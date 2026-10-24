@@ -46,7 +46,10 @@ def parse_identity(body: Any) -> IdentityResult:
             return IdentityResult(status="review")
         if codes & {"2201", "2202", "2301"}:
             return IdentityResult(status="mismatch")
-        return IdentityResult(status="verified" if not codes and result["searchStatus"] == "CLEAR" else "unknown")
+        # Sponsor package v1.1.2 (personas.json notes): "messages: empty = verified". The sandbox
+        # returns searchStatus HIT with no messages for a cleanly matched identity (observed on the
+        # approved P01 probe), so verified must not be conditioned on CLEAR.
+        return IdentityResult(status="verified" if not codes else "unknown")
     except (KeyError, TypeError, AttributeError):
         return IdentityResult()
 

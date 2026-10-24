@@ -1,0 +1,1 @@
+- 2026-10-24T21:47Z · M · CRS sandbox probe (P01/P12/P16, billable:false verified in /users/logs) found parser requiring CLEAR for verified; sponsor note says empty messages = verified — fixed, HIT+empty now verified

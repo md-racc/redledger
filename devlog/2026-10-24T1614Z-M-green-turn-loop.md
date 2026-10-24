@@ -1,0 +1,1 @@
+- 2026-10-24T16:14Z · M · green: opt keyless turns into shared private TurnLoop, make overlap fixture cross-loop safe, test owner-loop resources, health responsiveness and cancelled-turn recovery; next: independent verification and Ad integration; blocked: live handler still awaits preparation consumption and Green SDK acceptance, no guard or AP policy change

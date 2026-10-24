@@ -295,6 +295,7 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 | `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
 | `BLUE_GATE_LLM_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
 | `CRS_USERNAME`, `CRS_PASSWORD` | CRS sandbox login credentials, or empty (Blue returns `unknown`) | secrets; passed only to Blue at runtime |
+| `CRS_LIVE` | acceptance-only switch letting the DRY_RUN blue audit call the CRS sandbox (approved personas only) | default off; shell export, never committed |
 | `CRS_API_KEY` | legacy placeholder, unused by the CRS identity client | legacy compatibility only |
 | `MAX_CREDITS_PER_EPISODE` | `0` (off) | e.g. `40`; variable |
 | `DOMAIN`, `CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` | n/a / `.env.example` defaults | variables (`CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` default from `DOMAIN`) |

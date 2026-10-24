@@ -30,7 +30,9 @@ def delivered(codes=(), *, status="DELIVERED", search="CLEAR"):
         (delivered(["NEW_CODE"]), "unknown"),
         (delivered(status="NOT_AUTHORIZED"), "unknown"),
         (delivered(search="UNAVAILABLE"), "unknown"),
-        (delivered(search="HIT"), "unknown"),
+        # Sponsor note (package v1.1.2): "messages: empty = verified" — observed P01 sandbox shape
+        # is DELIVERED + HIT + zero messages, and must parse as verified, not unknown.
+        (delivered(search="HIT"), "verified"),
         ({}, "unknown"),
         ({"addOnProducts": [{"status": "DELIVERED", "idManagerVerification": {"searchStatus": "CLEAR"}}]}, "unknown"),
         ({"addOnProducts": [delivered()["addOnProducts"][0]] * 2}, "unknown"),
