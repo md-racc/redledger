@@ -29,14 +29,13 @@ class Playbooks:
         self.latest: dict[str, dict] = {}
         self.refreshes: dict[tuple[str, int], Refresh] = {}
 
-    async def hits(self, req: GateRequest) -> list[rules.RuleHit]:
-        if req.playbook_version is None or req.action not in rules.INVOICE_ACTIONS:
-            return []
+    async def _content(self, req: GateRequest) -> dict | None:
+        """Playbook content for the request's exact episode/version; None when unavailable."""
         key = (req.episode_id, req.playbook_version)
         try:
             if key in self.entries:
                 self.entries.move_to_end(key)
-                return learned.evaluate(req, self.entries[key])
+                return self.entries[key]
             # One bounded read per new episode/version, permitted by the lineage contract.
             # Cached gates never wait for refreshes; unrelated cold keys load independently.
             refresh = self.refreshes.setdefault(key, Refresh())
@@ -61,13 +60,29 @@ class Playbooks:
                 refresh.users -= 1
                 if not refresh.users:
                     self.refreshes.pop(key)
-            return learned.evaluate(req, content)
+            return content
         except Exception:
-            stale_content = self.latest.get(req.episode_id)
-            if stale_content is not None:
-                return learned.evaluate(req, stale_content)
+            return self.latest.get(req.episode_id)
+
+    async def hits(self, req: GateRequest) -> list[rules.RuleHit]:
+        if req.playbook_version is None or req.action not in rules.INVOICE_ACTIONS:
+            return []
+        content = await self._content(req)
+        if content is None:
             return [
                 rules.RuleHit(
                     "learned:verification_unavailable", 0, "Requested playbook version is unavailable; independent verification is required.", "unavailable"
                 )
             ]
+        return learned.evaluate(req, content)
+
+    async def retired(self, req: GateRequest) -> frozenset[str]:
+        """Baseline rules this lineage's playbook retired after legit-only fire (#133).
+
+        Empty when the requested version is unavailable: a missing playbook never weakens a
+        baseline control.
+        """
+        if req.playbook_version is None:
+            return frozenset()
+        content = await self._content(req)
+        return learned.baseline_retired(content) if content is not None else frozenset()

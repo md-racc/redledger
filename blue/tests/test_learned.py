@@ -282,3 +282,50 @@ async def test_http_gate_and_explain_share_one_role_scoped_snapshot(gate_request
     assert route.call_count == 1
     assert route.calls[0].request.headers["X-Agent"] == "blue"
     assert route.calls[0].request.headers["X-Episode"] == "ep"
+
+
+def test_statistics_retire_baseline_rules_only_after_sustained_legit_only_fire():
+    statistics = [
+        {"rule_id": "no_po_from_po_vendor", "on_legit": 8, "on_red": 0},
+        {"rule_id": "vendor_age_lt_7d", "on_legit": 2, "on_red": 0},  # below the floor
+        {"rule_id": "recent_bank_change", "on_legit": 9, "on_red": 1},  # still catching red
+        {"rule_id": "not-a-rule", "on_legit": 99, "on_red": 0},  # unknown id
+        {"rule_id": "learned:young_vendor_any_amount", "on_legit": 5, "on_red": 0},  # learned channel
+    ]
+    result = learned.reflect(review([], statistics=statistics))
+    assert result.playbook["retired_baseline"] == ["no_po_from_po_vendor"]
+    assert result.playbook["retired"] == ["learned:young_vendor_any_amount"]
+    assert "no_po_from_po_vendor" in result.rationale
+    assert "not-a-rule" not in str(result.model_dump())
+
+    followup = review([], result.playbook, statistics)
+    followup.generation = 2
+    assert learned.reflect(followup).playbook is None  # already retired: no further change
+
+
+def test_baseline_retirement_survives_in_content_and_stays_bounded():
+    poisoned = [{"rule_id": "verification_unavailable", "on_legit": 50, "on_red": 0}]
+    result = learned.reflect(review([], statistics=poisoned))
+    assert result.playbook is None  # diagnostics are never retireable
+
+    req = review([], {"retired_baseline": ["near_threshold"]}, [{"rule_id": "duplicate_invoice", "on_legit": 4, "on_red": 0}])
+    result = learned.reflect(req)
+    assert result.playbook["retired_baseline"] == ["duplicate_invoice", "near_threshold"]
+
+
+async def test_retired_reads_the_same_cached_snapshot(gate_request, monkeypatch):
+    calls, state = fake_books(monkeypatch)
+    state["content"] = {"retired_baseline": ["no_po_from_po_vendor", "not-a-rule"]}
+    cache = playbooks.Playbooks(AgentSettings(_env_file=None))
+    req = gate_request(playbook_version=1)
+    assert await cache.retired(req) == frozenset({"no_po_from_po_vendor"})
+    assert await cache.retired(gate_request(action="expenses.pay", playbook_version=1)) == frozenset({"no_po_from_po_vendor"})
+    assert len(calls) == 1
+
+
+async def test_retired_is_empty_when_the_version_is_unavailable(gate_request, monkeypatch):
+    _, state = fake_books(monkeypatch)
+    state["version"] = 2  # playbook read will not match the request's version
+    cache = playbooks.Playbooks(AgentSettings(_env_file=None))
+    assert await cache.retired(gate_request(playbook_version=1)) == frozenset()
+    assert await cache.retired(gate_request()) == frozenset()  # no playbook version at all

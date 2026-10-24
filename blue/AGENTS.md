@@ -93,7 +93,10 @@ empty = you missed it), and battlefield's `/gate` requests carry `playbook_versi
   `reflect(req)` / `dry_run_reflect(req)` to act on it. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
 - Both reflection hooks now deterministically enable four fixed `learned:*` review controls
   from extracted/partial attacks in the supplied AAR. Any legitimate-item impact retires the
-  corresponding learned control; baseline controls cannot be retired or weakened.
+  corresponding learned control. A baseline rule is retired for the lineage only when a
+  generation review shows sustained legit-only fire (`on_legit >= 3`, `on_red == 0`), recorded
+  as `retired_baseline` playbook data; the gate skips retired baseline rules for that lineage's
+  later generations, and an unavailable playbook version never retires anything (#133).
 - Gate snapshots are scoped by episode and exact playbook version (128 retained snapshots).
   A cold version gets one read under a 0.5-second budget; cached/plain gates perform no
   playbook I/O. An unavailable version escalates neutrally and never weakens a baseline hold.

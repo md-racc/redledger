@@ -281,8 +281,21 @@ def bank_change_with_open_invoices(req: GateRequest) -> RuleHit | None:
 def no_po_from_po_vendor(req: GateRequest) -> RuleHit | None:
     if req.action in INVOICE_ACTIONS:
         paid = _paid(req)
-        if not _invoice(req).get("po_id") and len(paid) >= 3 and all(p.get("po_id") for p in paid):
-            return RuleHit("no_po_from_po_vendor", 1, "Invoice lacks the PO customary in this vendor's paid history.", family="authorization")
+        if (
+            not _invoice(req).get("po_id")
+            and len(paid) >= 5
+            and all(p.get("po_id") for p in paid)
+            and money(req.amount) > max(money(p["amount"]) for p in paid)
+        ):
+            # Legit traffic routinely sends small ad-hoc invoices without a PO to vendors whose
+            # history is all-PO (#133: 28 prod fires, all legit). Only a no-PO invoice larger than
+            # anything the vendor has ever been paid is a separation signal worth a review note.
+            return RuleHit(
+                "no_po_from_po_vendor",
+                1,
+                "Invoice lacks the PO customary in this vendor's paid history and exceeds every prior paid amount.",
+                family="authorization",
+            )
     return None
 
 
@@ -358,6 +371,31 @@ RULES: list[Rule] = [
     already_flagged,
     unverified_vendor_exposure,
 ]
+
+
+# Baseline rule ids reflection may retire for a lineage after sustained legit-only fire (#133).
+# Keep in sync with the RuleHit ids above; verification_unavailable and rule_error:* are
+# diagnostics, never retireable.
+RETIREABLE_RULE_IDS: frozenset[str] = frozenset(
+    {
+        "already_flagged_high",
+        "bank_change_with_open_invoices",
+        "duplicate_invoice",
+        "employee_bank_matches_vendor",
+        "inactive_employee",
+        "invalid_po",
+        "near_threshold",
+        "no_hr_record",
+        "no_po_from_po_vendor",
+        "over_po_amount",
+        "po_vendor_mismatch",
+        "recent_bank_change",
+        "recurring_drift",
+        "unverified_vendor_exposure",
+        "vendor_age_lt_7d",
+        "vendor_frozen",
+    }
+)
 
 
 def evaluate(req: GateRequest) -> list[RuleHit]:
