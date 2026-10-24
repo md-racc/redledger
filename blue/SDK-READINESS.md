@@ -1,12 +1,49 @@
 # Blue SDK readiness checkpoint — 2026-10-24
 
-Refreshed after plain-merging main `78a3b25` (#34 shared bridge) and `f349b47` (#33 contract);
+Invocation/receipt integration refreshed against main `e71c973` (#63 runtime, #61 docs);
 controller and receipt/compatibility work landed in #19/#24. **Live audit remains disabled,
 with no environment bypass.** `/health` retains its shape: `ok=true` means the service responds;
 `droid_ok=false` truthfully reports the
 unavailable live audit, including when SDK imports succeed. Health never runs diagnostics.
 
-## Repeatable offline evidence
+## Invocation/receipt integration covered offline — not live qualification
+
+`tests/test_shared_invocation.py` uses the real shared `Invocation`, `bind_invocation`,
+`InvocationRegistry`, `_offload` and LedgerClient, controlled registrations, mocked HTTP and an
+in-memory EventEmitter sink (no sender/pump). No optional SDK is needed:
+
+```sh
+cd blue
+UV_OFFLINE=1 UV_NO_ENV_FILE=1 uv sync --extra dev --python 3.11
+UV_NO_SYNC=1 UV_NO_ENV_FILE=1 uv run pytest -q tests/test_shared_invocation.py
+cd ..
+UV_OFFLINE=1 UV_NO_SYNC=1 UV_NO_ENV_FILE=1 make lint test-blue TOKEN=test-operator
+```
+
+Covered integration behavior:
+- All six current tools claim a matching verified shared invocation exactly once, before any
+  provider/read/write work. Only `permission`, `stream` and `mcp_meta` sources qualify.
+  Private-only markers, local/explicit fallbacks, wrong tools and reused invocations are refused.
+  Invocation metadata remains absent from model-visible signatures and is not accepted as args.
+- For flag, freeze and report writes, the controlled SDK-style ID equals the single shared event
+  pair's ID, the exact first-write `X-Tool-Use-Id` and the retained `ConfirmedEffect.tool_use_id`.
+  Shared offload alone narrates; Blue records only a bounded, service-defined completed/not-confirmed
+  outcome, never raw provider responses, exceptions or source prose.
+- JSON failure and shared result failure agree for rejected, malformed and unknown write receipts.
+  Unknown receipts are retained without blind retries. Body errors, write cancellation/deadlines
+  and cancellation waiting for the lock restore private invocation context and retain receipts;
+  direct binding tests also restore the enclosing shared context.
+- Key-free deterministic dispatch still uses fresh UUID4 IDs for its own safe narration pair,
+  writes and receipts. The full Blue suite continues to cover same-day replay and cross-day
+  suppression/unknown handling.
+
+Controlled registrations demonstrate **API integration only**, not authenticated live identity.
+No Session, `session.list_tools()`, CLI, listener, model/provider, external HTTP, production or CRS
+call was run for this integration. The shared bridge is still synchronous/blocking on a separate
+worker loop. Uncontended unit-test locks and mocked HTTP do not qualify owner-loop safety.
+Neither `AuditAgent._droid_turn` nor readiness/health guards were changed: readiness is always false.
+
+## Earlier optional-SDK diagnostic evidence (not rerun for this integration)
 
 From the repository root:
 ```sh
@@ -44,20 +81,20 @@ The readiness helper always returns false; none of these offline observations ca
 
 ## Ad handoff: shared bridge prerequisites, not a Blue-local adapter
 
-1. Integrate Blue's private invocation handling with the new shared Invocation/Registry API.
-   Shared `verified` accepts permission/stream/mcp_meta sources only, not explicit/local IDs.
-   This probe exercises the unverified local fallback, not a genuine SDK registration. Do not
-   treat the copied private Blue marker as identity, trust model args, or accept generated UUIDs
-   for live SDK writes. Prove one actual ID binds exact writes and receipts; reconcile narration
-   ownership because shared offload now emits a pair and Blue's private wrapper also emits one.
+1. Blue's private invocation/write/narration integration is now covered by the offline tests above.
+   The earlier diagnostic still exercises only the unverified local fallback. Under authorized live
+   validation, prove an actual SDK-reported ID reaches the registry in time, binds the exact write
+   and receipt, and produces exactly one shared pair. Copied private markers, model args and
+   generated/explicit IDs cannot authorize live tools. Installing SDK does not settle this.
 2. Prove owner-loop safety for Blue's asyncio lock, private worker client and receipt/snapshot
    access. Copied session/invocation objects do not make cross-loop use safe by themselves.
    Retain same-day replay, partial/unknown receipts, cross-day suppression and no blind retries.
 3. Make the bridge nonblocking for the service loop while retaining bounded deadlines, event
    draining and cancellation safety. Prove concurrent `/gate` stays within its 8-second budget.
    Do not fork shared lifecycle/offload inside Blue.
-4. When humans authorize coordinated SDK validation, verify the exact six Blue IDs with
-   `session.list_tools()` and restrict before the first live event. No actual Blue session IDs
+4. When humans authorize coordinated SDK validation, verify the exact Blue IDs with
+   `session.list_tools()` and restrict before the first live event (six tools on this base;
+   revalidate the final tool set after additions). No actual Blue session IDs
    or live SDK behavior were verified here. Keep DRY_RUN key-free and Green-only audit-log reads;
    no scoreboard, event-stream, attack or other-agent internals may enter the audit.
 
