@@ -1,0 +1,1 @@
+- 2026-10-24T07:41Z · M · docs: correct CRS employee identity contract, credential names and Bright Data dependency; next: merge runtime and Blue prerequisite PRs; blocked: live credentials, SDK readiness and Docker verification
