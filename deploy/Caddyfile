@@ -1,0 +1,11 @@
+# TLS at the edge. Cloudflare DNS points api.$DOMAIN and app.$DOMAIN at the VM (DNS-only or
+# proxied with "Full (strict)"). Internal traffic stays plain HTTP.
+api.{$DOMAIN} {
+	reverse_proxy battlefield:8000
+	encode gzip
+}
+
+app.{$DOMAIN} {
+	reverse_proxy frontend:3000
+	encode gzip
+}

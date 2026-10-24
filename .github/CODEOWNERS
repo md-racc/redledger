@@ -1,0 +1,20 @@
+# Replace handles with real GitHub usernames before first PR. Owner: Dev Ad.
+# Reviews are required from the owner of any path a PR touches.
+*                       @AD_HANDLE
+/contracts/             @AD_HANDLE
+/agentkit/              @AD_HANDLE
+/battlefield/           @AD_HANDLE
+/red/                   @AL_HANDLE
+/green/                 @M_HANDLE
+/blue/                  @M_HANDLE
+/frontend/              @R_HANDLE
+# extension carve-outs: owned by the prefix, not by Ad
+/battlefield/extensions/red_*    @AL_HANDLE
+/battlefield/extensions/green_*  @M_HANDLE
+/battlefield/extensions/blue_*   @M_HANDLE
+/battlefield/extensions/fe_*     @R_HANDLE
+/contracts/ext/red/     @AL_HANDLE
+/contracts/ext/green/   @M_HANDLE
+/contracts/ext/blue/    @M_HANDLE
+/contracts/ext/fe/      @R_HANDLE
+/DEVLOG.md

@@ -1,0 +1,115 @@
+# Red Ledger — full stack. Owner: Dev Ad.
+# Internal traffic is plain HTTP on the compose network; TLS terminates at the edge (Caddy/Cloudflare).
+# Usage:
+#   make up          -> this file (agents live, need FACTORY_API_KEY)
+#   make up-dry      -> + docker-compose.dev.yml (agents DRY_RUN, hot reload)
+#   make mock-agents -> + docker-compose.mock.yml (stub agents from battlefield image)
+
+x-agent-env: &agent-env
+  BATTLEFIELD_URL: http://battlefield:8000
+  BLUE_URL: http://blue:8003
+  INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me}
+  FACTORY_API_KEY: ${FACTORY_API_KEY:-}
+  DRY_RUN: ${DRY_RUN:-false}
+  TURN_TIMEOUT_SEC: ${TURN_TIMEOUT_SEC:-180}
+  GATE_TIMEOUT_SEC: ${GATE_TIMEOUT_SEC:-8}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: redledger
+      POSTGRES_PASSWORD: redledger
+      POSTGRES_DB: redledger
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U redledger"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  battlefield:
+    build:
+      context: .
+      dockerfile: battlefield/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://redledger:redledger@postgres:5432/redledger
+      RED_URL: http://red:8001
+      GREEN_URL: http://green:8002
+      BLUE_URL: http://blue:8003
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      EPISODE_DEFAULT_DAYS: ${EPISODE_DEFAULT_DAYS:-10}
+      TURN_TIMEOUT_SEC: ${TURN_TIMEOUT_SEC:-180}
+      GATE_TIMEOUT_SEC: ${GATE_TIMEOUT_SEC:-8}
+      ESCALATION_TIMEOUT_SEC: ${ESCALATION_TIMEOUT_SEC:-90}
+      FP_PENALTY_RATE: ${FP_PENALTY_RATE:-0.02}
+      APPROVAL_THRESHOLD: ${APPROVAL_THRESHOLD:-5000}
+      DAY_PAUSE_SEC: ${DAY_PAUSE_SEC:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./battlefield/fixtures:/app/battlefield/fixtures
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  red:
+    build:
+      context: .
+      dockerfile: red/Dockerfile
+    environment:
+      <<: *agent-env
+      AGENT_NAME: red
+      PORT: "8001"
+      DROID_MODEL: ${DROID_MODEL_RED:-}
+    depends_on: [battlefield]
+    ports: ["127.0.0.1:8001:8001"]
+
+  green:
+    build:
+      context: .
+      dockerfile: green/Dockerfile
+    environment:
+      <<: *agent-env
+      AGENT_NAME: green
+      PORT: "8002"
+      DROID_MODEL: ${DROID_MODEL_GREEN:-}
+    depends_on: [battlefield, blue]
+    ports: ["127.0.0.1:8002:8002"]
+
+  blue:
+    build:
+      context: .
+      dockerfile: blue/Dockerfile
+    environment:
+      <<: *agent-env
+      AGENT_NAME: blue
+      PORT: "8003"
+      DROID_MODEL: ${DROID_MODEL_BLUE:-}
+      BLUE_GATE_LLM_PROVIDER: ${BLUE_GATE_LLM_PROVIDER:-}
+      BLUE_GATE_LLM_API_KEY: ${BLUE_GATE_LLM_API_KEY:-}
+      BLUE_GATE_LLM_MODEL: ${BLUE_GATE_LLM_MODEL:-}
+      APPROVAL_THRESHOLD: ${APPROVAL_THRESHOLD:-5000}
+      CRS_API_KEY: ${CRS_API_KEY:-}
+    depends_on: [battlefield]
+    ports: ["127.0.0.1:8003:8003"]
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      NEXT_PUBLIC_BATTLEFIELD_URL: ${NEXT_PUBLIC_BATTLEFIELD_URL:-http://localhost:8000}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+      NEXT_PUBLIC_INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me}
+      NEXT_PUBLIC_MOCK: ${NEXT_PUBLIC_MOCK:-false}
+    depends_on: [battlefield]
+    ports: ["3000:3000"]
+
+volumes:
+  pgdata:

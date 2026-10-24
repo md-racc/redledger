@@ -1,0 +1,1 @@
+-- red-owned tables. Prefix every table red_. Applied after core schema, in filename order. CREATE ... IF NOT EXISTS only.

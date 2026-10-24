@@ -1,0 +1,179 @@
+"""DroidAgent: base class every red/green/blue-audit agent subclasses.
+
+Responsibilities (so teams don't re-solve them):
+  - bind LedgerClient + EventEmitter for the turn (tools reach them via agentkit.tools.ctx)
+  - build a Droid Session with a string system prompt, an in-process MCP server of your tools,
+    the configured autonomy level, builtin skills disabled, tools restricted to yours
+  - stream the turn, forward thinking/tool events to battlefield, enforce the turn timeout
+  - DRY_RUN path that calls your `dry_run_turn` with no Droid/LLM access
+  - per-turn credit logging
+
+Subclass contract:
+
+    class RedAgent(DroidAgent):
+        name = "red"
+        autonomy = "high"
+        system_prompt = (Path(__file__).parent / "prompts/system.md").read_text()
+
+        def tools(self): return collect_tools(red_tools_module)
+        async def build_prompt(self, req): return "Day 3. Pick a scheme and execute it."
+        async def dry_run_turn(self, req): ...  # call your tool fns directly
+        # optional: async def on_permission(self, request) -> response
+
+The Droid SDK is imported lazily so DRY_RUN and tests work without it installed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from abc import ABC, abstractmethod
+from typing import Any
+
+import structlog
+
+from .config import AgentSettings
+from .events import EventEmitter
+from .ledger_client import LedgerClient
+from .models import TurnRequest, TurnResponse, Usage
+from .tools import ToolFn, ctx
+
+log = structlog.get_logger(__name__)
+
+
+class DroidAgent(ABC):
+    name: str = "agent"
+    autonomy: str = "high"  # off | low | medium | high
+    system_prompt: str = "You are an agent."
+
+    def __init__(self, settings: AgentSettings):
+        self.s = settings
+        self._tool_ids: list[str] | None = None
+
+    # ---------- subclass hooks ----------
+    @abstractmethod
+    def tools(self) -> list[tuple[str, str, ToolFn]]: ...
+
+    @abstractmethod
+    async def build_prompt(self, req: TurnRequest) -> str: ...
+
+    @abstractmethod
+    async def dry_run_turn(self, req: TurnRequest) -> str:
+        """Deterministic stand-in for a model turn. Must make plausible ledger calls. Returns summary."""
+
+    async def on_permission(self, request: Any) -> Any:
+        """Default: approve. Green overrides to mirror blue's gate."""
+        from droid_sdk import ToolConfirmationOutcome  # lazy
+
+        return request.respond(ToolConfirmationOutcome.PROCEED_ONCE)
+
+    async def health(self) -> dict[str, Any]:
+        return {"ok": True, "agent": self.name, "model": self.s.droid_model, "droid_ok": self._droid_available(), "dry_run": self.s.dry_run}
+
+    # ---------- turn entrypoint ----------
+    async def run_turn(self, req: TurnRequest) -> TurnResponse:
+        t0 = time.monotonic()
+        async with (
+            LedgerClient(self.s, episode_id=req.episode_id, day=req.day) as ledger,
+            EventEmitter(self.s, episode_id=req.episode_id, day=req.day) as emitter,
+        ):
+            tokens = ctx.bind(ledger, emitter, req)
+            try:
+                if self.s.dry_run:
+                    summary = await asyncio.wait_for(self.dry_run_turn(req), timeout=self.s.turn_timeout_sec - 5)
+                    return TurnResponse(ok=True, summary=f"[dry-run] {summary}", duration_sec=time.monotonic() - t0)
+                summary, usage = await self._droid_turn(req, emitter)
+                return TurnResponse(ok=True, summary=summary, duration_sec=time.monotonic() - t0, usage=usage)
+            except TimeoutError:
+                log.error("turn_timeout", agent=self.name, day=req.day)
+                return TurnResponse(ok=False, summary="turn timed out", duration_sec=time.monotonic() - t0)
+            except Exception as e:  # agent failure never kills the episode
+                log.exception("turn_failed", agent=self.name, day=req.day)
+                return TurnResponse(ok=False, summary=f"turn failed: {e}", duration_sec=time.monotonic() - t0)
+            finally:
+                ctx.unbind(tokens)
+
+    # ---------- droid plumbing ----------
+    @staticmethod
+    def _droid_available() -> bool:
+        try:
+            import droid_sdk  # noqa: F401
+
+            return True
+        except Exception:
+            return False
+
+    def _autonomy(self) -> Any:
+        from droid_sdk import Autonomy
+
+        return {"off": Autonomy.OFF, "low": Autonomy.LOW, "medium": Autonomy.MEDIUM, "high": Autonomy.HIGH}[self.autonomy]
+
+    def _mcp_server(self) -> Any:
+        from droid_sdk.mcp import create_sdk_mcp_server, tool
+
+        wrapped = [tool(n, d, fn) for (n, d, fn) in self.tools()]
+        return create_sdk_mcp_server(name=f"{self.name}-ledger", tools=wrapped, version="0.1.0")
+
+    async def _droid_turn(self, req: TurnRequest, emitter: EventEmitter) -> tuple[str, Usage | None]:
+        from droid_sdk import (
+            InteractionHandlers,
+            Session,
+            SessionConfig,
+            TextDelta,
+            ThinkingDelta,
+            ToolCall,
+            ToolResult,
+        )
+
+        server = self._mcp_server()
+        config = SessionConfig(
+            autonomy=self._autonomy(),
+            disable_builtin_skills=True,
+            system_prompt=self.system_prompt,
+            mcp_servers=[server],
+            # restrict_tools is applied after we learn the exact IDs on first run (see _restrict)
+            restrict_tools=self._tool_ids,
+        )
+        prompt = await self.build_prompt(req)
+        async with Session(
+            model=self.s.droid_model,
+            config=config,
+            interactions=InteractionHandlers(on_permission=self.on_permission),
+            api_key=self.s.factory_api_key,
+        ) as session:
+            if self._tool_ids is None:
+                await self._learn_tool_ids(session)
+            async with session.stream(prompt, include_partial_messages=True, timeout=self.s.turn_timeout_sec - 10) as stream:
+                async for ev in stream:
+                    if isinstance(ev, (ThinkingDelta, TextDelta)):
+                        emitter.thinking(ev.text)
+                    elif isinstance(ev, ToolCall):
+                        # tools wrapped by ledger_tool already emit; this catches any native tool
+                        pass
+                    elif isinstance(ev, ToolResult):
+                        pass
+            result = stream.result
+            usage = None
+            if result.usage:
+                usage = Usage(
+                    factory_credits=result.usage.factory_credits,
+                    input_tokens=result.usage.input_tokens,
+                    output_tokens=result.usage.output_tokens,
+                )
+                log.info("turn_usage", agent=self.name, day=req.day, credits=result.usage.factory_credits)
+            if not result.success:
+                raise RuntimeError(f"droid turn ended: {result.subtype}")
+            return result.text, usage
+
+    async def _learn_tool_ids(self, session: Any) -> None:
+        """Record exact tool IDs for our MCP server so restrict_tools is right from the next turn.
+        Record the observed format in contracts/CHANGELOG.md Findings."""
+        try:
+            tools = await session.list_tools()
+            mine = {n for (n, _, _) in self.tools()}
+            ids = [t.id for t in tools if getattr(t, "source", "") == "mcp" and any(t.id.endswith(n) for n in mine)]
+            if ids:
+                self._tool_ids = ids
+                log.info("tool_ids_learned", agent=self.name, ids=ids)
+        except Exception as e:
+            log.warning("list_tools_failed", error=str(e))

@@ -1,0 +1,101 @@
+# CI: lint + tests per service, path-filtered so a red PR doesn't run frontend tests. Owner: Dev Ad.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      agentkit: ${{ steps.f.outputs.agentkit }}
+      battlefield: ${{ steps.f.outputs.battlefield }}
+      red: ${{ steps.f.outputs.red }}
+      green: ${{ steps.f.outputs.green }}
+      blue: ${{ steps.f.outputs.blue }}
+      frontend: ${{ steps.f.outputs.frontend }}
+      contracts: ${{ steps.f.outputs.contracts }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            agentkit: ['agentkit/**']
+            battlefield: ['battlefield/**', 'agentkit/**', 'contracts/**']
+            # extension files are owned by their prefix but run battlefield tests
+            red: ['red/**', 'agentkit/**']
+            green: ['green/**', 'agentkit/**']
+            blue: ['blue/**', 'agentkit/**']
+            frontend: ['frontend/**', 'contracts/**']
+            contracts: ['contracts/**']
+
+  contracts-guard:
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: contracts change must come with a CHANGELOG entry
+        run: |
+          git diff --name-only origin/${{ github.base_ref || 'main' }}...HEAD | grep -q '^contracts/CHANGELOG.md$' || { echo "::error::contracts/ changed without contracts/CHANGELOG.md entry"; exit 1; }
+
+  python:
+    needs: changes
+    strategy:
+      fail-fast: false
+      matrix:
+        svc: [agentkit, battlefield, red, green, blue]
+    if: ${{ always() && needs.changes.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: skip if unchanged
+        id: skip
+        run: echo "run=${{ needs.changes.outputs[matrix.svc] }}" >> $GITHUB_OUTPUT
+      - uses: astral-sh/setup-uv@v3
+        if: steps.skip.outputs.run == 'true'
+      - name: lint
+        if: steps.skip.outputs.run == 'true'
+        run: uvx ruff check ${{ matrix.svc }} && uvx ruff format --check ${{ matrix.svc }}
+      - name: test
+        if: steps.skip.outputs.run == 'true'
+        working-directory: ${{ matrix.svc }}
+        run: uv sync --extra dev && uv run pytest -q
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test --silent
+
+  ownership-guard:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: a branch prefix may only touch its own directory (plus DEVLOG.md)
+        run: |
+          BR="${{ github.head_ref }}"
+          PREFIX="${BR%%/*}"
+          case "$PREFIX" in
+            red|green|blue) ALLOWED="^($PREFIX/|battlefield/extensions/${PREFIX}_[^/]*\.py$|contracts/ext/$PREFIX/|DEVLOG.md$)";;
+            frontend) ALLOWED="^(frontend/|battlefield/extensions/fe_[^/]*\.py$|contracts/ext/fe/|DEVLOG.md$)";;
+            battlefield) ALLOWED="^(battlefield/|agentkit/|docker-compose|Makefile|\.env\.example|\.github/|DEVLOG.md$)";;
+            contracts) ALLOWED="^(contracts/|agentkit/agentkit/models.py|DEVLOG.md$)";;
+            docs|chore|release) exit 0;;
+            *) echo "::error::branch must be prefixed red/ green/ blue/ frontend/ battlefield/ contracts/ docs/ chore/"; exit 1;;
+          esac
+          BAD=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -Ev "$ALLOWED" || true)
+          if [ -n "$BAD" ]; then echo "::error::branch $BR touched files outside its area:"; echo "$BAD"; exit 1; fi

@@ -1,0 +1,12 @@
+# uv workspace: `uv sync --all-packages --extra dev` at the root installs every Python service. Owner: Dev Ad.
+[project]
+name = "redledger"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["agentkit", "battlefield", "red", "green", "blue"]
+
+[tool.uv.sources]
+agentkit = { workspace = true }

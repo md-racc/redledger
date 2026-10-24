@@ -1,0 +1,17 @@
+# Mock agents: stub red/green/blue served from the battlefield image. Owner: Dev Ad.
+# docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build postgres battlefield red green blue
+# Lets backend + frontend run full episodes with zero LLM calls, and lets an agent dev run their
+# own service locally against real battlefield + two stubs.
+services:
+  red:
+    build: { context: ., dockerfile: battlefield/Dockerfile }
+    command: ["uvicorn", "mock_agents.server:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment: { AGENT_NAME: red }
+  green:
+    build: { context: ., dockerfile: battlefield/Dockerfile }
+    command: ["uvicorn", "mock_agents.server:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment: { AGENT_NAME: green }
+  blue:
+    build: { context: ., dockerfile: battlefield/Dockerfile }
+    command: ["uvicorn", "mock_agents.server:app", "--host", "0.0.0.0", "--port", "8003"]
+    environment: { AGENT_NAME: blue }

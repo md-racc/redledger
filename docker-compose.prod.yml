@@ -1,0 +1,49 @@
+# Production overlay for the Vultr VM. Owner: Dev Ad.
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && up -d
+# Images come from GHCR (built by .github/workflows/deploy.yml). Caddy terminates TLS for
+# api.$DOMAIN → battlefield. Frontend is on Cloudflare Pages; the frontend service here is a
+# fallback for app.$DOMAIN if Pages isn't ready.
+services:
+  battlefield:
+    image: ghcr.io/${GITHUB_REPO}/battlefield:${IMAGE_TAG:-latest}
+    build: !reset null
+    ports: !reset []
+    restart: unless-stopped
+  red:
+    image: ghcr.io/${GITHUB_REPO}/red:${IMAGE_TAG:-latest}
+    build: !reset null
+    ports: !reset []
+    restart: unless-stopped
+  green:
+    image: ghcr.io/${GITHUB_REPO}/green:${IMAGE_TAG:-latest}
+    build: !reset null
+    ports: !reset []
+    restart: unless-stopped
+  blue:
+    image: ghcr.io/${GITHUB_REPO}/blue:${IMAGE_TAG:-latest}
+    build: !reset null
+    ports: !reset []
+    restart: unless-stopped
+  frontend:
+    image: ghcr.io/${GITHUB_REPO}/frontend:${IMAGE_TAG:-latest}
+    build: !reset null
+    ports: !reset []
+    restart: unless-stopped
+  postgres:
+    ports: !reset []
+    restart: unless-stopped
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [battlefield, frontend]
+
+volumes:
+  caddy_data:
+  caddy_config:

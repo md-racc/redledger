@@ -1,0 +1,1 @@
+-- blue-owned tables. Prefix every table blue_. Applied after core schema, in filename order. CREATE ... IF NOT EXISTS only.

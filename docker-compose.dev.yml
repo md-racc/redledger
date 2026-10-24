@@ -1,0 +1,32 @@
+# Dev overrides: hot reload, DRY_RUN agents (no Factory/LLM calls). Owner: Dev Ad.
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  battlefield:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./battlefield:/app/battlefield
+      - ./agentkit:/app/agentkit
+      - ./contracts/schema.sql:/app/battlefield/db/schema.sql:ro
+      - ./contracts/ext:/app/battlefield/db/ext:ro
+    environment:
+      LOG_LEVEL: debug
+      DAY_PAUSE_SEC: "1"
+
+  red:
+    command: ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+    volumes: ["./red:/app/red", "./agentkit:/app/agentkit"]
+    environment: { DRY_RUN: "true" }
+
+  green:
+    command: ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+    volumes: ["./green:/app/green", "./agentkit:/app/agentkit"]
+    environment: { DRY_RUN: "true" }
+
+  blue:
+    command: ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8003", "--reload"]
+    volumes: ["./blue:/app/blue", "./agentkit:/app/agentkit"]
+    environment: { DRY_RUN: "true" }
+
+  frontend:
+    command: ["npm", "run", "dev"]
+    volumes: ["./frontend:/app", "/app/node_modules", "/app/.next"]
