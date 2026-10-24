@@ -42,6 +42,8 @@ Rules (battlefield enforces; see `ledger-api.yaml` per-route `security`):
 
 ## Common
 
+An agent service serves one `/turn` (or `/audit`, `/reflect`) at a time and answers a concurrent call with `409 {"detail": "turn already in progress"}` (or `"… in progress"`). Battlefield runs at most one active run (see `ledger-api.yaml`) and retries such a 409 with backoff for up to 10 s before recording the turn as failed; it never retries other 409s.
+
 ```
 GET  /health
   → 200 { "ok": true, "agent": "red", "model": "…", "droid_ok": true, "dry_run": false }
