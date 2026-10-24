@@ -779,6 +779,11 @@ paths:
         never `red`, never an `attack_id`; scoring treats them like any other legit employee/expense (they
         count toward legit_processed / false positives exactly as seeded data does) and they never alter
         attack ground truth. Expenses start `pending` and flow through green's normal gated routes.
+        Running episodes are refused: if the target episode is `running`, or belongs to a lineage whose
+        status is `running` (e.g. a generation mid-run), → 409 `{error: "episode is running"}` and nothing is
+        written, so a live run's legit counts and false-positive cost are never skewed. Allowed when the
+        episode is `created`, `paused` or `finished`. `start_day` / `submitted_day` are only required to be
+        ≥ 0; they are not bounded by the episode's `current_day` (acceptance flows choose them deliberately).
         Collisions: a fixture `bank_account` equal to any account already in the episode
         (`vendors.bank_account`, `employees.bank_account`, `payments.to_account`) or to another fixture's →
         409 and nothing is written (so replaying the same request is refused, not duplicated).
@@ -791,7 +796,7 @@ paths:
       responses:
         '201': { content: { application/json: { schema: { $ref: '#/components/schemas/FixturesCreated' } } } }
         '404': { description: unknown episode, or an expense's employee_ref names no employee in the episode }
-        '409': { description: "{error: 'bank_account collides', bank_account_index: <i>} — nothing written" }
+        '409': { description: "{error: 'bank_account collides', bank_account_index: <i>} or {error: 'episode is running'} — nothing written" }
         '422': { description: invalid body (empty request, bad employee_ref index, non-positive amount, …) }
   /episodes/{id}/attack:
     post:
