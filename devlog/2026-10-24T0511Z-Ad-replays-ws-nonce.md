@@ -1,0 +1,1 @@
+- 2026-10-24T05:11Z · Ad · contracts: replays persisted as real replay_* episodes; ws ticket nonce; no replay envelope flag; next: battlefield/replay-persist + battlefield/ws-ticket-nonce; blocked: none
