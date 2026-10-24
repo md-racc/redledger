@@ -1,0 +1,1 @@
+- 2026-10-24T17:13Z · Ad · contracts: key events and audit_log by (id, ts) so Timescale can make them hypertables (B1 part 1); next: guarded hypertable + continuous aggregate in battlefield startup; blocked: none
