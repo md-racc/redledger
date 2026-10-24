@@ -23,6 +23,7 @@ from .. import db
 from ..auth import bearer
 from ..config import settings
 from ..events import bus
+from ..evolution import export
 from ..gate import gatekeeper
 from ..orchestrator import agents, lineage, runner
 from ..scoring import score
@@ -154,6 +155,15 @@ async def list_lineages():
 @router.get("/lineages/{lineage_id}")
 async def get_lineage(lineage_id: str):
     return await _lineage_out(await _lineage_row(lineage_id))
+
+
+@router.get("/lineages/{lineage_id}/export")
+async def export_lineage(lineage_id: str, generation: int | None = None):
+    """The whole lineage as one JSON bundle (`make lineage-export`). Operator only: contains ground truth."""
+    out = await export.bundle(lineage_id, generation)
+    if out is None:
+        raise HTTPException(404, "unknown lineage")
+    return out
 
 
 @router.post("/lineages/{lineage_id}/start", status_code=202)
