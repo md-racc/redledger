@@ -1,0 +1,1 @@
+- 2026-10-24T17:49Z · Ad · battlefield: agent POST /inputs restricted to its own episode (403) and audited; skipped-on-resume turns closed with one ok:false turn.ended; agentkit LedgerClient.get_extension (public read for /x/<area>/ routes, replaces blue's use of _get); lineage credit-cap test deterministic (30/30 full-suite runs); blocked: none
