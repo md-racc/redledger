@@ -14,6 +14,7 @@ blue's job.
 Droid Session/tool execution pending Ad's merged shared preflight protocol, verified invocation
 identity propagation and exact tool restrictions. The permission handler cancels with a static
 prerequisite message. Never send incomplete context or fabricated keys to Blue's cache.
+See [INTEGRATION.md](INTEGRATION.md) for shipped shared fixes, remaining prerequisites and acceptance checks.
 
 ## Boundaries
 
@@ -114,7 +115,8 @@ You are working in the Red Ledger repo, directory `green/`, as Dev M's coding ag
 Before any edit: read `green/AGENTS.md`, `GIT.md` §7, `README.md` §§0,1,3,5,6,7,16, and
 `contracts/agent-service.md`, `contracts/events.md`. Confirm `git branch --show-current` starts with `green/`;
 if not, create `green/<topic>` from origin/main. Edit only inside `green/`,
-`battlefield/extensions/green_*.py`, `contracts/ext/green/`, and append to `DEVLOG.md`.
+`battlefield/extensions/green_*.py`, `contracts/ext/green/`, and one new `devlog/` fragment per PR.
+`DEVLOG.md` is frozen; the orchestrator owns the fragment when delegating.
 Never force-push, never merge, never touch another directory; if you need a contracts change,
 write the proposed diff into the PR description and stop. Run `make lint test-green` before
 each push. Everything must work with DRY_RUN=true. Current scope: trusting AP clerk foundation;
