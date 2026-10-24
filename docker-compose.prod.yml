@@ -3,32 +3,46 @@
 # Images come from GHCR (built by .github/workflows/deploy.yml). Caddy terminates TLS for
 # api.$DOMAIN → battlefield. Frontend is on Cloudflare Pages; the frontend service here is a
 # fallback for app.$DOMAIN if Pages isn't ready.
+# No secrets and no build args here. /opt/redledger/.env is rendered by deploy/render-env.sh from
+# the GitHub `production` environment on every deploy; the `:?` entries below make compose refuse
+# to start rather than fall back to the base file's change-me defaults.
 services:
   battlefield:
     image: ghcr.io/${GITHUB_REPO}/battlefield:${IMAGE_TAG:-latest}
     build: !reset null
     ports: !reset []
     restart: unless-stopped
+    environment:
+      AGENT_TOKEN: ${AGENT_TOKEN:?AGENT_TOKEN unset; run deploy/render-env.sh}
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:?OPERATOR_TOKEN unset; run deploy/render-env.sh}
   red:
     image: ghcr.io/${GITHUB_REPO}/red:${IMAGE_TAG:-latest}
     build: !reset null
     ports: !reset []
     restart: unless-stopped
+    environment:
+      AGENT_TOKEN: ${AGENT_TOKEN:?AGENT_TOKEN unset; run deploy/render-env.sh}
   green:
     image: ghcr.io/${GITHUB_REPO}/green:${IMAGE_TAG:-latest}
     build: !reset null
     ports: !reset []
     restart: unless-stopped
+    environment:
+      AGENT_TOKEN: ${AGENT_TOKEN:?AGENT_TOKEN unset; run deploy/render-env.sh}
   blue:
     image: ghcr.io/${GITHUB_REPO}/blue:${IMAGE_TAG:-latest}
     build: !reset null
     ports: !reset []
     restart: unless-stopped
+    environment:
+      AGENT_TOKEN: ${AGENT_TOKEN:?AGENT_TOKEN unset; run deploy/render-env.sh}
   frontend:
     image: ghcr.io/${GITHUB_REPO}/frontend:${IMAGE_TAG:-latest}
     build: !reset null
     ports: !reset []
     restart: unless-stopped
+    environment:
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:?OPERATOR_TOKEN unset; run deploy/render-env.sh}
   postgres:
     ports: !reset []
     restart: unless-stopped
