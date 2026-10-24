@@ -1,0 +1,1 @@
+- 2026-10-24T16:45Z · M · contracts: record nine observed Green SDK AP tool IDs with canonical #94 list-only replay, portable source and sanitized output; #93/#94 stay canonical and parallel handler stays unpublished; next: owner pinning/SDK permission acceptance; live guards and Phase C/Bright Data block unchanged
