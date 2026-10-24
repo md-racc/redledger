@@ -76,6 +76,10 @@ jobs:
           NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
           # `true` runs agents with canned turns and no Factory/LLM calls (render-env defaults false)
           DRY_RUN: ${{ vars.DRY_RUN }}
+          # optional per-agent overrides of DRY_RUN (blank = follow DRY_RUN), e.g. red live, green/blue keyless
+          DRY_RUN_RED: ${{ vars.DRY_RUN_RED }}
+          DRY_RUN_GREEN: ${{ vars.DRY_RUN_GREEN }}
+          DRY_RUN_BLUE: ${{ vars.DRY_RUN_BLUE }}
           # frontend verifies the Cloudflare Access JWT against these (not secrets)
           CF_ACCESS_TEAM_DOMAIN: ${{ vars.CF_ACCESS_TEAM_DOMAIN }}
           CF_ACCESS_AUD: ${{ vars.CF_ACCESS_AUD }}
@@ -84,7 +88,7 @@ jobs:
           username: ${{ secrets.VULTR_USER }}
           key: ${{ secrets.VULTR_SSH_KEY }}
           script_stop: true
-          envs: AGENT_TOKEN,OPERATOR_TOKEN,FACTORY_API_KEY,BLUE_GATE_LLM_API_KEY,CRS_USERNAME,CRS_PASSWORD,CRS_API_KEY,CARTESIA_API_KEY,DROID_MODEL_RED,DROID_MODEL_GREEN,DROID_MODEL_BLUE,DROID_REASONING_RED,DROID_REASONING_GREEN,DROID_REASONING_BLUE,BLUE_GATE_LLM_PROVIDER,BLUE_GATE_LLM_MODEL,MAX_CREDITS_PER_EPISODE,DOMAIN,GITHUB_REPO,CORS_ORIGINS,NEXT_PUBLIC_WS_URL,DRY_RUN,CF_ACCESS_TEAM_DOMAIN,CF_ACCESS_AUD
+          envs: AGENT_TOKEN,OPERATOR_TOKEN,FACTORY_API_KEY,BLUE_GATE_LLM_API_KEY,CRS_USERNAME,CRS_PASSWORD,CRS_API_KEY,CARTESIA_API_KEY,DROID_MODEL_RED,DROID_MODEL_GREEN,DROID_MODEL_BLUE,DROID_REASONING_RED,DROID_REASONING_GREEN,DROID_REASONING_BLUE,BLUE_GATE_LLM_PROVIDER,BLUE_GATE_LLM_MODEL,MAX_CREDITS_PER_EPISODE,DOMAIN,GITHUB_REPO,CORS_ORIGINS,NEXT_PUBLIC_WS_URL,DRY_RUN,DRY_RUN_RED,DRY_RUN_GREEN,DRY_RUN_BLUE,CF_ACCESS_TEAM_DOMAIN,CF_ACCESS_AUD
           # Keep every command on one line: older ssh-action versions implement script_stop by
           # appending an exit check after each line, which breaks multi-line loops/continuations.
           script: |
