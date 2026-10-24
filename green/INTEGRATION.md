@@ -1,5 +1,28 @@
 # Green integration status for Ad
 
+## Current Option-P checkpoint (2026-10-24)
+
+Contracts #80 supersede the mirror proposal: **Green never calls Blue**. Shared
+strict identity and `LedgerClient.prepare` are merged (#84), as are nullable pending
+deciders (#86) and preparation creation (#87). Consumption (step 2b, #89) is still
+unmerged at this checkpoint; no code depends on that branch.
+
+`preparation.py` stages the eight existing mutation mappings and the contract's
+per-mode decisions against mocked Ledger HTTP. Preparation uses the SDK key
+without consuming the first mutation's key. Its JSON cancellation comment carries
+the cause; this is not yet wired to the production permission/cancellation path.
+The static CANCEL and pre-SDK live guard remain. No new model tools or AP policy.
+
+After consumption merges, integrate the handler and turn-local cause accounting;
+then prove exact first-session restrictions, OFF callbacks, CANCEL comment delivery,
+identity/header/event parity, bounded escalation holds, and no duplicate gating or
+writes in isolated acceptance. Mocked HTTP is not real SDK or database evidence.
+Phase C still needs Ad's three-day all-real-agent shadow run; Bright Data is not cleared.
+Reflection #82 is a separate draft; this branch neither duplicates it nor enables
+active-turn memory consumption.
+
+## Historical baseline (superseded where it conflicts with the checkpoint above)
+
 Baseline: merged main `899c133`. Ad released the DRY_RUN-only hold; Green #12,
 #13 (`d71698c`) and #14 (`0c26a2b`) are merged. Live Green stays disabled before
 SDK execution. No constant `mirror` key or local identity workaround.
