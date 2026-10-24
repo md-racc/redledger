@@ -1,13 +1,28 @@
 # Agent integration design: packages A and B (Ad)
 
-Status: **decided — Ad accepted D1–D14 as recommended on 2026-10-24 (§6). D15 (live SDK probe) is on
-hold, and there is no live deployment until Ad lifts it (prod stays `DRY_RUN`).** Contracts are not
-yet edited; PR1 applies §3. Input: [`AD-AGENT-INTEGRATION-SPEC.md`](AD-AGENT-INTEGRATION-SPEC.md) and
+Status: **decided — Ad accepted D1–D14 as recommended on 2026-10-24 (§6).** The live hold is lifted:
+prod runs red live, green and blue keyless (per-agent `DRY_RUN_*`, #75). The contracts in §3 are on main
+(#80, #86); `contracts/` supersedes the text below wherever they differ. Input: [`AD-AGENT-INTEGRATION-SPEC.md`](AD-AGENT-INTEGRATION-SPEC.md) and
 its Green/Blue sources. Baseline: main `d0600d4` (#52, escalation e2e, merged unsplit). File:line
 refs are main at that commit.
 
 **D1 reverses M's mirror design:** Green no longer calls Blue `/gate`; invariant 2's exception
 (`AGENTS.md` §3.2) is deleted in PR 9. M has to know this before PRs 6/7.
+
+## Progress (2026-10-24)
+
+| Step (§5) | GitHub | State |
+|---|---|---|
+| 1 contracts (preparations, D1) | #80, #86 (`decided_by` nullable while pending) | merged |
+| 2a battlefield preparations | #87 | merged |
+| 2b gated routes consume preparations | #89 | merged |
+| 3 strict identity, exact tool ids, `prepare()` | #84 | merged |
+| 4 turn loop, `TurnLock`, `redact=` | #79 (+ #81 teardown) | merged, live for red on prod |
+| 5 SDK findings | #91 (blue OFF, bounded), #96 (green tool ids) | partly; "OFF prompts on every MCP call" still open |
+| 6 green live handler (M) | #93 (staged, draft) | in progress |
+| 7 blue shared adapter (M) | #85, #88, #90 | merged; `live_audit_disabled` still on |
+| 8 joint acceptance (3-day shadow, all live) | issue #78 | blocked on 6/7 |
+| 9 cleanup | `docs/integration-truth-up` (invariants 2/7, §5 rules, README) | partly |
 
 ## 0. Summary of position
 
