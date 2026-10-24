@@ -11,10 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import asyncpg
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from agentkit.models import LineageConfig
 from seed import company
 
 from .. import db
@@ -22,7 +24,7 @@ from ..auth import bearer
 from ..config import settings
 from ..events import bus
 from ..gate import gatekeeper
-from ..orchestrator import agents, runner
+from ..orchestrator import agents, lineage, runner
 from ..scoring import score
 
 log = structlog.get_logger(__name__)
@@ -36,6 +38,13 @@ class EpisodeCreate(BaseModel):
     days: int | None = None
     attack_plan: list[dict[str, Any]] | None = None
     name: str | None = None
+    lineage_id: str | None = None  # run as that (finished/failed) lineage's next generation
+
+
+class LineageCreate(BaseModel):
+    name: str = ""
+    base_seed: int | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class ControllerPatch(BaseModel):
@@ -61,6 +70,8 @@ class ReplayPlay(BaseModel):
 async def create_episode(body: EpisodeCreate):
     if body.controller_mode not in ("off", "shadow", "enforce"):
         raise HTTPException(422, "controller_mode must be off|shadow|enforce")
+    if body.lineage_id is not None:
+        return await _lineage_episode(body)
     ep_id = db.new_id("ep")
     seed = body.seed if body.seed is not None else random.randint(1, 10**6)
     days = body.days or settings.episode_default_days
@@ -69,6 +80,104 @@ async def create_episode(body: EpisodeCreate):
     )
     await company.seed_episode(ep_id, seed)
     return db.row_to_dict(await db.fetchrow("SELECT * FROM episodes WHERE id=$1", ep_id))
+
+
+async def _lineage_episode(body: EpisodeCreate) -> dict[str, Any]:
+    """The real-time demo: a finished (or failed) lineage's next generation, started by hand, never headless."""
+    ln = await db.fetchrow("SELECT * FROM lineages WHERE id=$1", body.lineage_id)
+    if ln is None:
+        raise HTTPException(404, "unknown lineage_id")
+    if ln["status"] not in ("finished", "failed"):
+        raise HTTPException(409, f"lineage is {ln['status']}: its runner owns generation creation")
+    g = ln["current_generation"] + 1
+    seed = body.seed if body.seed is not None else ln["base_seed"] + g
+    if await db.fetchval("SELECT 1 FROM episodes WHERE lineage_id=$1 AND seed=$2", ln["id"], seed):
+        raise HTTPException(422, "seed already used by an episode of this lineage")
+    days = body.days or lineage.config(ln).days
+    try:
+        eid = await lineage.create_generation(ln["id"], g, seed=seed, days=days, mode=body.controller_mode, attack_plan=body.attack_plan)
+    except asyncpg.UniqueViolationError:  # a concurrent create took the generation or the seed
+        raise HTTPException(409, "lineage generation or seed taken concurrently") from None
+    return db.row_to_dict(await db.fetchrow("SELECT * FROM episodes WHERE id=$1", eid))  # type: ignore[return-value]
+
+
+# ---------- lineages ----------
+
+
+async def _not_held_by_paused_lineage(episode_id: str) -> None:
+    """A paused lineage owns its current generation's episode: resume the lineage, not the episode."""
+    if await db.fetchval(
+        "SELECT 1 FROM episodes e JOIN lineages l ON l.id=e.lineage_id WHERE e.id=$1 AND l.status='paused' AND e.generation=l.current_generation", episode_id
+    ):
+        raise HTTPException(409, "its lineage is paused: POST /lineages/{id}/resume instead")
+
+
+async def _lineage_out(row: Any) -> dict[str, Any]:
+    out = db.row_to_dict(row) or {}
+    eps = await db.fetch("SELECT id, generation, seed, status FROM episodes WHERE lineage_id=$1 ORDER BY generation", row["id"])
+    out["generations"] = [
+        {"generation": e["generation"], "episode_id": e["id"], "seed": e["seed"], "status": e["status"], "score": await score.compute(e["id"])} for e in eps
+    ]
+    versions = {r["agent"]: r["v"] for r in await db.fetch("SELECT agent, MAX(version) AS v FROM playbooks WHERE lineage_id=$1 GROUP BY agent", row["id"])}
+    out["playbook_versions"] = {a: versions.get(a, 0) for a in ("red", "green", "blue")}
+    return out
+
+
+async def _lineage_row(lineage_id: str) -> Any:
+    row = await db.fetchrow("SELECT * FROM lineages WHERE id=$1", lineage_id)
+    if row is None:
+        raise HTTPException(404, "unknown lineage")
+    return row
+
+
+@router.post("/lineages", status_code=201)
+async def create_lineage(body: LineageCreate):
+    try:
+        cfg = LineageConfig.model_validate(body.config)
+    except ValidationError as e:
+        raise HTTPException(422, e.errors(include_url=False, include_context=False)) from None
+    if cfg.headless and cfg.headless.escalation_timeout_sec > settings.escalation_timeout_sec:
+        raise HTTPException(422, f"headless.escalation_timeout_sec must be <= ESCALATION_TIMEOUT_SEC ({settings.escalation_timeout_sec})")
+    lid = db.new_id("ln")
+    base_seed = body.base_seed if body.base_seed is not None else random.randint(1, 10**6)
+    async with db.pool().acquire() as conn, conn.transaction():
+        await conn.execute("INSERT INTO lineages (id, name, base_seed, config) VALUES ($1,$2,$3,$4)", lid, body.name, base_seed, cfg.model_dump())
+        await lineage.seed_playbooks(conn, lid)
+    return await _lineage_out(await _lineage_row(lid))
+
+
+@router.get("/lineages")
+async def list_lineages():
+    return [await _lineage_out(r) for r in await db.fetch("SELECT * FROM lineages ORDER BY created_at DESC LIMIT 50")]
+
+
+@router.get("/lineages/{lineage_id}")
+async def get_lineage(lineage_id: str):
+    return await _lineage_out(await _lineage_row(lineage_id))
+
+
+@router.post("/lineages/{lineage_id}/start", status_code=202)
+async def start_lineage(lineage_id: str):
+    await _lineage_row(lineage_id)
+    if not await lineage.start(lineage_id):  # conditional transition: concurrent starts get exactly one 202
+        raise HTTPException(409, "another lineage is running, or this one is not in status created")
+    return {"ok": True}
+
+
+@router.post("/lineages/{lineage_id}/pause")
+async def pause_lineage(lineage_id: str):
+    await _lineage_row(lineage_id)
+    if not await lineage.pause(lineage_id):
+        raise HTTPException(409, "not running")
+    return {"ok": True}
+
+
+@router.post("/lineages/{lineage_id}/resume")
+async def resume_lineage(lineage_id: str):
+    await _lineage_row(lineage_id)
+    if not await lineage.resume(lineage_id):
+        raise HTTPException(409, "not paused, or another lineage is running")
+    return {"ok": True}
 
 
 @router.get("/episodes")
@@ -101,6 +210,7 @@ async def pause_episode(episode_id: str):
 @router.post("/episodes/{episode_id}/resume")
 async def resume_episode(episode_id: str):
     await _must_exist(episode_id, live=True)
+    await _not_held_by_paused_lineage(episode_id)
     await runner.resume(episode_id)
     return {"ok": True}
 
@@ -108,6 +218,7 @@ async def resume_episode(episode_id: str):
 @router.post("/episodes/{episode_id}/step")
 async def step_episode(episode_id: str):
     await _must_exist(episode_id, live=True)
+    await _not_held_by_paused_lineage(episode_id)
     try:
         return await runner.step(episode_id)
     except RuntimeError as e:
