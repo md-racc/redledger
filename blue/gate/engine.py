@@ -13,11 +13,13 @@ from fastapi import HTTPException
 from agentkit.models import GateRequest, GateResponse
 
 from .cache import VerdictCache
+from .llm import LLMGate
 from .rules import RuleHit, evaluate
 
 TTL = 120
 MAX_ENTRIES = 100_000
 MAX_PENDING = 256
+_llm = LLMGate.from_env()
 
 
 class RetainedVerdicts:
@@ -73,7 +75,9 @@ async def _compute(req: GateRequest, key: str, dry_run: bool = False) -> GateRes
         effects = {hit.effect for hit in hits}
         # An unavailable control is diagnostic, never counted as a fraud hit.
         verdict = "escalate" if "unavailable" in effects else "block" if "block" in effects else "escalate" if "review" in effects else "allow"
-        # Advisory remains disconnected until the privacy-bounded provider lands.
+        if not dry_run and verdict == "escalate" and "review" in effects and "unavailable" not in effects and _llm.enabled:
+            # Advisory has no authority over reason, verdict, confidence, or rule IDs.
+            await _llm.judge(req, hits)
         response = GateResponse(
             verdict=verdict,
             reason=_reason(hits, verdict),
