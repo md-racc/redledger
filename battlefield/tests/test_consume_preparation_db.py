@@ -309,3 +309,120 @@ async def test_match_binding_covers_the_po_on_both_paths(blue: dict[str, Any]) -
     assert (r1.status_code, r2.status_code) == (409, 409), (r1.text, r2.text)
     assert r1.json()["error"] == r2.json()["error"] == gate.IDEMPOTENCY_CONFLICT
     assert await db.fetchval("SELECT COUNT(*) FROM invoices WHERE episode_id=$1 AND status='matched'", ep) == 0
+
+
+# ---------- concurrent retries see the preparation consumed ----------
+
+
+async def _po(ep: str, vid: str) -> str:
+    po = f.uid("po")
+    await db.execute("INSERT INTO purchase_orders (id, episode_id, vendor_id, amount, created_day) VALUES ($1,$2,$3,1000,0)", po, ep, vid)
+    return po
+
+
+async def _assert_one_winner(rs: list[httpx.Response], prep_id: str) -> None:
+    codes = sorted(r.status_code for r in rs)
+    assert codes == [200, 409, 409, 409, 409], [r.text for r in rs]
+    for r in rs:
+        if r.status_code == 409:  # never preparation_stale from the winner's own writes
+            assert r.json() == {"error": "preparation_consumed", "preparation_id": prep_id, "consumed_status": 200}
+
+
+async def test_parallel_prepared_matches_lose_as_consumed(blue: dict[str, Any]) -> None:
+    ep = await _episode("enforce")
+    vid = await f.vendor(ep)
+    inv, po = await f.invoice(ep, vid), await _po(ep, vid)
+    key = _key()
+    async with _client() as cl:
+        p = await _prepare(cl, ep, key, "invoices.match", inv, {"po_id": po})
+        rs = await asyncio.gather(*[cl.post(f"/api/invoices/{inv}/match", json={"po_id": po}, headers=_green(ep, key)) for _ in range(5)])
+    await _assert_one_winner(rs, p["preparation_id"])
+
+
+async def test_parallel_prepared_po_backed_pays_lose_as_consumed(blue: dict[str, Any]) -> None:
+    ep = await _episode("enforce")
+    vid = await f.vendor(ep)
+    inv, po = await f.invoice(ep, vid, status="approved"), await _po(ep, vid)
+    await db.execute("UPDATE invoices SET po_id=$2 WHERE id=$1", inv, po)  # the winner fulfils the PO (a fingerprinted field)
+    key = _key()
+    async with _client() as cl:
+        p = await _prepare(cl, ep, key, "invoices.pay", inv)
+        rs = await asyncio.gather(*[cl.post(f"/api/invoices/{inv}/pay", headers=_green(ep, key)) for _ in range(5)])
+    await _assert_one_winner(rs, p["preparation_id"])
+    assert await _payments(ep) == 1
+
+
+async def test_mode_toggle_after_the_pre_checks_is_refused_inside_the_transaction(blue: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    # prepared (and allowed) in shadow; enforce is switched on after the route's pre-check read the mode
+    blue["verdict"] = "block"
+    ep = await _episode("shadow")
+    inv, _ = await _approved_invoice(ep)
+    key = _key()
+    async with _client() as cl:
+        p = await _prepare(cl, ep, key, "invoices.pay", inv)
+        await db.execute("UPDATE episodes SET controller_mode='enforce' WHERE id=$1", ep)
+        real = gate.controller_mode
+
+        async def stale_read(episode_id: str) -> str:  # the pre-check's read, from before the toggle
+            return "shadow" if episode_id == ep else await real(episode_id)
+
+        monkeypatch.setattr(gate, "controller_mode", stale_read)
+        r = await cl.post(f"/api/invoices/{inv}/pay", headers=_green(ep, key))
+    assert r.status_code == 409 and r.json() == {"error": "preparation_stale", "preparation_id": p["preparation_id"], "detail": "mode changed"}
+    assert await _payments(ep) == 0
+    assert await db.fetchval("SELECT consumed_at FROM preparations WHERE id=$1", p["preparation_id"]) is None
+
+
+async def test_expiry_during_the_lock_wait_is_refused_by_the_claim(blue: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    ep = await _episode("enforce")
+    inv, _ = await _approved_invoice(ep)
+    key = _key()
+    async with _client() as cl:
+        p = await _prepare(cl, ep, key, "invoices.pay", inv)
+        real = db.fetchval
+
+        async def fetchval(sql: str, *a: Any) -> Any:
+            if sql.startswith("SELECT now() >= $1::timestamptz"):  # the pre-check sees it unexpired …
+                await real("UPDATE preparations SET expires_at=now() - interval '1 second' WHERE id=$1", p["preparation_id"])  # … then it lapses
+                return False
+            return await real(sql, *a)
+
+        monkeypatch.setattr(db, "fetchval", fetchval)
+        r = await cl.post(f"/api/invoices/{inv}/pay", headers=_green(ep, key))
+    assert r.status_code == 409 and r.json()["error"] == "preparation_expired"
+    assert await _payments(ep) == 0
+
+
+# ---------- every route shape consumes once ----------
+
+
+@pytest.mark.parametrize(
+    "action,route,body,status",
+    [
+        ("invoices.approve", "/api/invoices/{id}/approve", None, "pending"),
+        ("invoices.reject", "/api/invoices/{id}/reject", {"reason": "dup"}, "pending"),
+        ("vendor_changes.reject", "/api/vendor_changes/{id}/reject", {"reason": "unverified"}, None),
+        ("expenses.approve", "/api/expenses/{id}/approve", None, "pending"),
+        ("expenses.pay", "/api/expenses/{id}/pay", None, "approved"),
+    ],
+)
+async def test_each_route_consumes_once(blue: dict[str, Any], action: str, route: str, body: dict | None, status: str | None) -> None:
+    ep = await _episode("enforce")
+    vid = await f.vendor(ep)
+    if action.startswith("invoices."):
+        eid = await f.invoice(ep, vid, status=status or "pending")
+    elif action.startswith("expenses."):
+        eid = await f.expense(ep, await f.employee(ep), status=status or "pending")
+    else:
+        eid = await f.change(ep, vid)
+    key = _key()
+    async with _client() as cl:
+        p = await _prepare(cl, ep, key, action, eid, body)
+        url = route.format(id=eid)
+        r1 = await cl.post(url, json=body, headers=_green(ep, key))
+        r2 = await cl.post(url, json=body, headers=_green(ep, key))
+    assert r1.status_code == 200, r1.text
+    assert r2.status_code == 409 and r2.json() == {"error": "preparation_consumed", "preparation_id": p["preparation_id"], "consumed_status": 200}
+    assert len(blue["calls"]) == 1
+    (m,) = await _events(ep, "ledger.mutation")
+    assert (m["action"], m["preparation_id"]) == (action, p["preparation_id"])

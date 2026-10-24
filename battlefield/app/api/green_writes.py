@@ -279,25 +279,39 @@ async def _prepared(c: Caller, action: str, entity_id: str | None, amount: float
 
 
 async def _consume(conn: Any, p: _Prepared | None, action: str, entity_id: str | None, bargs: dict[str, Any], status: int = 200) -> None:
-    """First statements of the execution transaction: recompute the fingerprint under row locks (before
-    the compare-and-set, which may itself rewrite a fingerprinted field such as invoices.po_id), then
-    mark the preparation consumed exactly once. Any refusal rolls the transaction back."""
+    """First statements of the execution transaction, before the compare-and-set (which may itself
+    rewrite a fingerprinted field such as invoices.po_id). Any refusal rolls the whole transaction back.
+
+    1. The mode, read FOR SHARE so a toggle can't land until this commits; a change since the
+       pre-checks is stale (a shadow-only verdict must never execute under enforce).
+    2. Claim the preparation: concurrent same-key calls queue on its row lock here, and the losers then
+       see it consumed (409 preparation_consumed), never the winner's own writes as drift. In enforce
+       the claim also requires `now() < expires_at`, so a lock wait can't outlast the lifetime.
+    3. Recompute the fingerprint under row locks."""
     if p is None:
         return
     from .preparations import fingerprint  # preparations imports this module
+
+    mode = await conn.fetchval("SELECT controller_mode FROM episodes WHERE id=$1 FOR SHARE", p.row["episode_id"])
+    if mode != p.row["controller_mode"]:
+        raise _PrepRefused("preparation_stale", "mode changed")
+    claimed = await conn.fetchval(
+        "UPDATE preparations SET consumed_at=now(), consumed_status=$2 WHERE id=$1 AND consumed_at IS NULL AND (NOT $3 OR now() < expires_at) RETURNING id",
+        p.id,
+        status,
+        mode == "enforce",
+    )
+    if claimed is None:
+        consumed = await conn.fetchval("SELECT consumed_at IS NOT NULL FROM preparations WHERE id=$1", p.id)
+        raise _PrepRefused("preparation_consumed" if consumed else "preparation_expired")
 
     async def locked(sql: str, *a: Any) -> Any:
         return await conn.fetchrow(sql + " FOR UPDATE", *a)
 
     if await fingerprint(action, entity_id, bargs, fetchrow=locked) != p.row["state_hash"]:
-        if p.mode == "enforce":
+        if mode == "enforce":
             raise _PrepRefused("preparation_stale", "state changed")
         p.stale.append("state changed")
-    consumed = await conn.fetchval(
-        "UPDATE preparations SET consumed_at=now(), consumed_status=$2 WHERE id=$1 AND consumed_at IS NULL RETURNING id", p.id, status
-    )
-    if consumed is None:
-        raise _PrepRefused("preparation_consumed")
 
 
 async def _prep_failed(c: Caller, action: str, args: dict[str, Any], p: _Prepared, e: _PrepRefused) -> JSONResponse:
