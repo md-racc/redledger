@@ -1,18 +1,14 @@
-"""Gate engine: rules → (optional) LLM → verdict, with an idempotency cache. Owner: Dev M.
-
-Decision policy (tune freely, keep it explainable):
-  - any severity-3 hit                      → block
-  - two or more hits                        → block
-  - exactly one severity-2 hit              → LLM decides (allow/block/escalate) if configured, else escalate in enforce / block in shadow
-  - exactly one severity-1 hit              → escalate in enforce mode, allow in shadow
-  - no hits                                 → allow
-The reason string is what judges read. Write it like a sentence from an auditor.
-"""
+"""Deterministic policy with process-local 120-second singleflight retention."""
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
+from dataclasses import asdict
 from typing import Any
+
+from fastapi import HTTPException
 
 from agentkit.models import GateRequest, GateResponse
 
@@ -20,52 +16,96 @@ from .cache import VerdictCache
 from .llm import LLMGate
 from .rules import RuleHit, evaluate
 
-_cache = VerdictCache(ttl_sec=120)
+TTL = 120
+MAX_ENTRIES = 100_000
+MAX_PENDING = 256
 _llm = LLMGate.from_env()
+
+
+class RetainedVerdicts:
+    """Shard before VerdictCache's destructive capacity clear; retire only expired shards."""
+
+    def __init__(self) -> None:
+        self.generations: list[tuple[float, VerdictCache]] = []
+
+    def prune(self) -> None:
+        now = time.monotonic()
+        self.generations = [(last, cache) for last, cache in self.generations if now - last <= TTL]
+
+    def get(self, key: str) -> GateResponse | None:
+        self.prune()
+        for _, cache in reversed(self.generations):
+            value = cache.get(key)
+            if value is not None:
+                return value.model_copy(deep=True)
+        return None
+
+    def size(self) -> int:
+        self.prune()
+        return sum(len(cache._d) for _, cache in self.generations)
+
+    def put(self, key: str, value: GateResponse) -> None:
+        self.prune()
+        if not self.generations or len(self.generations[-1][1]._d) >= 5000:
+            self.generations.append((time.monotonic(), VerdictCache(ttl_sec=TTL)))
+        _, cache = self.generations[-1]
+        cache.put(key, value.model_copy(deep=True))
+        self.generations[-1] = (time.monotonic(), cache)
+
+
+_cache = RetainedVerdicts()
+_pending: dict[str, asyncio.Task[GateResponse]] = {}
+
+
+def namespace(req: GateRequest) -> str:
+    return json.dumps([req.episode_id, req.idempotency_key], separators=(",", ":"))
 
 
 def _reason(hits: list[RuleHit], verdict: str) -> str:
     if not hits:
-        return "No control exceptions."
-    core = "; ".join(h.detail for h in hits)
-    return {"block": f"Blocked — {core}.", "escalate": f"Needs human review — {core}.", "allow": f"Allowed with notes — {core}."}[verdict]
+        return "No applicable control exceptions."
+    prefix = {"block": "Control hold", "escalate": "Needs independent verification", "allow": "Allowed with diagnostic notes"}[verdict]
+    return f"{prefix} — {'; '.join(h.detail for h in hits)}"
 
 
-async def decide(req: GateRequest) -> GateResponse:
-    cached = _cache.get(req.idempotency_key)
-    if cached:
+async def _compute(req: GateRequest, key: str, dry_run: bool = False) -> GateResponse:
+    started = time.monotonic()
+    try:
+        hits = evaluate(req)
+        effects = {hit.effect for hit in hits}
+        # An unavailable control is diagnostic, never counted as a fraud hit.
+        verdict = "escalate" if "unavailable" in effects else "block" if "block" in effects else "escalate" if "review" in effects else "allow"
+        if not dry_run and verdict == "escalate" and "review" in effects and "unavailable" not in effects and _llm.enabled:
+            # Advisory has no authority over reason, verdict, confidence, or rule IDs.
+            await _llm.judge(req, hits)
+        response = GateResponse(
+            verdict=verdict,
+            reason=_reason(hits, verdict),
+            confidence=0.98 if verdict == "block" else 0.65 if verdict == "escalate" else 0.99,
+            rules_fired=[hit.id for hit in hits],
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
+        _cache.put(key, response)
+        return response
+    finally:
+        _pending.pop(key, None)
+
+
+async def decide(req: GateRequest, *, dry_run: bool = False) -> GateResponse:
+    key = namespace(req)
+    cached = _cache.get(key)
+    if cached is not None:
         return cached
-    t0 = time.monotonic()
-    hits = evaluate(req)
-    ids = [h.id for h in hits]
-    sev = max((h.severity for h in hits), default=0)
-    confidence: float | None = None
-
-    if sev >= 3 or len(hits) >= 2:
-        verdict = "block"
-        confidence = 0.95
-    elif sev == 2:
-        if _llm.enabled:
-            verdict, confidence, llm_reason = await _llm.judge(req, hits)
-            resp = GateResponse(
-                verdict=verdict, reason=llm_reason, confidence=confidence, rules_fired=ids + ["llm_judgment"], latency_ms=int((time.monotonic() - t0) * 1000)
-            )
-            _cache.put(req.idempotency_key, resp)
-            return resp
-        verdict = "escalate" if req.controller_mode == "enforce" else "block"
-        confidence = 0.7
-    elif sev == 1:
-        verdict = "escalate" if req.controller_mode == "enforce" else "allow"
-        confidence = 0.6
-    else:
-        verdict = "allow"
-        confidence = 0.99
-
-    resp = GateResponse(verdict=verdict, reason=_reason(hits, verdict), confidence=confidence, rules_fired=ids, latency_ms=int((time.monotonic() - t0) * 1000))
-    _cache.put(req.idempotency_key, resp)
-    return resp
+    task = _pending.get(key)
+    if task is None:
+        # Reject new admission, never evict a verdict promised for 120 seconds.
+        if len(_pending) >= MAX_PENDING or _cache.size() + len(_pending) >= MAX_ENTRIES:
+            raise HTTPException(503, "gate capacity unavailable; retry later with the same key")
+        task = asyncio.create_task(_compute(req.model_copy(deep=True), key, dry_run))
+        _pending[key] = task
+    # Disconnecting one caller must not cancel shared work or invalidate its receipt.
+    return (await asyncio.shield(task)).model_copy(deep=True)
 
 
 def explain(req: GateRequest) -> dict[str, Any]:
-    """Debug helper: rules and what they'd say, without caching."""
-    return {"hits": [h.__dict__ for h in evaluate(req)]}
+    return {"hits": [asdict(hit) for hit in evaluate(req)]}

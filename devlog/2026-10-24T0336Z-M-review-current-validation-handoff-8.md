@@ -1,0 +1,1 @@
+- 2026-10-24T03:36Z · M · blue: current review 8 preserve 151-case coverage and offline auth/events checks, refresh 68ef4eb fragment/Ad-steward handoff; next: independent verification and authorized integration; blocked: live Blue SDK binding and frontend tsc
