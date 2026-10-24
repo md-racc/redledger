@@ -45,14 +45,16 @@ Read `AGENTS.md` (§10 especially), `GIT.md`, and `README.md` §§0, 13, 16, 17 
 
 | Token | Who holds it | What it authorizes |
 |---|---|---|
-| `AGENT_TOKEN` | battlefield, red, green, blue containers | Agent routes (any request carrying `X-Agent`), battlefield → agent `/turn` `/gate` `/audit` `/schemes`, green → blue `/gate` mirror |
+| `AGENT_TOKEN_RED`, `AGENT_TOKEN_GREEN`, `AGENT_TOKEN_BLUE` | battlefield holds all three; each agent container holds only its own (as `AGENT_TOKEN`) | Per-agent tokens (#108/#109): requests carrying `X-Agent: <a>` must present that agent's token (another agent's → 401, audited without the token); battlefield → that agent's `/turn` `/gate` `/audit` `/schemes` `/reflect`. No agent ever needs another's token (D1 removed the green → blue mirror) |
+| `AGENT_TOKEN` | fallback | Shared token for any agent whose per-agent token is unset (single-token mode, local dev / `DRY_RUN`); battlefield warns that per-agent separation is off |
 | `OPERATOR_TOKEN` | battlefield, frontend **server** (Next route handler), Makefile/curl, the owner | Control plane, `/api/fe/*`, `/api/events` reads, `/api/inputs`, `/api/ws/ticket` |
 | WS ticket | browser, ≤60 s lifetime | One WebSocket connection for one episode |
 | none | anyone | `battlefield/extensions/fe_*` routes deliberately marked public |
 
 Rules battlefield enforces:
-- A request with `X-Agent` must present `AGENT_TOKEN`. `OPERATOR_TOKEN` + `X-Agent` → 401.
-- A request without `X-Agent` must present `OPERATOR_TOKEN`. `AGENT_TOKEN` without `X-Agent` → 401.
+- A request with `X-Agent: <a>` must present agent `<a>`'s token (`AGENT_TOKEN_<A>`, or the shared fallback). `OPERATOR_TOKEN` + `X-Agent` → 401; another agent's token → 401.
+- A request without `X-Agent` must present `OPERATOR_TOKEN`. Any agent token without `X-Agent` → 401.
+- Battlefield warns at startup when any two resolved tokens (the three agent tokens and `OPERATOR_TOKEN`) are equal, naming the pair, never the values.
 - `/api/ws` accepts `?ticket=` (HMAC-signed with `OPERATOR_TOKEN`, payload `{episode_id|*, exp}`), or `?token=<OPERATOR_TOKEN>` for curl/debug.
 
 Compatibility: `AgentSettings.internal_token` keeps its attribute name but reads
@@ -82,7 +84,8 @@ untouched:** they already read `settings.internal_token` and keep working.
 
 | Variable | Local dev (each dev's own `.env`) | Prod (GitHub Environment `production` → VM `.env`) |
 |---|---|---|
-| `AGENT_TOKEN`, `OPERATOR_TOKEN` | any two different strings | `openssl rand -hex 32` each, secrets |
+| `AGENT_TOKEN`, `OPERATOR_TOKEN` | any two different strings (`make local-stack` generates them) | `openssl rand -hex 32` each, secrets |
+| `AGENT_TOKEN_RED/GREEN/BLUE` | blank (shared `AGENT_TOKEN`) or three distinct strings | secrets, **all three or none**: `deploy/render-env.sh` refuses a partial set or any two equal (to each other or to `OPERATOR_TOKEN`); none set → every agent falls back to the shared `AGENT_TOKEN` with a warning |
 | `FACTORY_API_KEY` | **the dev's own key** (R and Al confirmed; M and Ad same pattern) or empty with `DRY_RUN=true` | prod key from the second source; secret |
 | `DROID_MODEL_RED/GREEN/BLUE` | a Droid Core / low-multiplier model | pinned prod models; variables |
 | `DRY_RUN`, `DRY_RUN_RED/GREEN/BLUE` | `DRY_RUN=true` (keyless); overrides blank | variables; blank override = follow `DRY_RUN`. Red live only: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=true` |
@@ -97,6 +100,17 @@ untouched:** they already read `settings.internal_token` and keep working.
 GitHub Actions *repository* secrets keep only the deploy plumbing: `VULTR_HOST`, `VULTR_USER`,
 `VULTR_SSH_KEY`. Everything the app reads lives in the `production` *environment*, which
 requires reviewer approval (Ad).
+
+**Enabling per-agent tokens on prod** (after #109 is deployed). Create all three at once, so
+render-env never sees a partial set, then re-run the deploy workflow and approve it:
+
+```
+for a in RED GREEN BLUE; do openssl rand -hex 32 | gh secret set AGENT_TOKEN_$a --env production; done
+```
+
+The values are never displayed and are distinct by construction. Smoke: `make prod-health`, a short
+episode, and no per-agent separation warning in battlefield's log. Rollback: delete all three
+secrets and redeploy (back to the shared `AGENT_TOKEN`).
 
 ### CRS sandbox credentials (runtime prerequisite)
 
