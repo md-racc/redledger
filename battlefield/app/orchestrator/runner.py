@@ -30,6 +30,9 @@ class EpisodeState:
         self.pause.set()  # set = running
         self.forced_attack: dict[str, Any] | None = None
         self.day_lock = asyncio.Lock()
+        # credit guard: None = not yet seeded from `turn.ended` events in this process
+        self.credits_total: float | None = None
+        self.credit_guard_armed = True
 
 
 _states: dict[str, EpisodeState] = {}
@@ -61,6 +64,7 @@ async def pause(episode_id: str) -> None:
 
 async def resume(episode_id: str) -> None:
     st = state(episode_id)
+    st.credit_guard_armed = True  # an explicit human action re-arms the credit guard
     await db.execute("UPDATE episodes SET status='running' WHERE id=$1", episode_id)
     ep = await db.fetchrow("SELECT current_day FROM episodes WHERE id=$1", episode_id)
     await bus.emit(episode_id, ep["current_day"], "episode.resumed", {})
@@ -74,6 +78,7 @@ async def step(episode_id: str) -> dict[str, Any]:
     st = state(episode_id)
     if st.task and not st.task.done() and st.pause.is_set():
         raise RuntimeError("episode is running; pause first")
+    st.credit_guard_armed = True  # an explicit human action re-arms the credit guard
     ep = await db.fetchrow("SELECT * FROM episodes WHERE id=$1", episode_id)
     if ep["status"] == "created":
         await db.execute("UPDATE episodes SET status='paused', started_at=now() WHERE id=$1", episode_id)
@@ -123,6 +128,7 @@ async def run_day(episode_id: str) -> dict[str, Any]:
             await _finish(episode_id, day)
             return {"done": True}
         mode = ep["controller_mode"]
+        await _seed_credits(episode_id)
 
         counts = await legit_traffic.inject(episode_id, ep["seed"], day)
         await bus.emit(episode_id, day, "day.started", {"day": day, "legit_injected": counts})
@@ -146,7 +152,14 @@ async def run_day(episode_id: str) -> dict[str, Any]:
         blue_inputs = await _drain_inputs(episode_id, "blue", day)
         await bus.emit(episode_id, day, "turn.started", {"agent": "blue", "inputs": len(blue_inputs)})
         res = await agents.audit(episode_id, day, blue_inputs)
-        await bus.emit(episode_id, day, "turn.ended", {"agent": "blue", "ok": bool(res.get("ok")), "summary": res.get("summary", "")})
+        blue_credits = (res.get("usage") or {}).get("factory_credits")
+        await bus.emit(
+            episode_id,
+            day,
+            "turn.ended",
+            {"agent": "blue", "ok": bool(res.get("ok")), "summary": res.get("summary", ""), "factory_credits": blue_credits},
+        )
+        await _charge_credits(episode_id, day, blue_credits)
 
         sc = await score.end_of_day(episode_id, day)
         await bus.emit(episode_id, day, "day.ended", {"day": day})
@@ -182,6 +195,75 @@ async def _turn(episode_id: str, day: int, agent: str, mode: str, options: dict[
             "factory_credits": usage.get("factory_credits"),
         },
     )
+    await _charge_credits(episode_id, day, usage.get("factory_credits"))
+
+
+# ---------- credit guard ----------
+
+
+def credits_of(value: Any) -> float:
+    """A turn's `factory_credits` as a float. DRY_RUN / missing / garbage → 0."""
+    if value is None or isinstance(value, bool):
+        return 0.0
+    try:
+        return max(float(value), 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def credit_guard_tripped(total: float, limit: float) -> bool:
+    """True when the episode has spent at least `limit` credits. `limit <= 0` disables the guard."""
+    return limit > 0 and total >= limit
+
+
+async def _seed_credits(episode_id: str) -> None:
+    """Lazily seed the running total from this episode's `turn.ended` events (fresh process/restart).
+
+    Called at the top of run_day, before any turn of the day, so the sum never includes a turn that
+    _charge_credits is about to add.
+    """
+    st = state(episode_id)
+    if st.credits_total is not None:
+        return
+    total = await db.fetchval(
+        "SELECT COALESCE(SUM((payload->>'factory_credits')::float8), 0) FROM events "
+        "WHERE episode_id=$1 AND type='turn.ended' AND jsonb_typeof(payload->'factory_credits')='number'",
+        episode_id,
+    )
+    st.credits_total = float(total or 0)
+
+
+async def _charge_credits(episode_id: str, day: int, factory_credits: Any) -> None:
+    """Add one turn's credits to the episode total and pause the episode if it crossed the limit.
+
+    Re-arm policy: a trip disarms the guard, so the rest of the current day (which still runs to
+    `day.ended` to keep the events.md ordering) cannot emit a second pause. resume() and step()
+    re-arm it. While armed, the guard trips only on a turn that actually spent credits (> 0) and
+    leaves the total >= limit; so after a resume an over-limit episode gets exactly one more paid
+    turn before pausing again, and zero-credit turns (DRY_RUN) never trip. Raising the limit means
+    restarting battlefield with a higher MAX_CREDITS_PER_EPISODE.
+    """
+    st = state(episode_id)
+    spent = credits_of(factory_credits)
+    if st.credits_total is None:
+        # turn ran outside run_day (shouldn't happen): the seed sum already includes this turn's
+        # just-emitted turn.ended, so seed instead of adding.
+        await _seed_credits(episode_id)
+    else:
+        st.credits_total += spent
+    # max_credits_per_episode lives in config.py (MAX_CREDITS_PER_EPISODE); getattr until it lands
+    limit = float(getattr(settings, "max_credits_per_episode", 0.0) or 0.0)
+    total = st.credits_total or 0.0
+    if not (st.credit_guard_armed and spent > 0 and credit_guard_tripped(total, limit)):
+        return
+    st.credit_guard_armed = False
+    log.warning("credit_guard_tripped", episode_id=episode_id, day=day, agent="battlefield", credits=total, limit=limit)
+    await bus.emit(episode_id, day, "error", {"where": "credit_guard", "message": f"episode paused at {total:g} credits (limit {limit:g})"})
+    status = await db.fetchval("SELECT status FROM episodes WHERE id=$1", episode_id)
+    if status == "paused":  # e.g. a manual step: stay paused, don't emit a second episode.paused
+        st.pause.clear()
+    else:
+        await pause(episode_id)
 
 
 async def _finish(episode_id: str, day: int) -> None:
