@@ -17,6 +17,12 @@ die() { printf 'render-env: %s\n' "$*" >&2; exit 1; }
 [ -n "${AGENT_TOKEN:-}" ] || die "AGENT_TOKEN is empty; refusing to write $out"
 [ -n "${OPERATOR_TOKEN:-}" ] || die "OPERATOR_TOKEN is empty; refusing to write $out"
 [ "$AGENT_TOKEN" != "$OPERATOR_TOKEN" ] || die "AGENT_TOKEN equals OPERATOR_TOKEN; refusing to write $out"
+# A public deploy (DOMAIN set) must verify the Cloudflare Access JWT at the origin; blank values
+# would silently disable that check and reopen the Access bypass. Fail closed instead.
+if [ -n "${DOMAIN:-}" ]; then
+  [ -n "${CF_ACCESS_TEAM_DOMAIN:-}" ] || die "DOMAIN is set but CF_ACCESS_TEAM_DOMAIN is empty; refusing to write $out"
+  [ -n "${CF_ACCESS_AUD:-}" ] || die "DOMAIN is set but CF_ACCESS_AUD is empty; refusing to write $out"
+fi
 
 # Defaults that depend on DOMAIN (set as a `production` environment variable).
 if [ -n "${DOMAIN:-}" ]; then
@@ -75,6 +81,8 @@ emit DROID_REASONING_BLUE "${DROID_REASONING_BLUE:-}"
 emit BLUE_GATE_LLM_PROVIDER "${BLUE_GATE_LLM_PROVIDER:-gemini}"
 emit BLUE_GATE_LLM_MODEL "${BLUE_GATE_LLM_MODEL:-}"
 emit DRY_RUN "${DRY_RUN:-false}"
+emit CF_ACCESS_TEAM_DOMAIN "${CF_ACCESS_TEAM_DOMAIN:-}"
+emit CF_ACCESS_AUD "${CF_ACCESS_AUD:-}"
 
 # ---- non-secret defaults (match .env.example) ----
 emit EPISODE_DEFAULT_DAYS "${EPISODE_DEFAULT_DAYS:-10}"

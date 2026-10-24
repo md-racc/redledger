@@ -1,0 +1,1 @@
+- 2026-10-24T06:06Z · Ad · battlefield: render-env refuses a DOMAIN deploy without CF_ACCESS_* so the origin JWT check cannot silently turn off; .env.example entries; next: frontend/access-jwt; blocked: none

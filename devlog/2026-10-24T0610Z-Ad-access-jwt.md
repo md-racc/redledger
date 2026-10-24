@@ -1,0 +1,1 @@
+- 2026-10-24T06:10Z · Ad · frontend: middleware verifies the Cloudflare Access JWT (RS256 via team JWKS, iss/aud/exp) on every request when CF_ACCESS_TEAM_DOMAIN+CF_ACCESS_AUD are set, closing the foreign-CF-zone origin bypass of /api/bf; new dep jose; next: set both vars on the frontend service in compose/VM env; blocked: none

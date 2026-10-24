@@ -6,6 +6,8 @@
 #   NEXT_PUBLIC_WS_URL   browser-reachable socket base, e.g. wss://api.<domain>. Despite the prefix it
 #                        is read at runtime by the ws-ticket route and handed to the client as `ws_url`;
 #                        NEXT_PUBLIC_* referenced from client code would be inlined at build instead.
+#   CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD  server-only; both set = middleware.ts requires a valid
+#                        Cloudflare Access JWT on every request (403 otherwise); unset = disabled.
 # Never put a token in a NEXT_PUBLIC_ var: those end up in the JS bundle.
 FROM node:20-alpine AS deps
 WORKDIR /app
