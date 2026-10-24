@@ -126,11 +126,16 @@ def _reason(hits: list[RuleHit], verdict: str) -> str:
     return f"{prefix} — {'; '.join(h.detail for h in hits)}"
 
 
-async def _compute(req: GateRequest, key: str, binding: ActionBinding, dry_run: bool = False) -> GateResponse:
+async def _compute(req: GateRequest, key: str, binding: ActionBinding, dry_run: bool = False, extra_hits: tuple[RuleHit, ...] = ()) -> GateResponse:
     started = time.monotonic()
     try:
-        hits = evaluate(req)
+        base_hits = evaluate(req)
+        hits = base_hits + list(extra_hits)
         effects = {hit.effect for hit in hits}
+        base_effects = {hit.effect for hit in base_hits}
+        if "block" in base_effects and "unavailable" not in base_effects:
+            # Optional learning must never weaken a verified baseline hold.
+            effects.discard("unavailable")
         # An unavailable control is diagnostic, never counted as a fraud hit.
         verdict = "escalate" if "unavailable" in effects else "block" if "block" in effects else "escalate" if "review" in effects else "allow"
         if not dry_run and verdict == "escalate" and "review" in effects and "unavailable" not in effects and _llm.enabled:
@@ -149,7 +154,7 @@ async def _compute(req: GateRequest, key: str, binding: ActionBinding, dry_run: 
         _pending.pop(key, None)
 
 
-async def decide(req: GateRequest, *, dry_run: bool = False) -> GateResponse:
+async def decide(req: GateRequest, *, dry_run: bool = False, extra_hits: tuple[RuleHit, ...] = ()) -> GateResponse:
     key = namespace(req)
     binding = ActionBinding.from_request(req)
     cached = _cache.get(key, binding)
@@ -160,7 +165,10 @@ async def decide(req: GateRequest, *, dry_run: bool = False) -> GateResponse:
         # Reject new admission, never evict a verdict promised for 120 seconds.
         if len(_pending) >= MAX_PENDING or _cache.size() + len(_pending) >= MAX_ENTRIES:
             raise HTTPException(503, "gate capacity unavailable; retry later with the same key")
-        task = asyncio.create_task(_compute(req.model_copy(deep=True), key, binding, dry_run))
+        work = (
+            _compute(req.model_copy(deep=True), key, binding, dry_run, extra_hits) if extra_hits else _compute(req.model_copy(deep=True), key, binding, dry_run)
+        )
+        task = asyncio.create_task(work)
         _pending[key] = (binding, task)
     else:
         original, task = pending
@@ -169,5 +177,5 @@ async def decide(req: GateRequest, *, dry_run: bool = False) -> GateResponse:
     return (await asyncio.shield(task)).model_copy(deep=True)
 
 
-def explain(req: GateRequest) -> dict[str, Any]:
-    return {"hits": [asdict(hit) for hit in evaluate(req)]}
+def explain(req: GateRequest, *, extra_hits: tuple[RuleHit, ...] = ()) -> dict[str, Any]:
+    return {"hits": [asdict(hit) for hit in evaluate(req) + list(extra_hits)]}

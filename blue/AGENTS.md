@@ -91,6 +91,15 @@ empty = you missed it), and battlefield's `/gate` requests carry `playbook_versi
   shows the pattern.
 - Your after-action review adds `false_positive` items and precision/recall per rule id; override
   `reflect(req)` / `dry_run_reflect(req)` to act on it. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
+- Both reflection hooks now deterministically enable four fixed `learned:*` review controls
+  from extracted/partial attacks in the supplied AAR. Any legitimate-item impact retires the
+  corresponding learned control; baseline controls cannot be retired or weakened.
+- Gate snapshots are scoped by episode and exact playbook version (128 retained snapshots).
+  A cold version gets one read under a 0.5-second budget; cached/plain gates perform no
+  playbook I/O. An unavailable version escalates neutrally and never weakens a baseline hold.
+- Reflection performs no model calls or ledger writes. It preserves unrelated content and
+  applies each generation once. Daily debriefs are forwarded but do not yet update playbooks
+  within a turn. These keyless controls do not qualify live audit or the CRS/Bright Data gates.
 
 ## Paste this to your coding agent as its first message
 

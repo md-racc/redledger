@@ -12,8 +12,9 @@ from fastapi import HTTPException
 
 from agentkit import DroidAgent, TurnRequest, collect_tools, ctx
 from agentkit.config import AgentSettings
-from agentkit.models import TurnResponse, Usage
+from agentkit.models import ReflectRequest, ReflectResponse, TurnResponse, Usage
 from agentkit.tools import ToolFn
+from gate import learned
 
 from . import tools
 from .evidence import collect_snapshot, model_view
@@ -37,6 +38,12 @@ class AuditAgent(DroidAgent):
 
     def tools(self) -> list[tuple[str, str, ToolFn]]:
         return collect_tools(tools)
+
+    async def reflect(self, req: ReflectRequest) -> ReflectResponse:
+        return learned.reflect(req)
+
+    async def dry_run_reflect(self, req: ReflectRequest) -> ReflectResponse:
+        return learned.reflect(req)
 
     async def health(self) -> dict[str, Any]:
         # Service liveness is independent of live SDK readiness. Never probe on this route.

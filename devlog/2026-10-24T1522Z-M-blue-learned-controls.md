@@ -1,0 +1,1 @@
+- 2026-10-24T15:22Z · M · blue: add bounded keyless AAR learning, retire learned controls with legitimate-item impact, cache exact episode/playbook versions and preserve baseline holds; next: independent review and seeded operator episodes; blocked: live adapter awaits merged strict identity, CRS sandbox acceptance and real-agent shadow checkpoint remain unproven
