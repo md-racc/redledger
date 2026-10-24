@@ -82,8 +82,8 @@ async def create_generation(lineage_id: str, generation: int, *, seed: int, days
 
     A demo (the lineage is finished or failed) first waits, up to DEMO_REFLECT_WAIT_SEC, for the previous
     demo's reflection (restarted if a restart lost it), so it starts from reflected playbooks. Past that it
-    starts from the current playbooks and the reflection finishes in the background (its versions then
-    apply to the next demo): the request must stay well under the edge's 100 s timeout."""
+    starts from the current playbooks, and a reflection that finishes after this episode exists is discarded
+    (`_write_reflect`): the request must stay well under the edge's 100 s timeout."""
     try:
         await asyncio.wait_for(asyncio.shield(reflect_demo_later(lineage_id, generation - 1)), DEMO_REFLECT_WAIT_SEC)
     except TimeoutError:
@@ -97,6 +97,7 @@ async def create_generation(lineage_id: str, generation: int, *, seed: int, days
         )
     eid = db.new_id("ep")
     async with db.pool().acquire() as conn, conn.transaction():
+        await conn.execute(_GENERATION_LOCK, lineage_id)  # serialises with a late reflection's write (_write_reflect)
         await conn.execute(
             "INSERT INTO episodes (id, seed, controller_mode, days, attack_plan, lineage_id, generation) VALUES ($1,$2,$3,$4,$5,$6,$7)",
             eid,
@@ -342,6 +343,8 @@ def reflect_demo_later(lineage_id: str, generation: int) -> asyncio.Task:
 
 def _reflect_task_done(t: asyncio.Task) -> None:
     _background.discard(t)
+    for key in [k for k, v in _demo_tasks.items() if v is t]:
+        del _demo_tasks[key]
     if not t.cancelled() and (e := t.exception()) is not None:
         log.error("demo_reflect_task_failed", task=t.get_name(), error=repr(e), exc_info=e)
 
@@ -403,9 +406,19 @@ async def _reflect_all(lineage_id: str, g: int, ep: Any, cfg: LineageConfig, *, 
         await charge_reflect(lineage_id, ep["id"], ep["days"], spent, check=not demo)
 
 
+_GENERATION_LOCK = "SELECT pg_advisory_xact_lock(hashtext('lineage-generation'), hashtext($1))"
+
+
 async def _write_reflect(lineage_id: str, agent: str, g: int, episode_id: str, content: dict[str, Any], rationale: str) -> None:
+    """Write generation g's reflect version, unless generation g+1 already exists: a demo reflection that
+    outlived the next demo's wait would otherwise land mid-episode, unannounced, on top of what that
+    generation learned. Same lock as create_generation, so the check and the insert can't interleave."""
     try:
         async with db.pool().acquire() as conn, conn.transaction():
+            await conn.execute(_GENERATION_LOCK, lineage_id)
+            if await conn.fetchval("SELECT 1 FROM episodes WHERE lineage_id=$1 AND generation=$2", lineage_id, g + 1):
+                log.warning("demo_reflect_late_discarded", lineage_id=lineage_id, generation=g, agent=agent, episode_id=episode_id)
+                return
             await conn.execute("SELECT pg_advisory_xact_lock(hashtext('playbooks'), hashtext($1 || '/' || $2))", lineage_id, agent)
             latest = await conn.fetchval("SELECT MAX(version) FROM playbooks WHERE lineage_id=$1 AND agent=$2", lineage_id, agent)
             await conn.execute(

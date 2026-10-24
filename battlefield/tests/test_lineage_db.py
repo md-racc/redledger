@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
+import structlog.testing
 
 from app import db, main
 from app.config import settings
@@ -520,3 +521,37 @@ async def test_demo_turn_credits_count_toward_the_lineage_cap(monkeypatch: pytes
     assert stub.reflects == []  # the demo's own turns used the cap up: no reflection
     assert await db.fetchval("SELECT status FROM episodes WHERE id=$1", eid) == "finished"  # the demo itself was never stopped
     assert not await db.fetchval("SELECT 1 FROM events WHERE episode_id=$1 AND type='lineage.paused'", eid)
+
+
+async def test_a_demo_reflection_finishing_after_the_next_demo_started_is_discarded(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Late(_Agents):
+        async def reflect(self, agent: str, body: dict[str, Any]) -> dict[str, Any]:
+            if agent != "blue":
+                return await super().reflect(agent, body)
+            self.reflects.append((agent, body))
+            assert self.block is not None
+            await self.block.wait()  # a slow model: answers after the next demo already started
+            return {"ok": True, "playbook": {"late": True}, "rationale": "late"}
+
+    stub = _stub(monkeypatch, _Late())
+    stub.block = asyncio.Event()
+    monkeypatch.setattr(lineage, "DEMO_REFLECT_WAIT_SEC", 0.2)
+    async with _client() as c:
+        lid = (await _create(c))["id"]
+        await db.execute("UPDATE lineages SET status='finished' WHERE id=$1", lid)
+        body = {"controller_mode": "enforce", "lineage_id": lid, "days": 1}
+        e1 = (await c.post("/api/episodes", json=body, headers=f.auth())).json()["id"]
+        await runner.step(e1)
+        e2 = (await c.post("/api/episodes", json=body, headers=f.auth())).json()["id"]
+        pending = lineage._demo_tasks[(lid, 1)]
+        with structlog.testing.capture_logs() as logs:
+            stub.block.set()
+            await asyncio.wait_for(pending, 5)
+    assert not await db.fetchval("SELECT 1 FROM playbooks WHERE lineage_id=$1 AND agent='blue' AND source='reflect'", lid)
+    assert await db.fetchval("SELECT MAX(version) FROM playbooks WHERE lineage_id=$1 AND agent='blue'", lid) == 0
+    blue_updates = "SELECT COUNT(*) FROM events WHERE episode_id=$1 AND type='playbook.updated' AND payload->>'agent'='blue'"
+    assert await db.fetchval(blue_updates, e1) == 0 and await db.fetchval(blue_updates, e2) == 0
+    assert [(e["lineage_id"], e["generation"], e["agent"]) for e in logs if e["event"] == "demo_reflect_late_discarded"] == [(lid, 1, "blue")]
+    assert (lid, 1) not in lineage._demo_tasks  # the finished task was dropped
+    # red answered before the next demo existed: its version committed and the next demo announced it
+    assert await db.fetchval("SELECT COUNT(*) FROM events WHERE episode_id=$1 AND type='playbook.updated' AND payload->>'agent'='red'", e2) == 1
