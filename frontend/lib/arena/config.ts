@@ -11,7 +11,7 @@ export const MODEL_URLS = {
 export const CENTER = { x: 0, z: 0 } as const;
 
 /** Visual scale of every agent figure (a 1.8 m person reads as an ant from the aerial shots). */
-export const AGENT_SCALE = 2.3;
+export const AGENT_SCALE = 2.1;
 
 /** Radius of the keep-out margin around obstacles, metres. Wider than the figure so shoulders clear columns. */
 export const AGENT_CLEARANCE = 1.0;
@@ -26,12 +26,12 @@ export const SPAWN: Record<Team, { x: number; z: number; r: number }> = {
 };
 
 /** Slot rings in the arena centre. Clients (green) sit innermost, guards (blue) ring them, and the fraudsters (red)
- *  hold the outer ring, so an attack has to cut through the guards to reach its target. All inside the r = 16 inner colonnade. */
-export const SLOT_RING: Record<Team, number> = { green: 5.2, blue: 9.4, red: 13.4 };
+ *  hold the outer ring, so an attack has to cut through the guards to reach its target. All inside the r = 23.85 outer colonnade (the r = 16 inner piers fade away in the arena, so they are not obstacles). */
+export const SLOT_RING: Record<Team, number> = { green: 7.0, blue: 12.5, red: 18.0 };
 
 /** Metres per second. Per-agent speed is drawn from [min, max]. */
-export const SPEED: Record<Team, [number, number]> = { red: [7.6, 9.0], blue: [8.0, 9.4], green: [6.6, 7.6] };
-export const DASH_SPEED = 15;
+export const SPEED: Record<Team, [number, number]> = { red: [13.5, 15.5], blue: [14.0, 16.0], green: [11.0, 13.0] };
+export const DASH_SPEED = 24;
 
 export const NAV = {
   cell: 1.0,

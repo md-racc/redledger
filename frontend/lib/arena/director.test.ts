@@ -103,3 +103,18 @@ describe("agent details", () => {
     expect(formatValue(d.sections[1].fields.find((f) => f.key === "risk")!)).toBe("12");
   });
 });
+
+describe("ledger tallies", () => {
+  it("counts allows, blocks and stolen dollars per day", async () => {
+    const { tallyDays } = await import("./ledgerStats");
+    let s = initialState();
+    expect(tallyDays(s)).toEqual([]);
+    s = reduce(s, ev(1, "episode.started", { controller_mode: "enforce", days: 4, seed: 1 }));
+    s = reduce(s, ev(2, "gate.verdict", { verdict_id: "a", agent: "green", action: "x", verdict: "allow", reason: "", rules_fired: [], enforced: true }, 0));
+    s = reduce(s, ev(3, "gate.verdict", { verdict_id: "b", agent: "green", action: "x", verdict: "block", reason: "", rules_fired: ["near_threshold"], enforced: true }, 1));
+    s = reduce(s, ev(4, "attack.launched", { attack_id: "k", scheme_id: "ghost_vendor", display_name: "g", story: "", target_amount: 100 }, 1));
+    s = reduce(s, ev(5, "attack.outcome", { attack_id: "k", scheme_id: "ghost_vendor", outcome: "extracted", amount_extracted: 250, detected_day: null }, 1));
+    const t = tallyDays(s);
+    expect(t.map((x) => [x.day, x.allow, x.block, x.stolen])).toEqual([[0, 1, 0, 0], [1, 0, 1, 250]]);
+  });
+});

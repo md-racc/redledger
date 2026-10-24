@@ -4,15 +4,19 @@
 export interface Timeline {
   /** 0..1 progress of the auto-playing intro flight */
   intro: number;
-  /** 0..1 smoothed scroll progress along the chapter rail */
+  /** 0..1 smoothed page scroll */
   scroll: number;
+  /** 0..1 camera position along the rail: scroll passed through the pacing curve (lib/arena/pacing.ts) */
+  rail: number;
   /** 1 when the rail has landed and the free orbit is live, eased */
   arena: number;
   /** seconds since the intro started */
   introTime: number;
+  /** where the gap between the words "red" and "ledger" is centred, as a fraction of the screen width (0.5 = middle) */
+  gapX: number;
 }
 
-export const timeline: Timeline = { intro: 0, scroll: 0, arena: 0, introTime: 0 };
+export const timeline: Timeline = { intro: 0, scroll: 0, rail: 0, arena: 0, introTime: 0, gapX: 0.5 };
 
 type Listener = (t: Timeline) => void;
 const listeners = new Set<Listener>();

@@ -11,6 +11,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useArena } from "@/lib/arena/store";
+import { cinema } from "@/lib/arena/cinema";
+import { railOf } from "@/lib/arena/pacing";
 import { emitTimeline, INTRO_SECONDS, timeline } from "@/lib/arena/timeline";
 import { figures } from "./figures";
 
@@ -43,6 +45,7 @@ const curveOf = (keys: Key[], off: number) =>
 const smoother = (x: number) => x * x * x * (x * (x * 6 - 15) + 10);
 const damp = (a: number, b: number, lambda: number, dt: number) => a + (b - a) * (1 - Math.exp(-lambda * dt));
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+const smooth01 = (x: number) => { const t = clamp01(x); return t * t * (3 - 2 * t); };
 
 export const ARENA_LOOK = new THREE.Vector3(0, 4, 2);
 
@@ -51,7 +54,7 @@ export function CameraRig() {
   const stage = useArena((s) => s.stage);
   const curves = useMemo(() => ({ ip: curveOf(INTRO, 0), il: curveOf(INTRO, 3), rp: curveOf(RAIL, 0), rl: curveOf(RAIL, 3) }), []);
   const v = useMemo(() => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), tp: new THREE.Vector3(), tl: new THREE.Vector3(), off: new THREE.Vector3(), right: new THREE.Vector3(), up: new THREE.Vector3(), want: new THREE.Vector3(), dir: new THREE.Vector3() }), []);
-  const s = useRef({ scroll: 0, mx: 0, my: 0, ready: false, baseDist: 122, returning: false, lastFov: 0, shX: 0, shY: 0 });
+  const s = useRef({ scroll: 0, mx: 0, my: 0, ready: false, baseDist: 122, returning: false, lastFov: 0, shX: 0, shY: 0, shT: 0 });
 
   // place the camera on the first intro frame before anything is drawn
   useEffect(() => {
@@ -87,6 +90,7 @@ export function CameraRig() {
       applyPose(camera, v, state.pointer, S, dt, 0.5);
       if (st.stage === "intro" && p >= 1) {
         S.scroll = 0;
+        timeline.rail = 0;
         window.scrollTo(0, 0);
         st.setStage("scroll");
         v.tp.copy(v.pos); v.tl.copy(v.look);
@@ -96,8 +100,11 @@ export function CameraRig() {
       const raw = clamp01(window.scrollY / max);
       S.scroll = damp(S.scroll, raw, 4.2, dt);
       timeline.scroll = S.scroll;
-      curves.rp.getPoint(clamp01(S.scroll), v.want);
-      curves.rl.getPoint(clamp01(S.scroll), v.dir);
+      // the camera dawdles at chapters and hurries between them: scroll goes through the pacing curve
+      const rail = railOf(S.scroll);
+      timeline.rail = rail;
+      curves.rp.getPoint(rail, v.want);
+      curves.rl.getPoint(rail, v.dir);
 
       if (st.stage === "scroll") {
         // exponential approach to the rail point: smooth even when the wheel jumps
@@ -130,7 +137,11 @@ export function CameraRig() {
     const phone = state.size.width <= 760;
     S.shX = damp(S.shX, open && !phone ? 0.2 : 0, 4, dt);
     S.shY = damp(S.shY, open && phone ? 0.22 : 0, 4, dt);
-    if (Math.abs(S.shX) > 0.0005 || Math.abs(S.shY) > 0.0005) camera.setViewOffset(state.size.width, state.size.height, S.shX * state.size.width, S.shY * state.size.height, state.size.width, state.size.height);
+    // while the title is up, slide the picture so the Palace sits centred in the gap between "red" and "ledger"
+    const titleOn = st.stage === "intro" || st.stage === "loading" ? smooth01((timeline.intro - 0.55) / 0.45) : st.stage === "scroll" ? 1 - smooth01(timeline.scroll / 0.1) : 0;
+    S.shT = damp(S.shT, phone ? 0 : (0.5 - timeline.gapX) * titleOn, 5, dt);
+    const totalX = S.shX + S.shT;
+    if (Math.abs(totalX) > 0.0005 || Math.abs(S.shY) > 0.0005) camera.setViewOffset(state.size.width, state.size.height, totalX * state.size.width, S.shY * state.size.height, state.size.width, state.size.height);
     else if (camera.view?.enabled) camera.clearViewOffset();
 
     timeline.arena = damp(timeline.arena, st.stage === "arena" ? 1 : 0, 3, dt);
@@ -163,28 +174,43 @@ function applyPose(camera: THREE.PerspectiveCamera, v: { pos: THREE.Vector3; loo
 /** Set by the orbit controls: the visitor is dragging, or did a moment ago. */
 const orbitState = { lastTouch: -1e9 };
 
-/** Arena orbit: dolly in on the selected agent, ease back out when it is deselected; drifts slowly when left alone. */
+/**
+ * Arena orbit. Priority: the selected agent (dolly in), else the auto-cam on the live fraud scene (frame the fraudster, its
+ * client and the guard, from a three-quarter angle, swinging slowly round them), else the default view, which drifts slowly
+ * when left alone. The auto-cam backs off while the visitor is dragging.
+ */
 function orbitFocus(c: OrbitControlsImpl | null, camera: THREE.PerspectiveCamera, selected: string | null, S: { baseDist: number; returning: boolean }, v: { want: THREE.Vector3; dir: THREE.Vector3 }, dt: number) {
   if (!c) return;
   const h = selected ? figures.get(selected) : null;
-  const wantTarget = h ? v.want.copy(h.root.position).setY(h.root.position.y + 2.2) : ARENA_LOOK;
-  const k = 1 - Math.exp(-dt * 3);
-  c.target.lerp(wantTarget, k);
-  if (!h && performance.now() - orbitState.lastTouch > 4500) {
-    // slow cinematic drift around the target, independent of frame rate
+  const idle = performance.now() - orbitState.lastTouch > 4500;
+  const shot = !h && idle && useArena.getState().cinematic && cinema.active;
+  const wantTarget = h ? v.want.copy(h.root.position).setY(h.root.position.y + 2.2) : shot ? v.want.set(cinema.x, cinema.y, cinema.z) : ARENA_LOOK;
+  c.target.lerp(wantTarget, 1 - Math.exp(-dt * (shot ? 2.4 : 3)));
+  if (!h && !shot && idle) {
+    // slow drift around the target, independent of frame rate
     v.dir.copy(camera.position).sub(c.target);
     const a = dt * 0.025, cos = Math.cos(a), sin = Math.sin(a);
     const x = v.dir.x * cos - v.dir.z * sin, z = v.dir.x * sin + v.dir.z * cos;
     camera.position.set(c.target.x + x, camera.position.y, c.target.z + z);
   }
-  if (h) S.returning = true;
-  if (h || S.returning) {
-    const wantDist = h ? 26 : S.baseDist;
+  if (h || shot) S.returning = true;
+  if (h || shot || S.returning) {
+    const wantDist = h ? 26 : shot ? cinema.dist : S.baseDist;
     v.dir.copy(camera.position).sub(c.target);
     const len = v.dir.length();
+    v.dir.normalize();
+    if (shot) {
+      // a three-quarter angle (at least 53 degrees up, and always above the rotunda's cut rim), swinging slowly round the action
+      const need = Math.asin(Math.min(0.98, Math.max(0, (31 - c.target.y) / Math.max(1, cinema.dist))));
+      const want = Math.max(0.92, need);
+      const cur = Math.asin(Math.min(1, Math.max(-1, v.dir.y)));
+      const el = cur + (want - cur) * (1 - Math.exp(-dt * 1.6));
+      const az = Math.atan2(v.dir.z, v.dir.x) + dt * 0.12;
+      v.dir.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+    }
     const next = len + (wantDist - len) * (1 - Math.exp(-dt * 2.2));
-    if (!h && Math.abs(next - wantDist) < 0.5) S.returning = false;
-    camera.position.copy(c.target).addScaledVector(v.dir.normalize(), next);
+    if (!h && !shot && Math.abs(next - wantDist) < 0.5) S.returning = false;
+    camera.position.copy(c.target).addScaledVector(v.dir, next);
   }
 }
 

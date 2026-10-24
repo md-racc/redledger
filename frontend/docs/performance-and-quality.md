@@ -24,6 +24,7 @@ Measured on an AMD Radeon 880M iGPU in the Claude desktop browser pane: ~57 fps 
 | Palace geometry | ~330k unique triangles plus instancing, about 1.7M triangles and ~480 draw calls per frame including the shadow pass |
 | shadow pass | re-renders the Palace; reduced by the refresh cadence above |
 | post chain | bloom (`mipmapBlur`), tone mapping, grade, vignette, grain, SMAA; `lite` keeps bloom and tone mapping only |
+| backdrop | one 72-instance bar mesh, a 280-instance skyline, four cones and a few hundred sprites; all additive or unlit, no extra shadow casters (see [backdrop.md](backdrop.md)) |
 | agents | 30 figures of a few hundred triangles each, 6 beam meshes, 24 instanced coins, 8 shockwave rings |
 | DOM overlays | updated by CSS variables / transforms from `requestAnimationFrame`, not React renders |
 | first load | the glb decode and KTX2 transcode happen behind the loader; the nav grid is built once |

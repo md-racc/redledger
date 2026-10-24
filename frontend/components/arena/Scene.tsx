@@ -9,6 +9,8 @@ import { useArena } from "@/lib/arena/store";
 import type { ArenaSim } from "@/lib/arena/sim";
 import type { RLEvent } from "@/lib/types";
 import { ArenaWorld } from "./ArenaWorld";
+import { Backdrop } from "./Backdrop";
+import type { DayTally } from "@/lib/arena/ledgerStats";
 import { Lights, SkyDome, Water } from "./Atmosphere";
 import { CameraRig } from "./CameraRig";
 import { Effects } from "./Effects";
@@ -21,6 +23,8 @@ interface Props {
   feedActive: boolean;
   onSim: (sim: ArenaSim) => void;
   onProgress: (p: { progress: number; active: boolean }) => void;
+  /** per-day verdict / stolen tallies that grow the ledger ring */
+  tallies: DayTally[];
 }
 
 /** Loading progress straight from three's manager (drei's useProgress sets state during render of the suspended glb). */
@@ -56,7 +60,7 @@ function QualityApplier({ level }: { level: 0 | 1 | 2 | 3 }) {
   return null;
 }
 
-export default function Scene({ subscribe, feedActive, onSim, onProgress }: Props) {
+export default function Scene({ subscribe, feedActive, onSim, onProgress, tallies }: Props) {
   const [ground, setGround] = useState<GroundSampler | null>(null);
   const onGround = useCallback((g: GroundSampler | null) => setGround(g), []);
   const hover = useArena((s) => s.hoveredId);
@@ -91,6 +95,7 @@ export default function Scene({ subscribe, feedActive, onSim, onProgress }: Prop
       <Water />
       <Palace onGround={onGround} />
       <ArenaWorld subscribe={subscribe} ground={ground} feedActive={feedActive} onSim={onSim} />
+      <Backdrop ground={ground} tallies={tallies} detail={level} />
       <CameraRig />
       <Picking />
       <Effects mode={q.post} />

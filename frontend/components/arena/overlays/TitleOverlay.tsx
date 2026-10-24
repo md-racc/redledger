@@ -3,7 +3,7 @@
 // Palace between the halves, letters rising out of a mask, then sliding off as the visitor starts to scroll.
 import { useEffect, useRef } from "react";
 import { useArena } from "@/lib/arena/store";
-import { subscribeTimeline } from "@/lib/arena/timeline";
+import { subscribeTimeline, timeline } from "@/lib/arena/timeline";
 
 const Letters = ({ text, base }: { text: string; base: number }) => (
   <>
@@ -17,6 +17,22 @@ export function TitleOverlay() {
   const stage = useArena((s) => s.stage);
   const skip = useArena((s) => s.setSkipIntro);
   const root = useRef<HTMLElement>(null);
+  const redWord = useRef<HTMLSpanElement>(null);
+  const ledgerWord = useRef<HTMLSpanElement>(null);
+
+  // "red" is shorter than "ledger", so the gap between them is left of the screen centre. Publish where it is so the camera
+  // can land the Palace exactly in it.
+  useEffect(() => {
+    const measure = () => {
+      const r = redWord.current, l = ledgerWord.current;
+      if (!r || !l) return;
+      timeline.gapX = window.innerWidth <= 760 ? 0.5 : (r.offsetLeft + r.offsetWidth + l.offsetLeft) / 2 / window.innerWidth;
+    };
+    measure();
+    void document.fonts?.ready.then(measure);
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
   useEffect(
     () =>
@@ -35,8 +51,8 @@ export function TitleOverlay() {
   return (
     <section ref={root} className={`title ${playing ? "is-playing" : ""} ${stage === "arena" ? "is-gone" : ""}`} aria-label="redledger">
       <h1 className="title-word" aria-label="redledger">
-        <span className="word word-red" aria-hidden><Letters text="red" base={0.5} /></span>
-        <span className="word word-ledger" aria-hidden><Letters text="ledger" base={0.85} /></span>
+        <span className="word word-red" aria-hidden ref={redWord}><Letters text="red" base={0.5} /></span>
+        <span className="word word-ledger" aria-hidden ref={ledgerWord}><Letters text="ledger" base={0.85} /></span>
       </h1>
       <p className="title-kicker">Adversarial sandbox for autonomous finance</p>
       <p className="title-serif">Three agents. One ledger.<br />A rotunda to fight over.</p>

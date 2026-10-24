@@ -25,7 +25,7 @@ export function LabelLayer() {
         if (!el) continue;
         const st = useArena.getState();
         const idle = st.simPhase === "idle";
-        let o = st.stage === "arena" ? 1 : Math.max(0, 1 - Math.abs(timeline.scroll - AT[team]) / 0.13);
+        let o = st.stage === "arena" ? 1 : Math.max(0, 1 - Math.max(0, Math.abs(timeline.rail - AT[team]) - 0.03) / 0.06);
         o = idle && (st.stage === "scroll" || st.stage === "arena") ? o * o * (3 - 2 * o) : 0;
         el.style.opacity = o.toFixed(3);
         el.style.visibility = a.on && o > 0.01 ? "visible" : "hidden";
