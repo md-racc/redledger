@@ -11,7 +11,9 @@ Every gated green route calls `check()` before mutating. check():
                 timeout = block
 
 Same-key requests are single-flight: they run one at a time, so a key gets one verdict and at most
-one escalation; the later ones replay the first's outcome.
+one escalation; the later ones replay the first's outcome. Without the lock (the backstop for
+concurrent first uses that bypass it), the verdict INSERT ... ON CONFLICT picks one winner and a
+loser of an escalate verdict waits for the winner's escalation row and joins it.
 Escalations close exactly once (compare-and-set on status='open': resolver, timeout or orphan sweep).
 A replay of an escalated key joins that escalation or reuses its decision. The waiter lives in this
 process, so an escalation left open by a restart is an orphan: resolving it is a 409 and times it out.
@@ -152,6 +154,10 @@ async def _check(
         winner = await db.fetchrow("SELECT * FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", c.episode_id, c.tool_use_id)
         assert winner is not None  # verdicts are never deleted while the episode exists
         log.info("verdict_insert_lost_race", key=c.tool_use_id, verdict_id=winner["id"], action=action)
+        if winner["verdict"] == "escalate" and mode == "enforce":
+            # The winner opens its escalation right after its insert; wait for that row so the replay
+            # joins it instead of opening a second card for the same key.
+            await _await_escalation_row(winner["id"])
         return await _replay(winner, mode, c, action, entity_type, entity_id, amount, args or {})
     await bus.emit(
         c.episode_id,
@@ -173,6 +179,18 @@ async def _check(
         agent="blue",
     )
     return await _apply(vid, verdict, reason, mode, c, action, entity_type, entity_id, amount)
+
+
+# How long a request that lost the verdict-insert race waits for the winner's escalation row.
+_LOST_RACE_ESCALATION_WAIT_SEC = 2.0
+
+
+async def _await_escalation_row(vid: str) -> None:
+    deadline = time.monotonic() + _LOST_RACE_ESCALATION_WAIT_SEC
+    while time.monotonic() < deadline:
+        if await db.fetchval("SELECT 1 FROM escalations WHERE verdict_id=$1 LIMIT 1", vid):
+            return
+        await asyncio.sleep(0.02)
 
 
 async def _replay(

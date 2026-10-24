@@ -649,3 +649,35 @@ async def test_cancelled_holder_releases_the_key(episode: str, slow_blue_escalat
     with pytest.raises(gate.GateBlockedError):
         await follower
     assert not gate._key_slots and not gate._escalation_waiters
+
+
+# ---------- the verdict-insert race without single flight (multi-request backstop) ----------
+
+
+async def test_concurrent_checks_bypassing_single_flight_make_one_verdict_and_one_escalation(episode: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "escalation_timeout_sec", 5)
+    asked: list[str] = []
+
+    async def ask(c: Caller, mode: str, action: str, et: str | None, eid: str | None, amount: float | None, args: dict, context: dict):
+        asked.append(eid or "")
+        await asyncio.sleep(0.05)  # both requests get past the verdict lookup
+        return "escalate", "review", 0.9, ["t"]
+
+    monkeypatch.setattr(gate, "_ask_blue", ask)
+    vid = await f.vendor(episode)
+    inv = await f.invoice(episode, vid, amount=100.0)
+    c = Caller(agent="green", episode_id=episode, day=1, tool_use_id=f"tu_{uuid.uuid4().hex}")
+    tasks = [asyncio.create_task(gate._check(c, "enforce", "invoices.approve", "invoice", inv, 100.0, {}, {})) for _ in range(3)]
+    for _ in range(250):
+        esc = await db.fetchval("SELECT id FROM escalations WHERE episode_id=$1", episode)
+        if esc:
+            break
+        await asyncio.sleep(0.02)
+    await asyncio.sleep(0.3)
+    assert len(asked) == 3  # all three really raced (no lock)
+    assert await db.fetchval("SELECT COUNT(*) FROM verdicts WHERE episode_id=$1", episode) == 1
+    assert await db.fetchval("SELECT COUNT(*) FROM escalations WHERE episode_id=$1", episode) == 1
+    assert await db.fetchval("SELECT COUNT(*) FROM events WHERE episode_id=$1 AND type='gate.verdict'", episode) == 1
+    assert await gate.resolve_escalation(esc, "block", "judge")
+    outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+    assert all(isinstance(o, gate.GateBlockedError) and o.escalation_id == esc for o in outcomes)
