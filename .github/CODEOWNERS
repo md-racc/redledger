@@ -1,9 +1,6 @@
-# Reviews are required from a code owner of any path a PR touches. Owner: Dev Ad.
-# Ad = @md-racc, Al = @Alex-Epstein, M = @moterodiaz, R = @RaagaSundar.
-# Ad's paths list the other three as backup owners: GitHub never lets a PR author approve their
-# own PR, and with admins included in branch protection Ad's PRs would otherwise be unmergeable.
-# Any one listed owner's approval satisfies the rule; contracts/ PRs still need every affected
-# owner by policy (GIT.md §5).
+# Routing/notification only: GitHub auto-requests the owner of any path a PR touches. Owner: Dev Ad.
+# Not a merge gate: `main` requires 0 approvals and code-owner review is off; integration (Ad)
+# merges (GIT.md §4). Owner review is welcome and fast-tracked, never blocking.
 *                       @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
 /contracts/             @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
 /agentkit/              @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
@@ -12,7 +9,7 @@
 /green/                 @moterodiaz @md-racc
 /blue/                  @moterodiaz @md-racc
 /frontend/              @RaagaSundar @md-racc
-# team paths and extension carve-outs: owned by the prefix; Ad is the backup owner (same reason)
+# team paths and extension carve-outs: routed to the prefix owner; Ad also notified
 /battlefield/extensions/red_*    @Alex-Epstein @md-racc
 /battlefield/extensions/green_*  @moterodiaz @md-racc
 /battlefield/extensions/blue_*   @moterodiaz @md-racc

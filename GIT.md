@@ -2,7 +2,8 @@
 
 Repo owner: **Dev Ad**. These rules exist so four people and their coding agents can work on one
 repo for 36 hours without anyone having to untangle history. They are enforced by branch
-protection, CODEOWNERS, and the `ownership-guard` CI job; the rest is discipline. A coding agent
+protection, CI (`ownership-guard`, `contracts-guard`), and integration review (§4); the rest is
+discipline. A coding agent
 (Claude Code, Droid, Cursor) operating in this repo follows every rule below as if it were a
 teammate, and stops to ask a human when a rule would be violated.
 
@@ -15,17 +16,18 @@ teammate, and stops to ask a human when a rule would be violated.
 - Branch from `main`, always current: `git fetch origin && git switch -c red/x origin/main`.
 - A branch lives hours, not days. Open the PR early as a draft.
 - Never commit to someone else's branch. Never check out someone else's branch to "help" unless they ask; then push to a new branch and PR into theirs.
+  One exception: integration's plain merges of `origin/main` into an open PR branch (§4).
 
 ## 2. Scope: stay in your directory
 
 | Branch prefix | May touch |
 |---|---|
-| `red/` | `red/**`, `battlefield/extensions/red_*.py`, `contracts/ext/red/**`, `DEVLOG.md` |
-| `green/` | `green/**`, `battlefield/extensions/green_*.py`, `contracts/ext/green/**`, `DEVLOG.md` |
-| `blue/` | `blue/**`, `battlefield/extensions/blue_*.py`, `contracts/ext/blue/**`, `DEVLOG.md` |
-| `frontend/` | `frontend/**`, `battlefield/extensions/fe_*.py`, `contracts/ext/fe/**`, `DEVLOG.md` |
-| `battlefield/` | `battlefield/**`, `agentkit/**`, compose files, `Makefile`, `.env.example`, `.github/**`, `DEVLOG.md` |
-| `contracts/` | `contracts/**`, `agentkit/agentkit/models.py`, `DEVLOG.md` |
+| `red/` | `red/**`, `battlefield/extensions/red_*.py`, `contracts/ext/red/**`, `devlog/*.md` |
+| `green/` | `green/**`, `battlefield/extensions/green_*.py`, `contracts/ext/green/**`, `devlog/*.md` |
+| `blue/` | `blue/**`, `battlefield/extensions/blue_*.py`, `contracts/ext/blue/**`, `devlog/*.md` |
+| `frontend/` | `frontend/**`, `battlefield/extensions/fe_*.py`, `contracts/ext/fe/**`, `devlog/*.md` |
+| `battlefield/` | `battlefield/**`, `agentkit/**`, compose files, `Makefile`, `.env.example`, `.github/**`, `devlog/*.md` |
+| `contracts/` | `contracts/**`, `agentkit/agentkit/models.py`, `devlog/*.md` |
 | `docs/`, `chore/` | anything, but no code behavior changes |
 
 CI fails the PR if a branch touches files outside its area. The `battlefield/extensions/` and
@@ -45,35 +47,61 @@ separate `contracts/<topic>` PR first, get it merged, then rebase your branch on
 
 ## 4. Pull requests
 
+Integration (Ad) is the merge authority: Ad controls prod and is the main spoke, and teammates
+review little. Authors never merge their own PR, human or agent.
+
 - Title = the squash commit message. Body = the template, every box ticked honestly.
-- Required reviewer = the CODEOWNER of the directory. For `contracts/` that is Ad plus every affected area owner.
-- CI must be green. No "merge anyway, I'll fix it after".
+- Gates, all required before a merge:
+  1. **CI green**: `python (agentkit|battlefield|red|green|blue)`, `frontend`, `ownership-guard`,
+     `contracts-guard` (skipped = pass). No "merge anyway, I'll fix it after".
+  2. **PR steward: READY.** Ad's orchestrator runs a read-only steward subagent that polls PRs and
+     assesses each: CI triage, branch-prefix scope, exactly one devlog fragment, secrets scan,
+     `AGENTS.md` §3 invariants (incl. 11, no peeking), merge order / stacking.
+  3. **Verifier: pass**, for anything touching `battlefield/`, `agentkit/`, `contracts/`, `deploy/`,
+     compose files, or more than one area. A fresh subagent, never the implementer; runs a
+     `make mock-agents` smoke where relevant.
+- Merge = `gh pr merge <n> --squash --match-head-commit <assessed sha>`. A push after assessment
+  voids it; the steward reassesses.
+- Owner review: CODEOWNERS auto-requests the owner. Welcome and fast-tracked, never blocking.
+  Objections after merge go in a follow-up PR on the owner's prefix.
+- Cross-area edits by integration (e.g. the proxy in `frontend/`) are allowed when integration
+  needs them: branch on that area's prefix, PR tags the owner, owner reviews after the fact,
+  follow-ups go through the owner's own PR.
 - Small PRs. A scheme, a rule set, a component, a route group. If the diff is >600 lines, split it.
-- Rebase onto `main` before marking ready; resolve conflicts on your branch, never in `main`.
+- Stacked PRs say `stacked on #N` in the body. Integration merges bottom-up.
+- Conflicts with `main`: resolve on your branch, never in `main`. Integration may push a plain
+  merge commit of `origin/main` into any open PR branch to resolve trivial conflicts or resync a
+  stack: never force-push, never rewrite, no change beyond the conflict resolution. Authors
+  `git pull` before continuing.
 - Squash-merge only (repo setting). Delete the branch on merge (repo setting).
-- The author merges once approved, unless the author is an AI agent — then the human owner merges.
 
 ## 5. Contracts changes
 
 `contracts/` and `agentkit/agentkit/models.py` are law. Changing them:
 1. Branch `contracts/<topic>`.
 2. Edit the contract file(s) **and** `contracts/CHANGELOG.md` (CI blocks a contracts PR without a CHANGELOG line).
-3. Tag every affected owner in the PR. They have to approve.
-4. Merge, announce in the team channel, everyone rebases.
+3. Tag every affected owner in the PR.
+4. Integration merges on owner authority (Ad) after the verifier passes (§4), and posts an FYI in
+   the PR and the team channel. Everyone pulls `main` into their branch.
+5. Affected owners object with a follow-up `contracts/` PR, not by blocking.
 No code may depend on a contract change that isn't merged.
 
-## 6. DEVLOG.md — the common ledger
+## 6. devlog — the common ledger
 
-`DEVLOG.md` at repo root is append-only and shared by everyone. One line per PR (or per working
-session if you haven't opened a PR yet), newest at the bottom:
+Every PR adds exactly one fragment, `devlog/<YYYY-MM-DDTHHMMZ>-<who>-<slug>.md`, holding one line
+(no PR yet: one per working session):
 
 ```
 - 2026-10-24T03:10Z · Al · red: ghost_vendor + bank_swap landing against mock battlefield; next: threshold_split; blocked: none
 ```
 
-`make devlog WHO=Al MSG="..."` appends it for you. Rules:
-- Append only. Never edit or reorder another person's line.
-- Every PR adds exactly one line (the template checks for it). Conflicts on DEVLOG.md are resolved by keeping both lines.
+`make devlog WHO=Al MSG="..." [SLUG=topic]` writes it (UTC; SLUG defaults to the branch topic; MSG
+is written verbatim, `$` and quotes included). `make devlog-show` prints the combined log. Rules:
+- One fragment per PR. CI warns, doesn't fail, if a PR adds zero or several.
+- New files never conflict, so the devlog never forces a resync.
+- `DEVLOG.md` is frozen history (entries to 2026-10-24T03:00Z). Don't append, edit, or reorder it.
+- Never edit or delete another person's fragment.
+- WHO is the dev the work is for (Ad / Al / M / R), not the agent.
 - It is the first thing anyone reads after sleeping. Write for that reader: what changed, what's next, what's blocking.
 - Findings about the Droid SDK or sponsor APIs go in `contracts/CHANGELOG.md` under Findings, not here; link from here.
 
@@ -84,15 +112,20 @@ An agent working in this repo:
 - Confirms the current branch matches its area before editing. If on `main` or another area's branch, it creates the correct branch first.
 - Edits only inside its area. If a change elsewhere is needed, it writes the proposed diff into the PR description or a `contracts/` PR and stops.
 - Does not run `git push --force`, `git rebase` on pushed shared history, `git reset --hard` on anything it didn't create, `git clean -fdx`, `git checkout -- .`, or any command that destroys uncommitted work, without explicit per-command human confirmation.
-- Does not create, approve, or merge PRs. It pushes a branch and hands the PR to the human.
-- Does not edit `DEVLOG.md` lines it didn't write, `contracts/CHANGELOG.md` entries it didn't write, or any file under `.github/` unless on a `battlefield/` or `chore/` branch owned by Ad.
+- Teammates' agents (Al, M, R) may push their branch and open a PR on their prefix. They never
+  merge, approve, or push to another person's branch; the human owner keeps CI green.
+- Ad's orchestrator is the integration authority and may merge per §4 when Ad enables it. It
+  merges only a READY, pinned SHA, and may push plain merges of `origin/main` into PR branches.
+  Still never force-pushes or rewrites history.
+- Does not edit `DEVLOG.md`, devlog fragments it didn't write, `contracts/CHANGELOG.md` entries it didn't write, or any file under `.github/` unless on a `battlefield/` or `chore/` branch owned by Ad.
 - Does not commit secrets. If it finds one in the working tree, it says so and stops.
 - Writes commit messages in the convention above and includes its attribution trailer.
 - Orchestrators spawning subagents follow `AGENTS.md` §10: one worktree per implementer,
   subagents commit but never push, the orchestrator reviews and pushes.
 - `.claude/settings.json` (committed) denies force-push, hard reset, clean, amend, branch -D,
   PR merge/approve, `rm -rf`, volume wipes, and reading/writing `.env`. A denial is the answer,
-  not an obstacle.
+  not an obstacle. Only Ad's machine overrides the merge denial, locally and uncommitted; nobody
+  commits that override.
 - When a test fails that it did not cause, it reports it rather than "fixing" by deleting or skipping the test.
 
 ## 8. Recovery
@@ -100,10 +133,15 @@ An agent working in this repo:
 - Pushed to the wrong branch: don't force-push. Cherry-pick onto the right branch, then revert on the wrong one via PR.
 - Merged something broken: `git revert` via a `chore/revert-<pr>` PR. Never rewrite `main`.
 - Leaked a secret: rotate the key first (the key is burned the moment it's pushed), then clean history with Ad.
-- Conflict on `DEVLOG.md`: keep both sides, both lines.
+- Conflict on `DEVLOG.md` (pre-fragment branches): keep both sides, both lines; better, move your
+  line into a `devlog/` fragment.
 
 ## 9. Repo settings (Ad applies on creation — full list in `deploy/OWNER-CHECKLIST.md`)
 
-- Branch protection on `main`: require PR, require 1 CODEOWNER review, require status checks (`python`, `frontend`, `ownership-guard`, `contracts-guard`), dismiss stale approvals, no force pushes, no deletions, include administrators.
+- Branch protection on `main`: require PR, 0 approvals, code-owner review off, required checks
+  `python (agentkit)`, `python (battlefield)`, `python (red)`, `python (green)`, `python (blue)`,
+  `frontend`, `ownership-guard`, `contracts-guard` (skipped = pass), include administrators,
+  no force pushes, no deletions.
 - Merge: squash only; auto-delete head branches.
+- CODEOWNERS: routing/notification only, not a gate.
 - Secrets: `FACTORY_API_KEY` etc. live in GitHub Actions secrets only if CI ever needs them (it currently doesn't).
