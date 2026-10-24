@@ -6,6 +6,8 @@ Pattern per route:
   3. gate.check() → Decision or GateBlockedError
   4. on block: mark entity 'blocked', audit, 403 {verdict, reason, verdict_id}
   5. on allow: mutate, audit, emit ledger.mutation (with verdict_id when one exists)
+Every response an agent gets is audited (AGENTS.md §3.5), including the 404/409 rejections in step 1
+and a 409 when the X-Tool-Use-Id was already judged for a different action (the verdict is not replayed).
 """
 
 from __future__ import annotations
@@ -125,11 +127,21 @@ async def _change_context(ch: dict[str, Any]) -> dict[str, Any]:
 # ---------- helpers ----------
 
 
-async def _load(table: str, id_: str, c: Caller) -> dict[str, Any]:
+async def _reject(c: Caller, action: str, args: dict[str, Any], status: int, detail: str) -> HTTPException:
+    """Audit a rejection that happens before the gate, then hand back the exception to raise."""
+    await audit.record(c, action, args, {"error": detail}, status)
+    return HTTPException(status, detail)
+
+
+async def _load(table: str, id_: str, c: Caller, action: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
     row = await db.fetchrow(f"SELECT * FROM {table} WHERE id=$1 AND episode_id=$2", id_, c.episode_id)
     if not row:
-        raise HTTPException(404, f"{table[:-1]} not found")
+        raise await _reject(c, action, args or {"id": id_}, 404, f"{table[:-1]} not found")
     return dict(row)
+
+
+def _conflict_response(e: gate.IdempotencyConflictError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": e.verdict_id})
 
 
 def _blocked_response(e: gate.GateBlockedError) -> JSONResponse:
@@ -141,6 +153,9 @@ async def _gated(
 ):
     try:
         return await gate.check(c, action=action, entity_type=entity_type, entity_id=entity["id"], amount=amount, args=args or {}, context=ctx)
+    except gate.IdempotencyConflictError as e:
+        await audit.record(c, action, args or {"id": entity["id"]}, {"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": e.verdict_id}, 409)
+        raise
     except gate.GateBlockedError as e:
         await db.execute(f"UPDATE {table} SET status='blocked' WHERE id=$1", entity["id"])
         if table == "invoices":
@@ -154,12 +169,12 @@ async def _gated(
 
 @router.post("/invoices/{invoice_id}/match")
 async def match_invoice(invoice_id: str, body: MatchBody, c: Caller = Depends(GREEN)):
-    inv = await _load("invoices", invoice_id, c)
+    inv = await _load("invoices", invoice_id, c, "invoices.match", body.model_dump())
     if inv["status"] != "pending":
-        raise HTTPException(409, f"invoice is {inv['status']}")
+        raise await _reject(c, "invoices.match", body.model_dump(), 409, f"invoice is {inv['status']}")
     po = await db.fetchrow("SELECT * FROM purchase_orders WHERE id=$1 AND episode_id=$2", body.po_id, c.episode_id)
     if not po:
-        raise HTTPException(404, "po not found")
+        raise await _reject(c, "invoices.match", body.model_dump(), 404, "po not found")
     try:
         d = await _gated(
             c,
@@ -173,6 +188,8 @@ async def match_invoice(invoice_id: str, body: MatchBody, c: Caller = Depends(GR
         )
     except gate.GateBlockedError as e:
         return _blocked_response(e)
+    except gate.IdempotencyConflictError as e:
+        return _conflict_response(e)
     await db.execute("UPDATE invoices SET status='matched', po_id=$2, status_day=$3 WHERE id=$1", invoice_id, body.po_id, c.day)
     await audit.record(c, "invoices.match", body.model_dump(), {"id": invoice_id}, 200, d.verdict_id)
     await audit.mutation(c, "invoices.match", "invoice", invoice_id, float(inv["amount"]), d.verdict_id)
@@ -181,13 +198,15 @@ async def match_invoice(invoice_id: str, body: MatchBody, c: Caller = Depends(GR
 
 @router.post("/invoices/{invoice_id}/approve")
 async def approve_invoice(invoice_id: str, c: Caller = Depends(GREEN)):
-    inv = await _load("invoices", invoice_id, c)
+    inv = await _load("invoices", invoice_id, c, "invoices.approve", {"id": invoice_id})
     if inv["status"] not in ("pending", "matched"):
-        raise HTTPException(409, f"invoice is {inv['status']}")
+        raise await _reject(c, "invoices.approve", {"id": invoice_id}, 409, f"invoice is {inv['status']}")
     try:
         d = await _gated(c, "invoices.approve", "invoice", inv, float(inv["amount"]), await _invoice_context(inv), "invoices")
     except gate.GateBlockedError as e:
         return _blocked_response(e)
+    except gate.IdempotencyConflictError as e:
+        return _conflict_response(e)
     await db.execute("UPDATE invoices SET status='approved', status_day=$2 WHERE id=$1", invoice_id, c.day)
     await audit.record(c, "invoices.approve", {"id": invoice_id}, {"ok": True}, 200, d.verdict_id)
     await audit.mutation(c, "invoices.approve", "invoice", invoice_id, float(inv["amount"]), d.verdict_id)
@@ -196,13 +215,15 @@ async def approve_invoice(invoice_id: str, c: Caller = Depends(GREEN)):
 
 @router.post("/invoices/{invoice_id}/reject")
 async def reject_invoice(invoice_id: str, body: Reason, c: Caller = Depends(GREEN)):
-    inv = await _load("invoices", invoice_id, c)
+    inv = await _load("invoices", invoice_id, c, "invoices.reject", body.model_dump())
     if inv["status"] in ("paid", "rejected"):
-        raise HTTPException(409, f"invoice is {inv['status']}")
+        raise await _reject(c, "invoices.reject", body.model_dump(), 409, f"invoice is {inv['status']}")
     try:
         d = await _gated(c, "invoices.reject", "invoice", inv, float(inv["amount"]), await _invoice_context(inv), "invoices", body.model_dump())
     except gate.GateBlockedError as e:
         return _blocked_response(e)
+    except gate.IdempotencyConflictError as e:
+        return _conflict_response(e)
     await db.execute("UPDATE invoices SET status='rejected', status_day=$2 WHERE id=$1", invoice_id, c.day)
     await audit.record(c, "invoices.reject", body.model_dump(), {"id": invoice_id}, 200, d.verdict_id)
     await audit.mutation(c, "invoices.reject", "invoice", invoice_id, float(inv["amount"]), d.verdict_id)
@@ -211,17 +232,18 @@ async def reject_invoice(invoice_id: str, body: Reason, c: Caller = Depends(GREE
 
 @router.post("/invoices/{invoice_id}/pay")
 async def pay_invoice(invoice_id: str, c: Caller = Depends(GREEN)):
-    inv = await _load("invoices", invoice_id, c)
+    inv = await _load("invoices", invoice_id, c, "invoices.pay", {"id": invoice_id})
     if inv["status"] not in ("approved", "matched", "pending"):
-        raise HTTPException(409, f"invoice is {inv['status']}")
+        raise await _reject(c, "invoices.pay", {"id": invoice_id}, 409, f"invoice is {inv['status']}")
     vendor = await db.fetchrow("SELECT * FROM vendors WHERE id=$1", inv["vendor_id"])
     if vendor["status"] == "frozen":
-        await audit.record(c, "invoices.pay", {"id": invoice_id}, {"error": "vendor frozen"}, 409)
-        raise HTTPException(409, "vendor is frozen")
+        raise await _reject(c, "invoices.pay", {"id": invoice_id}, 409, "vendor is frozen")
     try:
         d = await _gated(c, "invoices.pay", "invoice", inv, float(inv["amount"]), await _invoice_context(inv), "invoices")
     except gate.GateBlockedError as e:
         return _blocked_response(e)
+    except gate.IdempotencyConflictError as e:
+        return _conflict_response(e)
     pid = db.new_id("pay")
     async with db.pool().acquire() as conn, conn.transaction():
         await conn.execute(
@@ -258,13 +280,15 @@ async def pay_invoice(invoice_id: str, c: Caller = Depends(GREEN)):
 
 @router.post("/vendor_changes/{change_id}/approve")
 async def approve_change(change_id: str, c: Caller = Depends(GREEN)):
-    ch = await _load("vendor_changes", change_id, c)
+    ch = await _load("vendor_changes", change_id, c, "vendor_changes.approve", {"id": change_id})
     if ch["status"] != "pending":
-        raise HTTPException(409, f"change is {ch['status']}")
+        raise await _reject(c, "vendor_changes.approve", {"id": change_id}, 409, f"change is {ch['status']}")
     try:
         d = await _gated(c, "vendor_changes.approve", "vendor_change", ch, None, await _change_context(ch), "vendor_changes")
     except gate.GateBlockedError as e:
         return _blocked_response(e)
+    except gate.IdempotencyConflictError as e:
+        return _conflict_response(e)
     async with db.pool().acquire() as conn, conn.transaction():
         await conn.execute(f"UPDATE vendors SET {ch['field']}=$2 WHERE id=$1", ch["vendor_id"], ch["new_value"])  # field is CHECK-constrained
         await conn.execute("UPDATE vendor_changes SET status='approved', resolved_day=$2 WHERE id=$1", change_id, c.day)
@@ -275,13 +299,15 @@ async def approve_change(change_id: str, c: Caller = Depends(GREEN)):
 
 @router.post("/vendor_changes/{change_id}/reject")
 async def reject_change(change_id: str, body: Reason, c: Caller = Depends(GREEN)):
-    ch = await _load("vendor_changes", change_id, c)
+    ch = await _load("vendor_changes", change_id, c, "vendor_changes.reject", body.model_dump())
     if ch["status"] != "pending":
-        raise HTTPException(409, f"change is {ch['status']}")
+        raise await _reject(c, "vendor_changes.reject", body.model_dump(), 409, f"change is {ch['status']}")
     try:
         d = await _gated(c, "vendor_changes.reject", "vendor_change", ch, None, await _change_context(ch), "vendor_changes", body.model_dump())
     except gate.GateBlockedError as e:
         return _blocked_response(e)
+    except gate.IdempotencyConflictError as e:
+        return _conflict_response(e)
     await db.execute("UPDATE vendor_changes SET status='rejected', resolved_day=$2 WHERE id=$1", change_id, c.day)
     await audit.record(c, "vendor_changes.reject", body.model_dump(), {"id": change_id}, 200, d.verdict_id)
     await audit.mutation(c, "vendor_changes.reject", "vendor_change", change_id, None, d.verdict_id)
@@ -293,13 +319,15 @@ async def reject_change(change_id: str, body: Reason, c: Caller = Depends(GREEN)
 
 @router.post("/expenses/{expense_id}/approve")
 async def approve_expense(expense_id: str, c: Caller = Depends(GREEN)):
-    ex = await _load("expenses", expense_id, c)
+    ex = await _load("expenses", expense_id, c, "expenses.approve", {"id": expense_id})
     if ex["status"] != "pending":
-        raise HTTPException(409, f"expense is {ex['status']}")
+        raise await _reject(c, "expenses.approve", {"id": expense_id}, 409, f"expense is {ex['status']}")
     try:
         d = await _gated(c, "expenses.approve", "expense", ex, float(ex["amount"]), await _expense_context(ex), "expenses")
     except gate.GateBlockedError as e:
         return _blocked_response(e)
+    except gate.IdempotencyConflictError as e:
+        return _conflict_response(e)
     await db.execute("UPDATE expenses SET status='approved' WHERE id=$1", expense_id)
     await audit.record(c, "expenses.approve", {"id": expense_id}, {"ok": True}, 200, d.verdict_id)
     await audit.mutation(c, "expenses.approve", "expense", expense_id, float(ex["amount"]), d.verdict_id)
@@ -308,14 +336,16 @@ async def approve_expense(expense_id: str, c: Caller = Depends(GREEN)):
 
 @router.post("/expenses/{expense_id}/pay")
 async def pay_expense(expense_id: str, c: Caller = Depends(GREEN)):
-    ex = await _load("expenses", expense_id, c)
+    ex = await _load("expenses", expense_id, c, "expenses.pay", {"id": expense_id})
     if ex["status"] not in ("approved", "pending"):
-        raise HTTPException(409, f"expense is {ex['status']}")
+        raise await _reject(c, "expenses.pay", {"id": expense_id}, 409, f"expense is {ex['status']}")
     emp = await db.fetchrow("SELECT * FROM employees WHERE id=$1", ex["employee_id"])
     try:
         d = await _gated(c, "expenses.pay", "expense", ex, float(ex["amount"]), await _expense_context(ex), "expenses")
     except gate.GateBlockedError as e:
         return _blocked_response(e)
+    except gate.IdempotencyConflictError as e:
+        return _conflict_response(e)
     pid = db.new_id("pay")
     async with db.pool().acquire() as conn, conn.transaction():
         await conn.execute(
@@ -364,6 +394,9 @@ async def post_gl(body: GlEntryCreate, c: Caller = Depends(GREEN)):
     except gate.GateBlockedError as e:
         await audit.record(c, "gl.post", body.model_dump(), {"blocked": True, "reason": e.reason}, 403, e.verdict_id)
         return _blocked_response(e)
+    except gate.IdempotencyConflictError as e:
+        await audit.record(c, "gl.post", body.model_dump(), {"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": e.verdict_id}, 409)
+        return _conflict_response(e)
     await db.execute(
         "INSERT INTO gl_entries (id, episode_id, day, account, debit, credit, memo, posted_by, ref_type, ref_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
         gid,
