@@ -1,0 +1,1 @@
+- 2026-10-24T21:27Z · Ad · red: keep red's live turn alive when playbook I/O fails (guarded read in build_prompt, inspect_books returns books with lineage.error, keyless falls back to plain rotation, failed != caught without a detection/control); keyless 2-gen e2e: red converged on duplicate_invoice, extracted 7.8k -> 13.8k; next: merge, then recorded prod lineage; blocked: none
