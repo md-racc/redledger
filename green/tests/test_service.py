@@ -3,6 +3,7 @@
 import asyncio
 import builtins
 import json
+import threading
 
 import httpx
 import pytest
@@ -261,25 +262,84 @@ async def test_sequential_episode_context_isolation(service, book):
 
 
 async def test_overlapping_http_turn_is_rejected_without_starting_another_clerk(service, book):
-    entered, release = asyncio.Event(), asyncio.Event()
+    entered, release = threading.Event(), threading.Event()
 
     async def paused_read(request):
         if request.method == "GET" and request.url.path == "/api/vendor_changes":
             entered.set()
-            await release.wait()
+            assert await asyncio.to_thread(release.wait, 5)
         return book.respond(request)
 
     # Replace the fixture's broad BF handler rather than registering a shadowed later route.
     respx.routes[0].mock(side_effect=paused_read)
     task = asyncio.create_task(turn(service))
     try:
-        await asyncio.wait_for(entered.wait(), timeout=5)
+        assert await asyncio.to_thread(entered.wait, 5)
         before = len(respx.calls)
         response = await service.post("/turn", json=TURN, headers={"Authorization": "Bearer test-agent"})
         assert response.status_code == 409 and response.json() == {"detail": "turn already in progress"}
+        health = await asyncio.wait_for(service.get("/health"), timeout=1)
+        assert health.status_code == 200 and health.json()["droid_ok"] is False
         assert len(respx.calls) == before and not book.writes
     finally:
         release.set()
         await task
     clean_context()
     assert len(narration(book)[0]) == 3
+
+
+async def test_keyless_http_io_and_clerk_share_one_private_turn_loop(service, book):
+    service_owner = (threading.get_ident(), asyncio.get_running_loop())
+    owners, contexts, clients = [], [], []
+
+    def observed(request):
+        owners.append((threading.get_ident(), asyncio.get_running_loop()))
+        if request.url.path != "/api/events":
+            contexts.append((id(ctx.ledger()), id(ctx.emitter()), id(state())))
+            clients.append(ctx.ledger().c)
+            assert ctx.turn().episode_id == "ep" and ctx.turn().day == 3
+        return book.respond(request)
+
+    respx.routes[0].mock(side_effect=observed)
+    book.add("invoices", invoice("i"))
+    assert "paid $1200.00" in await turn(service)
+    assert GreenAgent.turn_loop_dry_run is True
+    assert owners and len(set(owners)) == 1
+    owner = owners[0]
+    assert owner[0] != service_owner[0] and owner[1] is not service_owner[1]
+    assert contexts and len(set(contexts)) == 1
+    assert clients and all(client.is_closed for client in clients)
+    assert book.writes == ["invoices/i/approve", "invoices/i/pay"]
+    narration(book)
+    clean_context()
+
+
+async def test_cancelled_http_turn_releases_clerk_and_next_turn_recovers(service, book):
+    entered, release = threading.Event(), threading.Event()
+    reads = []
+
+    async def paused_read(request):
+        if request.method == "GET" and request.url.path == "/api/vendor_changes":
+            reads.append((ctx.turn().episode_id, id(state())))
+            entered.set()
+            assert await asyncio.to_thread(release.wait, 5)
+        return book.respond(request)
+
+    respx.routes[0].mock(side_effect=paused_read)
+    task = asyncio.create_task(turn(service))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        release.set()
+        if not task.done():
+            await task
+    clean_context()
+    assert not book.writes
+    respx.routes[0].mock(side_effect=book.respond)
+    assert "paid $0.00" in await turn(service, episode_id="after-cancel", day=4)
+    assert len(reads) == 1 and reads[0][0] == "ep"
+    assert not book.writes
+    clean_context()

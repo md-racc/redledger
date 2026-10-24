@@ -21,6 +21,7 @@ PREREQUISITE = (
 class GreenAgent(DroidAgent):
     name = "green"
     autonomy = "off"  # Do not change without an SDK experiment and shared integration.
+    turn_loop_dry_run = True
     system_prompt = (Path(__file__).parent / "prompts" / "system.md").read_text()
 
     async def health(self) -> dict[str, Any]:
