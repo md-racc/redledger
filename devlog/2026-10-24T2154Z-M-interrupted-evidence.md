@@ -1,0 +1,1 @@
+- 2026-10-24T21:54Z · M · interrupted real-Ledger acceptance captured live with gpt-5.4-mini: kill on post_report send, receipt unknown, zero executions, replay 409, no blind retry

@@ -342,6 +342,27 @@ to the harness bug above. The receipt semantics it would prove (cancel/timeout/5
 covered by the offline invocation/receipt suite (`tests/test_shared_invocation.py` and
 friends). A live interrupted capture is still outstanding.
 
+### Interrupted path: captured live (2026-10-24, `ep_677e52f4197f`, 2,317 Factory credits)
+
+On Ad's suggestion (the gemini startup stalls match prod Finding #118), the interrupted
+scenario ran with `DROID_MODEL=gpt-5.4-mini`. The model reached `post_report` quickly in both
+attempts (no stalls, no deadline misses — the whole passing run took 18.4 s wall, versus
+170 s budget exhaustion on gemini-3.8-flash). Battlefield was SIGKILLed as the report write
+was being sent, then restarted. Result, `acceptance_passed:true`, no failure codes:
+
+- `interrupted_write_kind: post_report`, `interrupted_receipt_state: "unknown"`,
+  `interrupted_commit_count: 0` — the write never landed; the receipt says so truthfully.
+- Same-key replay after restart: HTTP **409**, `replay_second_commit:false` — no blind retry,
+  no duplicate execution. `receipt_states: ["report:unknown"]`, episode left `paused`.
+- Narration pairs matched for the 4 completed calls (the killed call's pair legitimately
+  absent); `/gate` healthy throughout (max 69.19 ms over 275 samples).
+- No CRS or provider access; `ready:false`, `runtime_guard_changed:false` as always.
+
+Run-note: the harness's battlefield restart inherits its environment; `DATABASE_URL` must be
+exported in the invoking shell (the local-stack env file deliberately does not carry it).
+Combined with the happy path above, both real-Ledger acceptance scenarios are now proven:
+commit/receipt binding, one event pair per call, no duplicate execution, truthful `unknown`
+receipts under interruption, and concurrent `/gate` far inside its 8-second budget.
 ### Readiness-relevant findings for M/Ad
 
 1. **Audit budget cap vs model latency.** `audit/agent.py` computes
