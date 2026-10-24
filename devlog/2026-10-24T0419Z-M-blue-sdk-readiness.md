@@ -1,0 +1,1 @@
+- 2026-10-24T04:19Z · M · blue: add offline readiness/health checks, refresh for 78a3b25 copied Blue context and local/unverified shared invocation; next: independent review and Blue integration; blocked: owner-loop safety, narration/identity integration and exact session IDs (blue/SDK-READINESS.md)
