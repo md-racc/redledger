@@ -1,0 +1,1 @@
+- 2026-10-24T21:42Z · Ad · contracts: at most one active run per battlefield (409 another run is active); battlefield retries agent busy 409s ≤10 s; next: #122 implements it; blocked: none

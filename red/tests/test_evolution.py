@@ -102,3 +102,16 @@ def test_ended_review_can_disclose_unresolved_but_never_pending_outcomes():
     assert fold({}, [attack(outcome="pending", resolved_day=None)], 0, "ep", ended=True) is None
     for options in ({}, {"lineage": {}}, {"lineage": {"id": "x", "generation": True, "playbook_version": 0}}):
         assert lineage_info(options) is None
+
+
+def test_own_failure_is_not_a_catch_and_ranks_after_untried():
+    failed = fold({}, [attack(outcome="failed", detected_day=None)], 0, "ep")
+    summary = view(failed, 0)["schemes"][FIRST]
+    assert summary["caught"] is False
+    order = view(failed, 0)["preference"]
+    untried = [s for s in SCHEMES if s != FIRST]
+    assert order.index(FIRST) > max(order.index(s) for s in untried)  # after every untried scheme
+    blocked = fold({}, [attack(outcome="failed", detected_day=None, controls=[{"kind": "verdict", "verdict": "block"}])], 0, "ep")
+    assert view(blocked, 0)["schemes"][FIRST]["caught"] is True
+    allowed = fold({}, [attack(outcome="failed", detected_day=None, controls=[{"kind": "verdict", "verdict": "allow"}])], 0, "ep")
+    assert view(allowed, 0)["schemes"][FIRST]["caught"] is False

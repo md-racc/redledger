@@ -340,9 +340,14 @@ elif OP == "evolve":
         config["reveal_days"] = int(reveal_days)
     if reveal_gens.strip():
         config["reveal_generations"] = int(reveal_gens)
+    # checked first so a refused start doesn't leave an orphaned `created` lineage behind; battlefield
+    # also refuses (409 "another run is active"), this just says why before anything is created
     busy = [x.get("id") for x in call("GET", "/lineages") if x.get("status") == "running"]
-    if busy:  # checked first so a refused start doesn't leave an orphaned `created` lineage behind
-        fail("lineage %s is running; one runs at a time (wait for it, or prod-lineage-pause it)" % ", ".join(busy), 3)
+    if busy:
+        fail("lineage %s is running; one run at a time (wait for it, or prod-lineage-pause it)" % ", ".join(busy), 3)
+    eps = [x.get("id") for x in call("GET", "/episodes") if x.get("status") == "running" and not str(x.get("id", "")).startswith("replay_")]
+    if eps:
+        fail("episode %s is running; one run at a time (wait for it, or make prod-pause EP=%s)" % (", ".join(eps), eps[0]), 3)
     ln = call("POST", "/lineages", {"base_seed": int(seed), "config": config})
     err("created %s: generations=%s days=%s mode=%s base_seed=%s max_credits=%s" % (ln["id"], gens, days, mode, ln.get("base_seed"), max_credits))
     call("POST", "/lineages/%s/start" % seg(ln["id"]))  # on failure the lineage stays `created`; it can be started later
