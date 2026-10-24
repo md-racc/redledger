@@ -62,20 +62,25 @@ async def test_audit_turn_overlap_409_gate_stays_responsive(service, gate_reques
     body = turn().model_dump()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://blue", headers={"Authorization": "Bearer test-agent"}) as client:
         running = asyncio.create_task(client.post(first, json=body))
-        # Wait for a real synchronization boundary, not a timing assumption.
-        for _ in range(100):
-            if ledger.read_active:
-                break
-            await asyncio.sleep(0)
-        assert ledger.read_active
-        assert (await client.post(second, json=body)).status_code == 409
-        started = time.perf_counter()
-        gate = await client.post("/gate", json=gate_request().model_dump())
-        assert gate.status_code == 200 and gate.json()["verdict"] == "allow"
-        assert time.perf_counter() - started < 0.05
-        ledger.read_block.set()
-        assert (await running).status_code == 200
-        assert not agent.audit_lock.locked()
+        try:
+            # Yield real time for a turn thread as well as service-loop tasks to reach the boundary.
+            async with asyncio.timeout(2):
+                while not ledger.read_active:
+                    await asyncio.sleep(0.001)
+            assert ledger.read_active
+            assert (await client.post(second, json=body)).status_code == 409
+            started = time.perf_counter()
+            gate = await client.post("/gate", json=gate_request().model_dump())
+            assert gate.status_code == 200 and gate.json()["verdict"] == "allow"
+            assert time.perf_counter() - started < 0.05
+            ledger.read_block.set()
+            assert (await asyncio.wait_for(running, 3)).status_code == 200
+            assert not agent.audit_lock.locked()
+        finally:
+            ledger.read_block.set()
+            if not running.done():
+                running.cancel()
+            await asyncio.wait_for(asyncio.gather(running, return_exceptions=True), 3)
 
 
 async def test_partial_audit_response_does_not_fabricate_report_success(service):
