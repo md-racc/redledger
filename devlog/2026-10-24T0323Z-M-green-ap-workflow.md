@@ -1,0 +1,1 @@
+- 2026-10-24T03:23Z · M · green: activate decorated AP workflow with threshold/backlog recovery; migrate #13 log to fragment and address review dispatch validation; next: integrated live mirror after shared preflight/identity support; blocked: Ad/Blue shared protocol
