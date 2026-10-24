@@ -1,6 +1,6 @@
 # Green SDK acceptance proposal
 
-Status: **not executed or authorized**. Canonical stack: #93 → #94 only.
+Status: **SDK execution not authorized or performed**. Canonical #93 → #94 is merged.
 OFF, explicit strict identity, and the production pre-SDK guard stay in place.
 Ad owns merging, deployment, seed/episode setup and the three-day all-real shadow checkpoint.
 No parallel handler integration, CRS/provider requests or Bright Data use.
@@ -53,3 +53,21 @@ Record exact SHAs/versions/model, row outcome, sanitized IDs/counts and credits;
 inconclusive when any link is absent. No result is currently claimed for this matrix.
 Only a complete reviewed matrix can support a separate guard-lift request. It cannot authorize
 deployment or replace Ad's three-day all-three-real-agent shadow evidence for Phase C.
+
+## Harness-only development
+
+The separate manual driver is `tests/sdk_acceptance_harness.py`; it is not a pytest entrypoint.
+This milestone authorizes building it and running fake-only regression tests, not SDK Sessions.
+Inspect `--help` without opening a Session. Default invocation must refuse before SDK/auth access.
+Future opt-in execution is one selected Stage A case, never an automatic matrix or retry loop.
+Operator approval/spend-cap flags are attestations, not verification of an actual account cap;
+the approved operator must track cumulative attempts and credits across invocations.
+Missing, duplicate, wrong-ID or unsuccessful evidence cannot pass; an unobservable restriction
+negative control remains inconclusive rather than claiming enforcement from absent execution.
+The restriction case currently refuses before SDK access; a future observable refusal receipt
+is required before that row can spend credits or qualify restriction enforcement.
+No real-Ledger Stage B or production-guard change is part of this harness milestone.
+
+Keyless verification from the checkout root:
+`UV_OFFLINE=1 UV_NO_SYNC=1 UV_NO_ENV_FILE=1 UV_PROJECT_ENVIRONMENT=/tmp/redledger-green-tests PYTHONPATH="$PWD/green:$PWD/agentkit" make lint test-green TOKEN=test-operator`
+These checks establish harness behavior with fakes only, not any acceptance-matrix result.

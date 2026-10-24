@@ -123,10 +123,21 @@ async def test_granularity_never_partially_prepares_batch(monkeypatch, batch):
 
 
 async def test_restriction_empty_trace_is_inconclusive(monkeypatch):
-    install_fake(monkeypatch)
+    observations = install_fake(monkeypatch)
     e = await h.run_case("restriction")
     assert not e["passed"] and e["failure_codes"] == ["restriction_inconclusive_no_observable_sdk_refusal"]
     assert not e["calls"] and not e["writes"]
+    assert not observations  # No billable Session for a case that cannot establish acceptance.
+
+
+async def test_parallel_evidence_correlates_by_id_not_arrival_order(monkeypatch):
+    install_fake(monkeypatch)
+    e = await h.run_case("granularity")
+    for field in ("calls", "results", "preparations"):
+        e[field].reverse()
+    assert not h.failure_codes(e)
+    e["preparations"][0] = e["preparations"][1].copy()
+    assert "preparation_binding" in h.failure_codes(e)
 
 
 @pytest.mark.parametrize("fault", ["open", "listing", "timeout", "usage", "nan", "failed", "duplicate"])

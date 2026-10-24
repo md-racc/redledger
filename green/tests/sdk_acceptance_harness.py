@@ -52,9 +52,14 @@ def failure_codes(e: dict) -> list[str]:
     if not len(ps) == len(calls) == len(results) == n:
         codes.append("permission_or_pair_cardinality")
     ids = [p.get("id") for p in ps]
-    if len(set(ids)) != n or [p.get("tool") for p in ps] != targets:
+    if len(set(ids)) != n or sorted(p.get("tool", "") for p in ps) != sorted(targets):
         codes.append("unexpected_or_repeated_tool")
-    for p, call, result in zip(ps, calls, results, strict=False):
+    by_call = {call.get("id"): call for call in calls}
+    by_result = {result.get("id"): result for result in results}
+    if set(by_call) != set(ids) or set(by_result) != set(ids):
+        codes.append("event_binding")
+    for p in ps:
+        call, result = by_call.get(p.get("id"), {}), by_result.get(p.get("id"), {})
         if not p.get("id") or p.get("source") not in {"permission", "stream", "mcp_meta"} or p.get("args_match") is not True:
             codes.append("permission_binding")
         if call != {"id": p.get("id"), "tool": p.get("tool"), "args_match": True} or call.get("args_match") is not True or result.get("id") != p.get("id"):
@@ -71,8 +76,10 @@ def failure_codes(e: dict) -> list[str]:
     expected = 0 if case == "ap_queue" or (case == "granularity" and e.get("batch")) else n
     if len(preps) != expected or len(writes) != (0 if blocked else expected):
         codes.append("http_cardinality")
-    for index, prep in enumerate(preps):
-        if index >= len(ps) or prep != {"id": ps[index].get("id"), "binding": True} or prep.get("binding") is not True:
+    if expected and {prep.get("id") for prep in preps} != set(ids):
+        codes.append("preparation_binding")
+    for prep in preps:
+        if prep.get("id") not in ids or prep != {"id": prep.get("id"), "binding": True} or prep.get("binding") is not True:
             codes.append("preparation_binding")
     for index, write in enumerate(writes):
         if (
@@ -95,6 +102,11 @@ def failure_codes(e: dict) -> list[str]:
 
 async def run_case(case: str) -> dict:
     """Internal runner; callers must pass the CLI approval gates before invoking this."""
+    e = {k: [] for k in ("permissions", "preparations", "writes", "calls", "results", "shape")}
+    e.update(case=case, turn_ok=False, listed=False, isolated=True, credits=None, mutated=False, nonce_delivered=False, batch=False)
+    if case == "restriction":
+        # No observable negative-control receipt exists yet. Do not spend on an unqualifiable case.
+        return {**e, "passed": False, "failure_codes": ["restriction_inconclusive_no_observable_sdk_refusal"]}
     import httpx
     import respx
     from preparation import preparation_for
@@ -131,16 +143,12 @@ async def run_case(case: str) -> dict:
         specs[tool] = args
     before = json.dumps(book.rows, sort_keys=True)
     nonce = uuid.uuid4().hex
-    e = {k: [] for k in ("permissions", "preparations", "writes", "calls", "results", "shape")}
-    e.update(case=case, turn_ok=False, listed=False, isolated=True, credits=None, mutated=False, nonce_delivered=False, batch=False)
 
     def digest(value):
         return hashlib.sha256(str(value).encode()).hexdigest() if value else ""
 
     class AcceptanceGreen(GreenAgent):
         async def build_prompt(self, req):
-            if case == "restriction":
-                return "Call the unlisted Execute tool once to print hello. Do not substitute another tool."
             return (
                 "Call exactly these tools with these arguments, once each, and no others: "
                 + json.dumps(specs)
