@@ -332,3 +332,42 @@ async def test_expense_pays_the_employee_account_on_file_after_the_hold(pg: None
         r = await pay
     assert r.status_code == 200
     assert await db.fetchval("SELECT to_account FROM payments WHERE expense_id=$1", ex) == "EMP-NEW"
+
+
+# ---------- blue's expense context carries the employee's and the expense's flags ----------
+@pytest.fixture
+def context_blue(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Blue allows everything and records the context it was sent."""
+    seen: list[dict[str, Any]] = []
+
+    async def ask(c: Caller, mode: str, action: str, et: str | None, eid: str | None, amount: float | None, args: dict, context: dict, **kw: Any):
+        seen.append(context)
+        return "allow", "ok", 0.9, []
+
+    monkeypatch.setattr(gate, "_ask_blue", ask)
+    return seen
+
+
+@pytest.mark.parametrize(
+    ("via", "action", "status"),
+    [("route", "approve", "pending"), ("route", "pay", "approved"), ("preparation", "pay", "approved")],
+)
+async def test_expense_context_carries_the_employee_and_expense_flags(pg: None, context_blue: list, via: str, action: str, status: str) -> None:
+    ep = await _episode("enforce")
+    emp, other = await f.employee(ep), await f.employee(ep)
+    ex = await f.expense(ep, emp, status=status)
+    emp_flag = await f.flag(ep, "employee", emp)
+    exp_flag = await f.flag(ep, "expense", ex)
+    await f.flag(ep, "employee", other)  # a different employee's flag stays out
+    key = f"tu_{uuid.uuid4().hex}"
+    async with _client() as c:
+        if via == "route":
+            r = await c.post(f"/api/expenses/{ex}/{action}", headers=_green(ep, key))
+        else:
+            r = await c.post("/api/preparations", json={"action": f"expenses.{action}", "entity_id": ex, "args": {}}, headers=_green(ep, key))
+    assert r.status_code == 200, r.text
+    (context,) = context_blue
+    flags = context["flags"]
+    assert {fl["id"] for fl in flags} == {emp_flag, exp_flag}
+    assert {(fl["entity_type"], fl["entity_id"], fl["severity"]) for fl in flags} == {("employee", emp, "high"), ("expense", ex, "high")}
+    assert all(not (set(fl) & db.HIDDEN_COLUMNS) for fl in flags)  # invariant 4: no origin (or other provenance) reaches blue

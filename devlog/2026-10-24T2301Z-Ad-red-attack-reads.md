@@ -1,0 +1,1 @@
+- 2026-10-24T23:01Z · Ad · contracts: red's GET /attacks hides outcome/detection until an attack is revealed (#137 §1); next: battlefield enforcement; blocked: none
