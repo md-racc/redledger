@@ -10,7 +10,7 @@ info:
       - `operatorBearer` (`OPERATOR_TOKEN`): required on every request without `X-Agent`.
         Held by battlefield, the frontend *server* (never the browser), Makefile/curl, the owner.
     Wrong token for the role → 401: `OPERATOR_TOKEN` + `X-Agent` → 401; another agent's token for
-    the claimed `X-Agent` → 401 (audited); any agent token without `X-Agent` → 401. A correctly authenticated agent calling a route its role may not use → 403
+    the claimed `X-Agent` → 401 (audited, operator-only, when the token belongs to a known caller; an unknown token is only logged); any agent token without `X-Agent` → 401. A correctly authenticated agent calling a route its role may not use → 403
     (e.g. any agent on `GET /events` or a control-plane route).
     Transition: each `AGENT_TOKEN_<A>` falls back to the shared `AGENT_TOKEN`, then `INTERNAL_TOKEN`
     (battlefield warns that per-agent separation is off); `OPERATOR_TOKEN` falls back to
