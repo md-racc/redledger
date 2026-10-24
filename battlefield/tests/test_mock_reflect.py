@@ -33,10 +33,22 @@ def test_red_counts_each_attack_once_and_is_deterministic() -> None:
 
 
 def test_red_never_drops_every_scheme() -> None:
-    items = [atk(f"{sid}{i}", sid, "blocked") for sid in mock.SCHEME_IDS for i in range(2)]
+    items = [atk(f"{sid}{i}", sid, "blocked") for sid in mock.SCHEME_IDS for i in range(len(mock.LADDER[sid]) + 1)]
     pb, _ = mock.red_adapt({}, items)
     assert len(pb["dropped"]) == len(mock.SCHEME_IDS) - 1
-    assert {mock.red_choose(pb, d) for d in range(4)} == {mock.SCHEME_IDS[0]}
+    assert {mock.red_choose(pb, d) for d in range(4)} == {"bank_swap"}  # the least-caught one (shortest ladder)
+
+
+def test_a_caught_scheme_climbs_its_evasion_ladder() -> None:
+    assert mock.red_params({}, "ghost_vendor") == {"amount": 4920.0}  # step 0 = the original mock attack
+    pb, why = mock.red_adapt({}, [atk("a1", "ghost_vendor", "blocked")])
+    assert mock.red_params(pb, "ghost_vendor") == {"amount": 2400.0} and "ghost_vendor" in why and pb["dropped"] == []
+    pb, _ = mock.red_adapt(pb, [atk("a2", "ghost_vendor", "flagged"), atk("a3", "threshold_split", "blocked")])
+    assert mock.red_params(pb, "ghost_vendor") == {"amount": 950.0} and mock.red_params(pb, "threshold_split") == {"parts": 5}
+    top, _ = mock.red_adapt(pb, [atk("a4", "ghost_vendor", "blocked"), atk("a5", "ghost_vendor", "blocked")])
+    assert top["dropped"] == ["ghost_vendor"]  # two catches at the top of the ladder, never paid
+    kept, _ = mock.red_adapt(pb, [atk("a6", "ghost_vendor", "extracted"), atk("a7", "ghost_vendor", "blocked"), atk("a8", "ghost_vendor", "blocked")])
+    assert kept["dropped"] == [] and mock.red_params(kept, "ghost_vendor") == {"amount": 950.0}  # it paid once: keep trying
 
 
 def test_empty_playbook_is_the_plain_rotation() -> None:
@@ -51,6 +63,32 @@ def test_blue_learns_from_misses_only() -> None:
     assert pb["learned"] == ["learned:near_threshold_wide", "learned:young_vendor_any_amount"] and pb["near_band"] == 0.9
     again, _ = mock.blue_adapt(pb, [atk("a2", "threshold_split", "extracted")])
     assert again == pb  # a2 already counted: the band does not keep widening
+
+
+def test_blue_counts_a_flagged_extraction_as_a_miss() -> None:
+    flagged = atk("a1", "ghost_vendor", "extracted", caught_by=[{"kind": "flag", "id": "f1", "day": 0}])  # flagged, money left anyway
+    pb, why = mock.blue_adapt({}, [flagged])
+    assert pb["learned"] == ["learned:young_vendor_any_amount"] and "ghost_vendor" in why
+    partial = atk("a2", "duplicate_invoice", "partial", caught_by=[{"kind": "verdict", "id": "v1", "day": 1}])
+    pb, _ = mock.blue_adapt(pb, [partial])
+    assert "learned:duplicate_amount_loose" in pb["learned"]
+
+
+async def test_red_evades_then_blue_learns_and_its_rule_fires(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One evolution cycle with the mocks' own pieces: red climbs to a $950 ghost invoice that the base gate
+    allows; the attack extracts, blue's review counts it as missed, and the learned rule blocks the next one."""
+    red, _ = mock.red_adapt({}, [atk("a1", "ghost_vendor", "blocked"), atk("a2", "ghost_vendor", "blocked")])
+    amount = mock.red_params(red, "ghost_vendor")["amount"]
+    body = _gate_req(amount=amount, context={"vendor": {"created_day": 10}, "invoice": {"invoice_number": "AOS-1010"}})
+    assert (await _gate(monkeypatch, body))["verdict"] == "allow"  # under every static rule
+    blue, _ = mock.blue_adapt({}, [atk("a3", "ghost_vendor", "extracted", caught_by=[{"kind": "flag", "id": "f1", "day": 10}])])
+
+    async def pb(req: Any) -> dict:
+        return blue
+
+    monkeypatch.setattr(mock, "blue_playbook", pb)
+    learned = await _gate(monkeypatch, {**body, "playbook_version": 2})
+    assert learned["verdict"] == "block" and learned["rules_fired"] == ["learned:young_vendor_any_amount"]
 
 
 class FakeLedger:

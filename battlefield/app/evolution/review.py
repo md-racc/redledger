@@ -60,7 +60,7 @@ async def persist(lineage_id: str, generation: int, ep: Any, agent: str, cfg: Li
 
 
 async def build(lineage_id: str, generation: int, ep: Any, agent: str, cfg: LineageConfig) -> dict[str, Any]:
-    items = [{k: v for k, v in it.items() if k != "_revealed_day"} for it in (await debrief.attack_items(ep["id"], -(10**6)))[agent]]
+    items = [debrief.public(it) for it in (await debrief.attack_items(ep["id"], -(10**6)))[agent]]
     if agent in ("blue", "green"):
         items += (await debrief.legit_items(ep["id"]))[agent]
     out: dict[str, Any] = {"generation": generation, "episode_id": ep["id"], "seed": ep["seed"], "score": await score.compute(ep["id"]), "items": items}
