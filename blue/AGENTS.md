@@ -64,8 +64,11 @@ the ambiguous middle, not as a default. Timeout = block, so escalating legit tra
 
 ## Optional integrations (only if cheap)
 
-- **CRS**: identity/fraud check on new vendors and employees from the audit agent. One REST
-  call per new entity; results feed a flag. Put it in `audit/crs.py`, behind `CRS_API_KEY`.
+- **CRS**: employee identity checks in `audit/crs.py`, using sandbox username/password login.
+  Only pinned fictional profiles are allowed. Missing credentials and DRY_RUN return unknown;
+  no sponsor calls occur in the gate. `CRS_USERNAME` / `CRS_PASSWORD` require the companion
+  `battlefield/crs-runtime` PR and human secret setup; `CRS_API_KEY` is unused by this API.
+  See `CRS.md` for prerequisite PRs and remaining live-demo blockers.
 - **Cartesia**: voice callback on bank-account changes. Only if someone has slack.
 
 ## Extension points (grow without a contracts PR)
