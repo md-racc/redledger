@@ -10,7 +10,7 @@ import httpx
 import pytest
 from pydantic import ConfigDict, create_model
 
-from agentkit import make_agent_app
+from agentkit import ctx, make_agent_app
 from audit import readiness, tools
 from audit.agent import AuditAgent
 
@@ -96,7 +96,7 @@ async def test_registry_exception_is_sanitized(monkeypatch):
     assert await readiness.inspect_registry(agent) == {"status": "registry_error", "tools": []}
 
 
-async def test_shared_bridge_loses_blue_context_without_http(monkeypatch):
+async def test_shared_bridge_copies_context_but_does_not_verify_blue_identity(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "send", forbid)
     token = tools.INVOCATION.set("outer-diagnostic-marker")
     try:
@@ -105,14 +105,22 @@ async def test_shared_bridge_loses_blue_context_without_http(monkeypatch):
             "shared_turn_bound": True,
             "shared_ledger_rebound": True,
             "shared_emitter_bound": True,
-            "blue_session_propagated": False,
-            "blue_invocation_propagated": False,
-            "fallback_id_injected": True,
+            "blue_session_propagated": True,
+            "blue_invocation_propagated": True,
+            "blue_tool_lock_shared": True,
+            "worker_on_owner_loop": False,
+            "shared_invocation_bound": True,
+            "shared_invocation_source": "local",
+            "shared_invocation_verified": False,
+            "shared_invocation_id_distinct_from_blue_marker": True,
+            "internal_id_kwarg_injected": False,
+            "shared_narration_pair_recorded": True,
             "owner_heartbeat_during_call": False,
             "owner_heartbeat_after_call": True,
         }
         assert tools.SESSION.get() is None
         assert tools.INVOCATION.get() == "outer-diagnostic-marker"
+        assert ctx.invocation() is None
     finally:
         tools.INVOCATION.reset(token)
 

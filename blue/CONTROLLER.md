@@ -1,7 +1,7 @@
 # Current Blue controller integration handoff
 
-Controller and receipt/compatibility work are merged via #19/#24. This checkpoint starts from
-main `899c133` on isolated `blue/sdk-readiness`; legacy worktrees remain untouched.
+Controller and receipt/compatibility work are merged via #19/#24. This checkpoint includes
+main `78a3b25` (#34 bridge) and `f349b47` (#33 contract) via plain merge; legacy worktrees remain untouched.
 See [SDK-READINESS.md](SDK-READINESS.md) for the offline evidence and remaining Ad handoff.
 
 ## Behavior and deliberate costs
@@ -61,7 +61,7 @@ in-flight keys, new admissions receive 503 rather than premature eviction. Audit
 
 ## Shared compatibility and required follow-ups
 
-Current baseline is `899c133`. Already resolved upstream:
+Merged and validated shared baseline is `78a3b25`. Already resolved upstream:
 - Root uv workspace removal (`fff29f0`) restores normal per-service sync.
 - Explicit attack linkage/scoring fixes are merged (#17/#18); the prior heuristic-only
   scoring handoff is superseded. Red audit rows are hidden server-side (#28); Blue still
@@ -70,14 +70,21 @@ Current baseline is `899c133`. Already resolved upstream:
   resolved agent credential. Blue uses shared constant-time bearer auth, not `OPERATOR_TOKEN`.
 - Shared EventEmitter now supplies UUID4 `X-Tool-Use-Id` on `/events` batches. Shared first-session
   restrictions use `<server>___<tool>` IDs, with prefix-based discovery; they are no longer None.
-  Shared synchronous MCP offload creates a fresh LedgerClient and binds shared ctx in its worker
-  loop. Shared Droid reasoning configuration exists. These are not proof of Blue readiness.
+  Shared synchronous MCP offload creates a fresh LedgerClient, copies Blue contextvars and binds
+  shared ctx/Invocation in its private worker loop. No internal ID keyword is injected now.
+  The registry can correlate SDK permission/stream metadata; the offline probe has no such
+  registration, so its shared invocation is local/unverified. These are not proof of Blue readiness.
+- Contract #33 binds each key to its first action tuple (posted fields for `gl.post`);
+  battlefield returns 409 for different-action reuse. Richer context alone is not another action.
+  Shared multi-write keys use the invocation ID first, then `<id>:<n>`. Blue gate compatibility
+  is an independent review track, not changed or certified by this readiness checkpoint.
 
 Still required:
-1. Offline SDK 0.5.0/MCP 1.30.0 checks now prove all six local schemas reject metadata extras,
-   shared offload loses Blue SESSION/INVOCATION, and its synchronous wait blocks the owner loop.
-   Exact Blue session IDs and authenticated invocation binding remain unverified. Blue's private
-   decorator rejects missing metadata; it is not a verified SDK invocation adapter.
+1. Offline SDK 0.5.0/MCP 1.30.0 checks match all six schemas and reject metadata extras.
+   Shared offload now copies Blue SESSION/INVOCATION, but runs off the owner loop and still
+   blocks its heartbeat. Blue lock/client/receipt safety and integration with shared verified
+   Invocation identity remain unproven. Shared/Blue narration ownership also needs reconciliation.
+   Exact Blue session IDs remain unverified; the copied synthetic marker is not authenticated.
    Live audit collects bounded facts then returns unsuccessful readiness, with **no stream or
    write**, regardless of environment settings. Health reports `droid_ok=false` without probing.
    Keep the guard until Ad resolves the shared bridge and coordinated validation establishes
@@ -87,7 +94,8 @@ Still required:
    Gate lacks pending siblings, so established-vendor splitting is detected post-hoc, not prevented
    before pay. Paid-history context is backend-windowed; older duplicates can be missed.
 3. Human owners must perform future E2E/SDK validation when authorized. No Docker, seeded stack,
-   live provider/model call, deployment, push, PR or merge was performed in this refresh.
+   live provider/model call, deployment, push or PR was performed in this refresh.
+   The orchestrator plain-merged upstream before the readiness refresh; no author integration merge occurred.
    `REVIEW-STACK.md` is historical publication context, not the current SDK-readiness plan.
 
 Collection lives in `audit/snapshot.py`; `audit/evidence.py` derives findings in a worker thread.
@@ -109,7 +117,8 @@ The EventEmitter path emits only; raw source prose stays outside model/tool proj
 ## Validation on the current baseline
 
 Python 3.11.15: **171 passed** (151 merged baseline + 20 readiness cases, no skips).
-Readiness tests cover absent/installed SDK states, schemas/spoof refusal, context loss, truthful
+Readiness tests cover absent/installed SDK states, schemas/spoof refusal, copied Blue context
+versus local/unverified shared invocation, owner-loop blocking, truthful
 health, sanitized output and the unchanged no-stream/no-write live guard.
 All current checkpoint Blue ruff checks/format checks pass. Repository Python ruff checks and
 format checks pass; the frontend dependency baseline is recorded below.

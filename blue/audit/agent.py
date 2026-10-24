@@ -120,14 +120,17 @@ class AuditAgent(DroidAgent):
 
     async def _droid_turn(self, req: TurnRequest, emitter: Any) -> tuple[str, Usage | None]:
         # Shared lifecycle now restricts the first session and offloads synchronous MCP tools.
-        # Exact Blue IDs, worker-thread Blue context and invocation-to-write binding are still
-        # unverified. Never stream or write until those Blue-specific prerequisites are proven.
+        # Shared offload copies Blue context and binds its own Invocation, but owner-loop safety,
+        # Blue invocation/write/narration integration and exact session IDs remain unverified.
+        # Never stream or write until those Blue-specific prerequisites are proven.
         await self._prepare(req)
         session = tools.SESSION.get()
         assert session is not None
-        session.gaps.append("Live audit unavailable: exact Blue tool IDs, worker-thread Blue context and verified invocation binding remain unverified")
+        session.gaps.append(
+            "Live audit unavailable: exact Blue tool IDs, worker-thread Blue context/owner-loop safety and verified invocation binding remain unverified"
+        )
         raise RuntimeError(
-            "Blue live audit unavailable: exact Blue tool IDs, worker-thread Blue context and verified invocation binding remain unverified; no stream or write attempted."
+            "Blue live audit unavailable: exact Blue tool IDs, worker-thread Blue context/owner-loop safety and verified invocation binding remain unverified; no stream or write attempted."
         )
 
     async def dry_run_turn(self, req: TurnRequest) -> str:

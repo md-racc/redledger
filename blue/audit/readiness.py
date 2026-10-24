@@ -21,7 +21,8 @@ from .models import AuditSession, Snapshot
 LIVE_BLOCKERS = (
     "blue_session_ids_unverified",
     "sdk_invocation_binding_unverified",
-    "blue_context_transport_unverified",
+    "blue_owner_loop_safety_unverified",
+    "blue_narration_ownership_unverified",
     "nonblocking_bridge_unverified",
     "live_audit_disabled",
 )
@@ -116,6 +117,7 @@ def _offline_agent() -> Any:
         DRY_RUN=True,
         TURN_TIMEOUT_SEC=21,
         GATE_TIMEOUT_SEC=1,
+        ESCALATION_TIMEOUT_SEC=1,
         HTTP_TIMEOUT_SEC=1,
         LOG_LEVEL="error",
         PORT=0,
@@ -124,35 +126,58 @@ def _offline_agent() -> Any:
     return AuditAgent(settings)
 
 
-async def inspect_bridge(agent: Any) -> dict[str, bool]:
+class _ProbeEmitter:
+    """In-memory sink only: shared bridge narration must never reach EventEmitter/HTTP."""
+
+    def __init__(self) -> None:
+        self.calls = self.results = 0
+
+    def tool_call(self, *args: Any) -> None:
+        self.calls += 1
+
+    def tool_result(self, *args: Any) -> None:
+        self.results += 1
+
+
+async def inspect_bridge(agent: Any) -> dict[str, bool | str]:
     """Exercise shared _offload unchanged with a pure tool; clients never send HTTP."""
     from agentkit.models import TurnRequest
 
     marker = "offline-marker-not-sdk-metadata"
     req = TurnRequest(episode_id="offline", day=1, controller_mode="off")
     session = AuditSession("offline", 1, False, time.monotonic() + 5, snapshot=Snapshot("offline", 1), tool_lock=asyncio.Lock())
-    ledger, emitter = object(), object()
+    ledger, emitter = object(), _ProbeEmitter()
     bindings = ctx.bind(ledger, emitter, req)
     session_token, invocation_token = tools.SESSION.set(session), tools.INVOCATION.set(marker)
     heartbeat: list[bool] = []
-    timer = asyncio.get_running_loop().call_later(0.01, heartbeat.append, True)
+    owner_loop = asyncio.get_running_loop()
+    timer = owner_loop.call_later(0.01, heartbeat.append, True)
 
     async def harmless(**kwargs: Any) -> str:
         await asyncio.sleep(0.05)  # Bounded yield on the worker loop, not a busy wait.
+        invocation = ctx.invocation()
+        copied_session = tools.SESSION.get()
         return json.dumps(
             {
                 "shared_turn_bound": ctx.turn() is req,
                 "shared_ledger_rebound": ctx.ledger() is not ledger,
                 "shared_emitter_bound": ctx.emitter() is not None,
-                "blue_session_propagated": tools.SESSION.get() is session,
+                "blue_session_propagated": copied_session is session,
                 "blue_invocation_propagated": tools.INVOCATION.get() == marker,
-                "fallback_id_injected": isinstance(kwargs.get("_tool_use_id"), str) and kwargs["_tool_use_id"] != marker,
+                "blue_tool_lock_shared": copied_session is not None and copied_session.tool_lock is session.tool_lock,
+                "worker_on_owner_loop": asyncio.get_running_loop() is owner_loop,
+                "shared_invocation_bound": invocation is not None,
+                "shared_invocation_source": invocation.source if invocation else "unbound",
+                "shared_invocation_verified": bool(invocation and invocation.verified),
+                "shared_invocation_id_distinct_from_blue_marker": bool(invocation and invocation.tool_use_id != marker),
+                "internal_id_kwarg_injected": "_tool_use_id" in kwargs,
             }
         )
 
     harmless._rl_tool = ("offline_context_probe", "Pure offline probe")
     try:
         result = json.loads(agent._offload(harmless)())
+        result["shared_narration_pair_recorded"] = emitter.calls == emitter.results == 1
         result["owner_heartbeat_during_call"] = bool(heartbeat)
         await asyncio.sleep(0.02)
         result["owner_heartbeat_after_call"] = bool(heartbeat)
