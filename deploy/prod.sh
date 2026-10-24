@@ -45,7 +45,7 @@ CONNECT_TIMEOUT="${PROD_CONNECT_TIMEOUT:-10}"
 LOG_TAIL="${PROD_LOG_TAIL:-200}"
 RESOLVE_BY="${PROD_RESOLVE_BY:-judge}"
 
-REPO_ROOT="$(cd "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 FIXTURES_DIR="$REPO_ROOT/battlefield/fixtures/episodes"
 
 die() { printf 'prod: %s\n' "$*" >&2; exit 1; }
@@ -67,10 +67,9 @@ import base64, json, os, re, sys, time, urllib.error, urllib.parse, urllib.reque
 
 API = os.environ.get("RL_OPS_API", "http://localhost:8000").rstrip("/")
 TOKEN = os.environ.get("OPERATOR_TOKEN", "")
-SECRETS = sorted(
-    {v for k, v in os.environ.items() if re.search(r"TOKEN|KEY|SECRET|PASS", k) and len(v) >= 8},
-    key=len, reverse=True,
-)
+_raw = [v for k, v in os.environ.items() if re.search(r"TOKEN|KEY|SECRET|PASS", k) and len(v) >= 8]
+# also the escaped forms a repr() in an error message would show (str and bytes)
+SECRETS = sorted({f for v in _raw for f in (v, repr(v)[1:-1], repr(v.encode())[2:-1])}, key=len, reverse=True)
 
 
 def scrub(s):
@@ -87,6 +86,15 @@ def out(s):
 def err(s):
     sys.stderr.write(scrub(s) + "\n")
     sys.stderr.flush()
+
+
+def _hook(t, v, tb):  # an uncaught traceback can quote env values (e.g. a malformed token)
+    import traceback
+
+    err("".join(traceback.format_exception(t, v, tb)))
+
+
+sys.excepthook = _hook
 
 
 def fail(msg, code=1):
@@ -283,6 +291,7 @@ py() {
   local enc shown="http_timeout=$HTTP_TIMEOUT" a
   enc="'$(b64 "$HTTP_TIMEOUT")'"
   for a in "$@"; do enc+=" '$(b64 "$a")'"; shown+=" $(printf '%q' "$a")"; done
+  ((${#enc} <= 65536)) || die "arguments too large (${#enc} bytes encoded; limit 64 KiB)"
   local boot="python3 -c 'import base64,sys;exec(base64.b64decode(sys.argv[1]))'"
   local pre
   pre="$(qdir) && timeout -k 5 $((secs + 15)) $PROD_BF_EXEC $boot"
@@ -294,7 +303,7 @@ py() {
   vm "$secs" "$pre '<PROGRAM_B64>' '$op' $enc" "$pre '$(b64 "$PROGRAM")' '$op' $enc"
 }
 
-need() { [[ $# -ge 2 && -n "$2" ]] || die "$1 is required"; }
+need() { [[ $# -ge 2 && -n "$2" ]] || die "$1 is required (no defaults on prod; see: deploy/prod.sh --help)"; }
 check_id() { [[ "$2" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || die "$1 must match [A-Za-z0-9_-]{1,64}"; }
 check_mode() { [[ "$1" =~ ^(off|shadow|enforce)$ ]] || die "MODE must be off|shadow|enforce"; }
 
@@ -304,13 +313,14 @@ check_mode() { [[ "$1" =~ ^(off|shadow|enforce)$ ]] || die "MODE must be off|sha
 # printed redacted (first 4 chars + length), never in full.
 # ---------------------------------------------------------------------------------------------
 HARD_PATTERNS=(
-  'sk-[A-Za-z0-9_-]{20,}'            # OpenAI / Anthropic style
-  'fk-[A-Za-z0-9_-]{20,}'            # Factory style
-  'gh[pousr]_[A-Za-z0-9]{30,}'
-  'github_pat_[A-Za-z0-9_]{30,}'
+  # prefix patterns need a left boundary, else prose like "task-assessment_for_vendor_x" hits sk-
+  '(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'            # OpenAI / Anthropic style
+  '(^|[^A-Za-z0-9])fk-[A-Za-z0-9_-]{20,}'            # Factory style
+  '(^|[^A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{30,}'
+  '(^|[^A-Za-z0-9])github_pat_[A-Za-z0-9_]{30,}'
   'AKIA[0-9A-Z]{16}'
   'AIza[0-9A-Za-z_-]{35}'            # Google / Gemini
-  'xox[abprs]-[A-Za-z0-9-]{10,}'     # Slack
+  '(^|[^A-Za-z0-9])xox[abprs]-[A-Za-z0-9-]{10,}'     # Slack
   'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.'  # JWT
   '-----BEGIN [A-Z ]*PRIVATE KEY'
   '[Bb]earer [A-Za-z0-9._~+/=-]{16,}'
@@ -326,10 +336,13 @@ scan() {
   local file="$1" hit=1 p ln m; shift
   for p in "$@"; do
     while IFS=: read -r ln m; do
+      [[ "$p" != '(^|'* ]] || m="${m#[^A-Za-z0-9]}"  # drop the left-boundary char it matched
       [[ -n "$m" ]] || continue
-      # soft base64 rule: require a digit and a letter, skip URL paths
+      # soft base64 rule: random strings have digits; prose identifiers like
+      # task-assessment_for_vendor_onboarding_q3 don't (>= 4 digits), and skip URL paths
       if [[ "$p" == '[A-Za-z0-9+/_-]{40,}={0,2}' ]]; then
-        [[ "$m" =~ [0-9] && "$m" =~ [A-Za-z] && "$m" != /* ]] || continue
+        local digits="${m//[^0-9]/}"
+        [[ ${#digits} -ge 4 && "$m" =~ [A-Za-z] && "$m" != /* ]] || continue
       fi
       printf '  line %s: %s... (%d chars, pattern %s)\n' "$ln" "${m:0:4}" "${#m}" "$p" >&2
       hit=0
@@ -338,6 +351,15 @@ scan() {
   return "$hit"
 }
 
+# a fresh temp dir that is guaranteed not to be inside the repo (even if $TMPDIR is)
+quarantine_dir() {
+  local base
+  base="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || base=/tmp
+  case "$base/" in "$REPO_ROOT"/*) base=/tmp ;; esac
+  mktemp -d "$base/redledger-quarantine.XXXXXX"
+}
+
+RECORD_TMP=""
 cmd_record() {
   local ep="$1" name="${2:-$1}"
   check_id EP "$ep"
@@ -349,12 +371,13 @@ cmd_record() {
   fi
   if [[ "${PROD_DRY:-}" == 1 ]]; then py 600 events "$ep"; return; fi
   mkdir -p "$FIXTURES_DIR"
-  trap 'rm -f "$tmp"' EXIT
-  py 600 events "$ep" >"$tmp"
+  RECORD_TMP="$tmp"  # global: the EXIT trap runs after this function's locals are gone
+  trap 'rm -f -- "$RECORD_TMP"' EXIT
+  py 600 events "$ep" >"$tmp" || die "fetching events for $ep failed (nothing written)"
   [[ -s "$tmp" ]] || die "no events for $ep"
   if scan "$tmp" "${HARD_PATTERNS[@]}"; then
     local q
-    q="$(mktemp -d)/$name.jsonl"
+    q="$(quarantine_dir)/$name.jsonl"
     mv -f "$tmp" "$q"
     trap - EXIT
     printf 'prod: REFUSED: %s looks like it contains a key or token (hits above).\n' "$name.jsonl" >&2
@@ -387,8 +410,9 @@ main() {
       vm "$HTTP_TIMEOUT" "$c" "$c" ;;
     episode)
       need MODE "${1:-}"; need SEED "${2:-}"; need DAYS "${3:-}"
-      check_mode "$1"; is_uint "$2" || die "SEED must be an integer"
-      { is_uint "$3" && (($3 >= 1 && $3 <= 365)); } || die "DAYS must be 1..365"
+      check_mode "$1"
+      { is_uint "$2" && ((${#2} <= 10)) && ((10#$2 <= 2147483647)); } || die "SEED must be an integer 0..2147483647"
+      { is_uint "$3" && ((${#3} <= 3)) && ((10#$3 >= 1 && 10#$3 <= 365)); } || die "DAYS must be 1..365"
       py "$HTTP_TIMEOUT" episode "$1" "$2" "$3" "${4:-}" ;;
     step)   need EP "${1:-}"; check_id EP "$1"; py "$STEP_TIMEOUT" post "$1" step "$STEP_TIMEOUT" ;;
     pause)  need EP "${1:-}"; check_id EP "$1"; py "$HTTP_TIMEOUT" post "$1" pause "$HTTP_TIMEOUT" ;;

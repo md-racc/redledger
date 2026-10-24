@@ -1,6 +1,11 @@
 # Red Ledger — one Makefile for every branch. Owner: Dev Ad.
 # Every dev runs the same targets; CI runs `make lint test`.
 SHELL := /bin/bash
+# GNU make exports command-line variables into the environment of every recipe AND of every
+# $(shell ...), and EXPANDS them to do so: `make help EP='$(shell touch x)'` would run `touch x`
+# on your machine. So the user-input variables are never exported; targets that need one pass it
+# explicitly (prod-*, devlog below). This must stay above the first $(shell ...) (env_get/TOKEN).
+unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG
 COMPOSE := docker compose
 DEV := -f docker-compose.yml -f docker-compose.dev.yml
 MOCK := -f docker-compose.yml -f docker-compose.mock.yml
@@ -20,7 +25,7 @@ AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
         install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog devlog-show
 
 help: ## list targets
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ---------- stack ----------
 up: ## full stack, agents live (needs FACTORY_API_KEY)
@@ -66,22 +71,28 @@ replay: ## stream a fixture to connected UIs: make replay FILE=ep_abc SPEED=4
 
 # ---------- prod operator (runs ON the VM over ssh; OPERATOR_TOKEN never leaves the VM) ----------
 # Thin wrappers over deploy/prod.sh; guide: deploy/PROD-OPS.md. Host/key/timeouts: PROD_* env vars
-# (see the script header). As with `devlog`, user values reach the script through the environment,
-# unexpanded ($(value ...)), so JSON is passed verbatim:
+# (see the script header). User values reach the script as PRODARG_* environment variables holding
+# the raw text ($(value ...): make does not evaluate `$(...)` in them; the user variables themselves
+# are unexported above), so JSON arrives exactly as typed:
 #   make prod-episode MODE=enforce SEED=42 DAYS=10 PLAN='[{"day":2,"scheme_id":"bank_swap"}]'
 #   make prod-attack EP=ep_123 SCHEME=ghost_vendor PARAMS='{"amount":4999}'
+# Only values you actually give (command line or environment) are passed: the MODE/SEED/DAYS
+# defaults above are for the local targets and never reach prod, so a bare `make prod-episode`
+# fails with usage instead of starting a paid episode.
+# Self-check: deploy/PROD-OPS.md "Testing prod.sh without prod" (a $(shell) canary in EP).
 PROD := deploy/prod.sh
-prod-%: export PRODARG_EP := $(value EP)
-prod-%: export PRODARG_MODE := $(value MODE)
-prod-%: export PRODARG_SEED := $(value SEED)
-prod-%: export PRODARG_DAYS := $(value DAYS)
-prod-%: export PRODARG_PLAN := $(value PLAN)
-prod-%: export PRODARG_SCHEME := $(value SCHEME)
-prod-%: export PRODARG_PARAMS := $(value PARAMS)
-prod-%: export PRODARG_SVC := $(value SVC)
-prod-%: export PRODARG_ESC := $(value ESC)
-prod-%: export PRODARG_DECISION := $(value DECISION)
-prod-%: export PRODARG_NAME := $(value NAME)
+prodarg = $(if $(filter command line environment,$(origin $(1))),$(value $(1)))
+prod-%: export PRODARG_EP := $(call prodarg,EP)
+prod-%: export PRODARG_MODE := $(call prodarg,MODE)
+prod-%: export PRODARG_SEED := $(call prodarg,SEED)
+prod-%: export PRODARG_DAYS := $(call prodarg,DAYS)
+prod-%: export PRODARG_PLAN := $(call prodarg,PLAN)
+prod-%: export PRODARG_SCHEME := $(call prodarg,SCHEME)
+prod-%: export PRODARG_PARAMS := $(call prodarg,PARAMS)
+prod-%: export PRODARG_SVC := $(call prodarg,SVC)
+prod-%: export PRODARG_ESC := $(call prodarg,ESC)
+prod-%: export PRODARG_DECISION := $(call prodarg,DECISION)
+prod-%: export PRODARG_NAME := $(call prodarg,NAME)
 prod-health: ## prod: battlefield /health (incl. agents), from inside the VM
 	@$(PROD) health
 prod-ps: ## prod: docker compose ps on the VM
@@ -145,8 +156,9 @@ test-frontend:
 schema-dump: ## copy canonical schema into battlefield/db (for local non-docker runs)
 	cp contracts/schema.sql battlefield/db/schema.sql && rm -rf battlefield/db/ext && cp -r contracts/ext battlefield/db/ext
 # devlog: one fragment file per PR, so PRs never conflict on DEVLOG.md (GIT.md §6).
-# WHO/MSG/SLUG reach the shell via the environment, unexpanded ($(value ...)), so a MSG like
-# '$11,004 "quoted"' is written verbatim: make never sees `$1`, the shell never re-parses it.
+# WHO/MSG/SLUG reach the shell via the environment as raw text ($(value ...); the variables
+# themselves are unexported above), so a MSG like '$11,004 "quoted"' is written verbatim: make
+# never expands `$1`, the shell never re-parses it.
 devlog: export DEVLOG_WHO := $(value WHO)
 devlog: export DEVLOG_MSG := $(value MSG)
 devlog: export DEVLOG_SLUG := $(value SLUG)

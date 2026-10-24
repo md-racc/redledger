@@ -26,6 +26,12 @@ laptop ── ssh deploy@PROD_HOST ──> cd /opt/redledger && docker compose �
 - Every hop has a timeout: ssh `ConnectTimeout` + keepalives, a local `timeout` around ssh, a
   remote `timeout` around `docker compose exec`, and a per-request HTTP timeout.
 - `PROD_DRY=1 make prod-…` prints exactly what would run (program elided, args decoded).
+- Through `make`, your values are passed as raw text: the Makefile never exports `EP`, `MODE`,
+  `PLAN`, `PARAMS`, … (GNU make would otherwise evaluate a `$(shell …)` inside them on your
+  laptop while building the environment), and hands the script `$(value X)` instead. Prod
+  targets get no defaults: `MODE`/`SEED`/`DAYS` are passed only if you set them on the command
+  line or in the environment, so a bare `make prod-episode` or `make prod-toggle EP=…` fails
+  with usage instead of acting on prod. Encoded arguments are capped at 64 KiB.
 
 Don't undo this by hand on the VM: `cat .env`, `docker compose config` (prints interpolated
 values, tokens included) and `docker inspect` all put the token on your screen and in your
@@ -95,10 +101,13 @@ what the second will cost.
 fixture unless `PROD_RECORD_OVERWRITE=1`. Then it scans the file, because fixtures get committed
 and replayed publicly:
 
-- **Refused** (exit 3, file moved to a temp dir outside the repo, path printed): `sk-…`, `fk-…`,
+- **Refused** (exit 3, file moved to `redledger-quarantine.*` under `$TMPDIR`, or `/tmp` if
+  `$TMPDIR` is inside the repo; path printed): `sk-…`, `fk-…`,
   `ghp_…`/`github_pat_…`, `AKIA…`, `AIza…`, `xox?-…`, JWTs, PEM private keys, `Bearer <long>`, or
   `[REDACTED]` (the VM scrubbed a live token/key out of an event: find out which agent emitted it).
-- **Warned** (file kept): hex runs ≥ 32 chars, base64-ish runs ≥ 40 chars with letters and digits.
+- **Warned** (file kept): hex runs ≥ 32 chars, base64-ish runs ≥ 40 chars with letters and at
+  least 4 digits (so prose identifiers like `task-assessment_for_vendor_onboarding_q3` pass).
+  Prefix patterns (`sk-`, `fk-`, `gh?_`, `xox?-`) only match at a word start, for the same reason.
 
 Hits are printed as line number + first 4 chars + length, never in full. Commit the fixtures on a
 `battlefield/` branch; after the next deploy they are on the VM too (the repo checkout is mounted
@@ -148,6 +157,15 @@ episode's `turn.ended` events, so the new cap applies to what it has already spe
 without raising the cap buys exactly one more paid turn before it pauses again.
 
 ## Testing prod.sh without prod
+
+Make-level self-check (after any Makefile edit; must print nothing and create no file):
+
+```bash
+PROD_DRY=1 make -s prod-score EP='$(shell touch /tmp/rl-canary)' >/dev/null 2>&1
+make -s help EP='$(shell touch /tmp/rl-canary)' >/dev/null
+make -s prod-episode >/dev/null 2>&1 && echo "BUG: prod-episode ran with defaults"
+ls /tmp/rl-canary 2>/dev/null && echo "BUG: make evaluated user input"
+```
 
 The ssh and `docker compose exec` layers can be swapped out:
 
