@@ -85,6 +85,7 @@ untouched:** they already read `settings.internal_token` and keep working.
 | `AGENT_TOKEN`, `OPERATOR_TOKEN` | any two different strings | `openssl rand -hex 32` each, secrets |
 | `FACTORY_API_KEY` | **the dev's own key** (R and Al confirmed; M and Ad same pattern) or empty with `DRY_RUN=true` | prod key from the second source; secret |
 | `DROID_MODEL_RED/GREEN/BLUE` | a Droid Core / low-multiplier model | pinned prod models; variables |
+| `DRY_RUN`, `DRY_RUN_RED/GREEN/BLUE` | `DRY_RUN=true` (keyless); overrides blank | variables; blank override = follow `DRY_RUN`. Red live only: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=true` |
 | `DROID_REASONING_RED/GREEN/BLUE` | blank (model default) or `none\|off\|minimal\|low\|medium\|high\|xhigh\|max` | optional; variables (a bad value stops that agent at startup) |
 | `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
 | `BLUE_GATE_LLM_API_KEY`, `CRS_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
