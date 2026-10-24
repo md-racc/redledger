@@ -193,10 +193,15 @@ SCORE_KEYS = ("dollars_extracted", "dollars_blocked", "false_positive_cost", "at
 CONFIG_KEYS = ("generations", "days", "controller_mode", "reveal_days", "reveal_generations", "max_credits")
 
 
+SUMMARY_BUDGET = 480.0  # seconds; the shell's kill timeout for lineage-status is 600 + 45
+
+
 def lineage_summary(ln, with_credits=True):
+    """Bounded: once SUMMARY_BUDGET is spent, remaining generations are listed without credits."""
+    started = time.monotonic()
     l = call("GET", "/lineages/%s" % seg(ln))
     cfg = l.get("config") or {}
-    gens, total = [], 0.0
+    gens, total, partial = [], 0.0, False
     for g in l.get("generations") or []:
         ep = call("GET", "/episodes/%s" % seg(g["episode_id"]))
         row = {
@@ -207,9 +212,12 @@ def lineage_summary(ln, with_credits=True):
             "day": "%s/%s" % (ep.get("current_day"), ep.get("days")),
             "score": {k: (g.get("score") or {}).get(k) for k in SCORE_KEYS},
         }
-        if with_credits:
+        if with_credits and time.monotonic() - started < SUMMARY_BUDGET:
             row["turn_credits"], row["turn_credits_by_agent"] = episode_credits(g["episode_id"])
             total += row["turn_credits"]
+        elif with_credits:
+            row["turn_credits"] = None  # budget spent: credits omitted, totals below are partial
+            partial = True
         gens.append(row)
     s = {
         "id": l.get("id"),
@@ -226,6 +234,7 @@ def lineage_summary(ln, with_credits=True):
         s["turn_credits_total"] = total
         s["max_credits"] = mc
         s["remaining_at_most"] = (mc - total) if mc > 0 else None
+        s["credits_partial"] = partial
     return s
 
 
@@ -349,7 +358,8 @@ elif OP == "lineage_wait":
         l = call("GET", "/lineages/%s" % seg(ln))
         cfg = l.get("config") or {}
         cur = (l.get("generations") or [{}])[-1]
-        day = call("GET", "/episodes/%s" % seg(cur["episode_id"])).get("current_day") if cur.get("episode_id") else None
+        ep = call("GET", "/episodes/%s" % seg(cur["episode_id"])) if cur.get("episode_id") else {}
+        day = ep.get("current_day")
         now = (l.get("status"), l.get("current_generation"), cur.get("episode_id"), day)
         if now != last:
             err("%s: %s, generation %s/%s, %s day %s/%s" % (ln, now[0], now[1], cfg.get("generations"), now[2] or "-", day, cfg.get("days")))
@@ -360,6 +370,10 @@ elif OP == "lineage_wait":
         if now[0] in ("failed", "paused", "created"):
             show(lineage_summary(ln, with_credits=False))
             fail("lineage is %s; nothing will advance it (credit cap? run lineage-status, then lineage-resume)" % now[0], 3)
+        if now[0] == "running" and ep.get("status") == "paused":
+            # MAX_CREDITS_PER_EPISODE (or a manual episode pause) pauses only the episode; the lineage keeps
+            # "running" and waits on it forever, so say so instead of sitting out the whole timeout.
+            fail("episode %s paused (per-episode credit cap?) -> make prod-credits EP=%s, then make prod-resume EP=%s" % (now[2], now[2], now[2]), 3)
         if time.monotonic() >= deadline:
             fail("timed out after %ss (the lineage keeps running; wait again or check lineage-status)" % total, 124)
         time.sleep(float(interval))
@@ -537,7 +551,14 @@ cmd_lineage_fetch() {
     py 600 lineage_report "$ln" 540 >"$f" || die "fetching the report of $ln failed (nothing written)"
   fi
   [[ -s "$f" ]] || die "empty $kind for $ln (nothing written)"
-  RUNS_DIR="${RUNS_DIR:-$REPO_ROOT/runs}" python3 "$REPO_ROOT/battlefield/scripts/evolution_report.py" "$kind-file" "$ln" "$f"
+  local rc=0
+  RUNS_DIR="${RUNS_DIR:-$REPO_ROOT/runs}" python3 "$REPO_ROOT/battlefield/scripts/evolution_report.py" "$kind-file" "$ln" "$f" || rc=$?
+  if ((rc == 3)); then  # hard secret hit: keep the evidence outside the repo, like `record`
+    trap - EXIT
+    printf 'prod: REFUSED: the %s of %s looks like it contains a key or token (hits above).\n' "$kind" "$ln" >&2
+    printf 'prod: quarantined outside the repo at %s; inspect it, do not commit or share it.\n' "$f" >&2
+  fi
+  return "$rc"
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -589,7 +610,7 @@ main() {
       [[ -z "${5:-}" ]] || check_int REVEAL_DAYS "$5" 0 365
       [[ -z "${6:-}" ]] || check_int REVEAL_GENERATIONS "$6" 0 50
       check_int MAX_CREDITS "$7" 1 9999999999
-      py "$HTTP_TIMEOUT" evolve "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "$7" ;;
+      py "$((3 * HTTP_TIMEOUT))" evolve "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "$7" ;;  # 3 calls: list, create, start
     lineage-status) need LN "${1:-}"; check_id LN "$1"; py 600 lineage_status "$1" ;;
     lineage-pause)  need LN "${1:-}"; check_id LN "$1"; py "$HTTP_TIMEOUT" lineage_post "$1" pause ;;
     lineage-resume) need LN "${1:-}"; check_id LN "$1"; py "$HTTP_TIMEOUT" lineage_post "$1" resume ;;
