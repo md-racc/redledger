@@ -7,7 +7,7 @@ caller (plus green's `/gate` mirror to blue). All requests carry `Authorization:
 
 | Token | Who holds it | What it authorizes |
 |---|---|---|
-| `AGENT_TOKEN` | battlefield, red, green, blue containers | Every Ledger API request carrying `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes` (and `/health`); green → blue `/gate` mirror |
+| `AGENT_TOKEN` | battlefield, red, green, blue containers | Every Ledger API request carrying `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes` (agent `/health` is unauthenticated); green → blue `/gate` mirror |
 | `OPERATOR_TOKEN` | battlefield, frontend **server** (Next route handler), Makefile/curl, the owner | Every Ledger API request without `X-Agent`: control plane (`/episodes*`, `/escalations*`, `/replays*`, `/schemes`, `/health`, `/attacks/all`), `/fe/*` incl. `/fe/query`, `GET /events`, `/inputs`, `POST /ws/ticket`, `/ws?token=` (curl/debug) |
 | WS ticket | browser, ≤60 s lifetime, single use | One `/ws` connection, for one episode (or `*`). Minted by `POST /api/ws/ticket` with `OPERATOR_TOKEN` |
 | none | anyone | `battlefield/extensions/fe_*` routes deliberately marked public |

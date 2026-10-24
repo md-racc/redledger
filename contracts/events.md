@@ -45,7 +45,7 @@ from the ordered stream of these; it never queries ledger tables.
 
 | `where` | `message` | when / effect |
 |---|---|---|
-| `credit_guard` | `"episode paused at <n> credits (limit <m>)"` | `MAX_CREDITS_PER_EPISODE > 0` and the episode's summed `turn.ended.factory_credits` (missing/`null` counts as 0, e.g. `DRY_RUN`) reaches the limit after a turn. Battlefield pauses the episode and emits `episode.paused` alongside the `error`. It resumes only by an explicit `POST /api/episodes/{id}/resume`; it is never auto-resumed. |
+| `credit_guard` | `"episode paused at <n> credits (limit <m>)"` | `MAX_CREDITS_PER_EPISODE > 0` and the episode's summed `turn.ended.factory_credits` (missing/`null` counts as 0, e.g. `DRY_RUN`) reaches the limit after a turn. Battlefield emits the `error`, then pauses the episode and emits `episode.paused` (if the episode is already paused, e.g. during a manual `step`, only the `error` is emitted). It resumes only by an explicit `POST /api/episodes/{id}/resume`; it is never auto-resumed. |
 
 `Score`:
 ```json
