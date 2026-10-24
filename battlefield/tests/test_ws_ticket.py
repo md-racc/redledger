@@ -268,15 +268,51 @@ def test_ws_drops_live_duplicates_of_catch_up_frames(monkeypatch: pytest.MonkeyP
         return {"id": i, "type": "day.started", "episode_id": "ep_1"}
 
     async def racy_history(episode_id: str, after_id: int = 0, limit: int = 500) -> list[dict[str, Any]]:
-        bus._broadcast(episode_id, ev(2))  # stale: at/below after_id, the client already has it
+        # at/below after_id: only possible via an out-of-order commit; delivered (a client-side
+        # duplicate at worst, deduped by id) rather than risk dropping a real event
+        bus._broadcast(episode_id, ev(2))
         bus._broadcast(episode_id, ev(4))  # emitted in the window: also in the history below
         bus._broadcast(episode_id, ev(5))  # emitted after the history read: live only
         return [ev(3), ev(4)]
 
     monkeypatch.setattr(bus, "history", racy_history)
     with client.websocket_connect(f"/api/ws?episode_id=ep_1&after_id=2&token={OPERATOR_TOKEN}") as ws:
-        got = [ws.receive_json()["id"] for _ in range(3)]
-    assert got == [3, 4, 5]
+        got = [ws.receive_json()["id"] for _ in range(4)]
+    assert got == [3, 4, 2, 5]  # 4 arrives once
+
+
+def test_ws_keeps_live_events_that_commit_out_of_id_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """History sees [3, 5] because 4 hadn't committed yet; 4 then arrives live and must not be lost."""
+
+    def ev(i: int) -> dict[str, Any]:
+        return {"id": i, "type": "day.started", "episode_id": "ep_1"}
+
+    async def history(episode_id: str, after_id: int = 0, limit: int = 500) -> list[dict[str, Any]]:
+        bus._broadcast(episode_id, ev(5))  # in history and queued live
+        bus._broadcast(episode_id, ev(4))  # committed after the history read, lower id
+        bus._broadcast(episode_id, ev(6))
+        return [ev(3), ev(5)]
+
+    monkeypatch.setattr(bus, "history", history)
+    with client.websocket_connect(f"/api/ws?episode_id=ep_1&after_id=0&token={OPERATOR_TOKEN}") as ws:
+        got = [ws.receive_json()["id"] for _ in range(4)]
+    assert got == [3, 5, 4, 6]
+
+
+def test_ws_stale_after_id_does_not_swallow_live_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A tab left open across `make db-reset` reconnects with an after_id above every real id."""
+
+    def ev(i: int) -> dict[str, Any]:
+        return {"id": i, "type": "day.started", "episode_id": "ep_1"}
+
+    async def history(episode_id: str, after_id: int = 0, limit: int = 500) -> list[dict[str, Any]]:
+        bus._broadcast(episode_id, ev(7))
+        return []
+
+    monkeypatch.setattr(bus, "history", history)
+    with client.websocket_connect(f"/api/ws?episode_id=ep_1&after_id=999&token={OPERATOR_TOKEN}") as ws:
+        got = [ws.receive_json()["id"] for _ in range(1)]
+    assert got == [7]
 
 
 def test_ws_all_episodes_stream_is_not_filtered(monkeypatch: pytest.MonkeyPatch) -> None:
