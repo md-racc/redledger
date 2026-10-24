@@ -15,6 +15,8 @@ TOKEN := $(if $(TOKEN),$(TOKEN),change-me)
 AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
 
 .PHONY: help up up-dry mock-agents down logs ps db-reset db-shell seed episode step toggle attack escalations score record replay \
+        prod-health prod-ps prod-logs prod-episode prod-step prod-pause prod-resume prod-toggle prod-attack prod-escalations \
+        prod-resolve prod-score prod-wait prod-record prod-credits \
         install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog devlog-show
 
 help: ## list targets
@@ -61,6 +63,55 @@ record: ## dump $(EP) events to battlefield/fixtures/episodes/$(EP).jsonl
 	@wc -l battlefield/fixtures/episodes/$(EP).jsonl
 replay: ## stream a fixture to connected UIs: make replay FILE=ep_abc SPEED=4
 	curl -s $(AUTH) -X POST $(API)/api/replays/$(FILE)/play -d '{"speed":$(or $(SPEED),4)}'; echo
+
+# ---------- prod operator (runs ON the VM over ssh; OPERATOR_TOKEN never leaves the VM) ----------
+# Thin wrappers over deploy/prod.sh; guide: deploy/PROD-OPS.md. Host/key/timeouts: PROD_* env vars
+# (see the script header). As with `devlog`, user values reach the script through the environment,
+# unexpanded ($(value ...)), so JSON is passed verbatim:
+#   make prod-episode MODE=enforce SEED=42 DAYS=10 PLAN='[{"day":2,"scheme_id":"bank_swap"}]'
+#   make prod-attack EP=ep_123 SCHEME=ghost_vendor PARAMS='{"amount":4999}'
+PROD := deploy/prod.sh
+prod-%: export PRODARG_EP := $(value EP)
+prod-%: export PRODARG_MODE := $(value MODE)
+prod-%: export PRODARG_SEED := $(value SEED)
+prod-%: export PRODARG_DAYS := $(value DAYS)
+prod-%: export PRODARG_PLAN := $(value PLAN)
+prod-%: export PRODARG_SCHEME := $(value SCHEME)
+prod-%: export PRODARG_PARAMS := $(value PARAMS)
+prod-%: export PRODARG_SVC := $(value SVC)
+prod-%: export PRODARG_ESC := $(value ESC)
+prod-%: export PRODARG_DECISION := $(value DECISION)
+prod-%: export PRODARG_NAME := $(value NAME)
+prod-health: ## prod: battlefield /health (incl. agents), from inside the VM
+	@$(PROD) health
+prod-ps: ## prod: docker compose ps on the VM
+	@$(PROD) ps
+prod-logs: ## prod: last 200 log lines (SVC=red to filter)
+	@$(PROD) logs "$$PRODARG_SVC"
+prod-episode: ## prod: create + start: MODE=enforce SEED=42 DAYS=10 [PLAN='<json array>']
+	@$(PROD) episode "$$PRODARG_MODE" "$$PRODARG_SEED" "$$PRODARG_DAYS" "$$PRODARG_PLAN"
+prod-step: ## prod: run one day of EP (pause first)
+	@$(PROD) step "$$PRODARG_EP"
+prod-pause: ## prod: pause EP
+	@$(PROD) pause "$$PRODARG_EP"
+prod-resume: ## prod: resume EP (also re-arms the credit guard)
+	@$(PROD) resume "$$PRODARG_EP"
+prod-toggle: ## prod: set controller mode: EP=... MODE=off|shadow|enforce
+	@$(PROD) toggle "$$PRODARG_EP" "$$PRODARG_MODE"
+prod-attack: ## prod: force a scheme on next red turn: EP=... SCHEME=... [PARAMS='<json>']
+	@$(PROD) attack "$$PRODARG_EP" "$$PRODARG_SCHEME" "$$PRODARG_PARAMS"
+prod-escalations: ## prod: open escalations [EP=...]
+	@$(PROD) escalations "$$PRODARG_EP"
+prod-resolve: ## prod: resolve an escalation: ESC=... DECISION=approve|block
+	@$(PROD) resolve "$$PRODARG_ESC" "$$PRODARG_DECISION"
+prod-score: ## prod: score for EP
+	@$(PROD) score "$$PRODARG_EP"
+prod-wait: ## prod: poll EP until finished (PROD_WAIT_TIMEOUT, default 3600 s)
+	@$(PROD) wait "$$PRODARG_EP"
+prod-record: ## prod: EP events -> battlefield/fixtures/episodes/<NAME or EP>.jsonl, secret-scanned
+	@$(PROD) record "$$PRODARG_EP" "$$PRODARG_NAME"
+prod-credits: ## prod: factory_credits per agent/day for EP vs MAX_CREDITS_PER_EPISODE
+	@$(PROD) credits "$$PRODARG_EP"
 
 # ---------- dev tooling ----------
 install: ## install python deps for all services + frontend
