@@ -80,3 +80,17 @@ Readiness remains false and the live guard remains intact.
 See `blue/SDK-READINESS.md` for the pinned IDs, list-only command, receipt tests and Ad handoff.
 CRS PR #64 and its prerequisites have merged, but live acceptance remains incomplete.
 Bright Data C3 also requires the real-agent three-day shadow checkpoint in `INTEGRATIONS.md`.
+
+## Sandbox probe evidence, 2026-10-24 (approved scope: P01/P12/P16 only)
+
+With operator-supplied local credentials, blue's own `CRSClient` made exactly one login
+(latched, no retries) and one `identity-manager-verification/basic` POST per pinned persona.
+Sanitized statuses: **P01 MARGARET OKAFOR — DELIVERED, searchStatus HIT, zero messages**
+(sponsor note: "messages: empty = verified"; the earlier parser required CLEAR and returned
+unknown — fixed in this PR), **P12 VICTOR ANAND — mismatch** (2201/2202/2301 family),
+**P16 SAMUEL OYELARAN — review** (2101/2401 family). A structural re-request for P01 was
+returned `CACHED` by the sandbox. Operator follow-up `GET /users/logs` (`{content, count,
+hasMore}` shape): all four entries `billable:false`. No credentials, tokens, bodies, or
+provider prose were logged or printed. Episode-level clean/mismatch/step-up cases still need
+Ad's operator fixture route (employee + one expense each with distinct accounts, `hr_record`)
+before the end-to-end audit-to-gate hold can be demonstrated.
