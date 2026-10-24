@@ -7,8 +7,32 @@ and audits the books. Every action is logged, every verdict is explained, and a 
 tracks dollars extracted vs. blocked and the cost of false positives.
 
 Cal Hacks 13.0. Primary tracks: Hyphenate (Autonomous Systems for Finance), Factory (Droid SDK).
-Secondary: Armadin, CRS, Tiger Data, Vultr, Figma, MLH Gemini. Sponsor integration status,
-ownership and build order: `INTEGRATIONS.md` (temporary, deletes itself when the work is done).
+Secondary: Most Technically Advanced, Microsoft, Armadin, Tiger Data, Vultr; CRS if its live demo
+lands. Per-track write-ups (what's live vs. keyless, with evidence): `docs/devpost/`. Sponsor
+integration status, ownership and build order: `INTEGRATIONS.md` (temporary, deletes itself when
+the work is done).
+
+### At a glance
+
+- **What happens each simulated day.** Red, an AI agent on Factory's Droid SDK, reads the books
+  like an insider and runs a fraud scheme: ghost vendor, bank-account swap, duplicate invoice,
+  threshold split or ghost employee. Green does accounts payable. Before green moves money, it
+  prepares the action and battlefield asks blue, the controller: allow, block, or escalate to a
+  human. Battlefield is the only service that touches the database, and it enforces the verdict.
+  Agents never see which rows are fraud.
+- **Results on prod** (red live on `gpt-5.4-mini`; green and blue running their full logic
+  keyless):
+  - Same company, same seed, 10 days: controller off, **$10,285** extracted; controller on
+    (`enforce`), **$1,824** extracted at $100 false-positive cost. Recordings and details:
+    [`docs/recordings/`](docs/recordings/README.md).
+  - A 5-generation evolution run (8 days each, `enforce`): red found that invoices split under the
+    approval threshold get paid, and shifted to them. That was 1 of its 7 attacks in generation 1
+    and 7 of 8 in generation 5. Extraction rose from $19k to $98k, and no blue rule caught it. The
+    sandbox surfaced a real control gap, which is the point of building one.
+- **Run it with no keys.** `make local-stack AGENTS=mock` (no Docker) or `make mock-agents`, then
+  `make episode MODE=enforce SEED=42 DAYS=4` or `make evolve GENS=3 DAYS=5` (§12, §15). Frontend
+  alone: `cd frontend && NEXT_PUBLIC_MOCK=true npm run dev`.
+- **License:** MIT (`LICENSE`).
 
 Repo owner: start with `deploy/OWNER-CHECKLIST.md`. Everyone else: your directory's `AGENTS.md`.
 
