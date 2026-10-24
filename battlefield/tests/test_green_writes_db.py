@@ -180,9 +180,12 @@ async def test_concurrent_first_use_of_a_key_for_the_same_action_replays(pg: Non
     key = f"tu_{uuid.uuid4().hex}"
     async with _client() as c:
         a, b = await asyncio.gather(*(c.post(f"/api/invoices/{inv}/approve", headers=_green(ep, key)) for _ in range(2)))
-    assert (a.status_code, b.status_code) == (200, 200)
+    # the gate replays the verdict for the loser; the status compare-and-set then lets only one approve
+    assert sorted([a.status_code, b.status_code]) == [200, 409]
+    assert (a if a.status_code == 409 else b).json()["detail"] == "invoice is approved"
     assert await db.fetchval("SELECT count(*) FROM verdicts WHERE episode_id=$1 AND idempotency_key=$2", ep, key) == 1
     assert await db.fetchval("SELECT count(*) FROM events WHERE episode_id=$1 AND type='gate.verdict'", ep) == 1
+    assert await db.fetchval("SELECT count(*) FROM events WHERE episode_id=$1 AND type='ledger.mutation'", ep) == 1
 
 
 @pytest.mark.parametrize("mode", ["off", "shadow", "enforce"])
@@ -202,3 +205,62 @@ async def test_gl_post_retry_with_the_same_key_posts_once(pg: None, blue: list, 
     assert await db.fetchval("SELECT count(*) FROM events WHERE episode_id=$1 AND type='ledger.mutation'", ep) == 1
     assert [r["http_status"] for r in await _audit(ep, key)] == [201] * 5 + [409]
     assert len(blue) == (0 if mode == "off" else 1)
+
+
+# ---------- concurrent transitions: compare-and-set ----------
+async def _count(sql: str, *args: Any) -> int:
+    return int(await db.fetchval(sql, *args))
+
+
+@pytest.mark.parametrize("mode", ["off", "shadow", "enforce"])
+@pytest.mark.parametrize("keys", ["same-key", "different-keys"])
+async def test_concurrent_pays_of_one_invoice_pay_once(pg: None, slow_blue: list, mode: str, keys: str) -> None:
+    ep = await _episode(mode)
+    inv = await f.invoice(ep, await f.vendor(ep), amount=4_000.0, status="approved")
+    k = [f"tu_{uuid.uuid4().hex}"] * 3 if keys == "same-key" else [f"tu_{uuid.uuid4().hex}" for _ in range(3)]
+    async with _client() as c:
+        rs = await asyncio.gather(*(c.post(f"/api/invoices/{inv}/pay", headers=_green(ep, key)) for key in k))
+    codes = sorted(r.status_code for r in rs)
+    assert codes == [200, 409, 409], [r.text for r in rs]
+    assert {r.json()["detail"] for r in rs if r.status_code == 409} == {"invoice is paid"}
+    assert await _count("SELECT count(*) FROM payments WHERE invoice_id=$1", inv) == 1
+    assert await _count("SELECT count(*) FROM bank_transactions WHERE episode_id=$1", ep) == 1
+    assert await _count("SELECT count(*) FROM events WHERE episode_id=$1 AND type='ledger.mutation'", ep) == 1
+    audited = await db.fetch("SELECT http_status FROM audit_log WHERE episode_id=$1 AND action='invoices.pay'", ep)
+    assert sorted(r["http_status"] for r in audited) == [200, 409, 409]  # every request audited
+    assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "paid"
+
+
+@pytest.mark.parametrize("mode", ["off", "enforce"])
+async def test_concurrent_vendor_change_approvals_apply_once(pg: None, slow_blue: list, mode: str) -> None:
+    ep = await _episode(mode)
+    vid = await f.vendor(ep)
+    ch = await f.change(ep, vid, new_value="ACCT-NEW")
+    async with _client() as c:
+        rs = await asyncio.gather(*(c.post(f"/api/vendor_changes/{ch}/approve", headers=_green(ep, f"tu_{uuid.uuid4().hex}")) for _ in range(2)))
+    assert sorted(r.status_code for r in rs) == [200, 409]
+    assert next(r for r in rs if r.status_code == 409).json()["detail"] == "change is approved"
+    assert await _count("SELECT count(*) FROM events WHERE episode_id=$1 AND type='ledger.mutation'", ep) == 1
+    audited = await db.fetch("SELECT http_status FROM audit_log WHERE episode_id=$1 AND action='vendor_changes.approve'", ep)
+    assert sorted(r["http_status"] for r in audited) == [200, 409]
+    assert await db.fetchval("SELECT bank_account FROM vendors WHERE id=$1", vid) == "ACCT-NEW"
+
+
+async def test_a_block_never_overwrites_a_concurrent_payment(pg: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    ep = await _episode("enforce")
+    inv = await f.invoice(ep, await f.vendor(ep), amount=500.0, status="approved")
+
+    async def ask(c: Caller, mode: str, action: str, et: str | None, eid: str | None, amount: float | None, args: dict, context: dict):
+        if c.tool_use_id == "tu_block":
+            await asyncio.sleep(0.1)  # decides after the allowed pay has committed
+            return "block", "suspicious", 0.9, []
+        return "allow", "ok", 0.9, []
+
+    monkeypatch.setattr(gate, "_ask_blue", ask)
+    async with _client() as c:
+        blocked, paid = await asyncio.gather(
+            c.post(f"/api/invoices/{inv}/pay", headers=_green(ep, "tu_block")), c.post(f"/api/invoices/{inv}/pay", headers=_green(ep, "tu_allow"))
+        )
+    assert (blocked.status_code, paid.status_code) == (403, 200)
+    assert await db.fetchval("SELECT status FROM invoices WHERE id=$1", inv) == "paid"  # not flipped to blocked
+    assert await _count("SELECT count(*) FROM payments WHERE invoice_id=$1", inv) == 1
