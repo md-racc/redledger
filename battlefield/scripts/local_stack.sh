@@ -49,7 +49,9 @@ start_proc() {  # name, workdir, then the command (env is inherited from the cal
   # stop can signal the whole group (uv run and the uvicorn it spawns).
   local name="$1" wd="$2"; shift 2
   rm -f "$PIDS/$name"
-  printf '=== local-stack start %s: %s\n' "$(date -u +%FT%TZ)" "$*" >>"$LOGS/$name.log"
+  # Tokens travel only as environment, never argv; the log line still redacts any KEY=value whose
+  # name contains TOKEN, in case one ever lands on a command line.
+  printf '=== local-stack start %s: %s\n' "$(date -u +%FT%TZ)" "$(printf '%s ' "$@" | sed -E 's/([A-Za-z_]*TOKEN[A-Za-z_]*)=[^ ]*/\1=<redacted>/g')" >>"$LOGS/$name.log"
   # The redirections sit on the backgrounded subshell itself, so no shell left between us and the
   # service ever holds the caller's stdout/stderr (`make local-stack | tee` must see EOF).
   (cd "$wd" || exit 1; exec setsid bash -c 'echo "$$" >"$0"; exec "$@"' "$PIDS/$name" "$@") </dev/null >>"$LOGS/$name.log" 2>&1 &
@@ -95,11 +97,13 @@ with open(path, "a") as f:
 PY
   chmod 600 "$ENVF"
   # Read, don't export: every process below gets exactly the tokens it holds (battlefield all of
-  # them, each agent only its own), never inherited from this shell. Any token already exported in
-  # the caller's environment is removed from children too.
+  # them, each agent only its own) as environment set on that one command, never on a command line
+  # (ps, logs) and never inherited from this shell. Clearing the export attribute first means a token
+  # the caller happened to export can't ride along into children either.
+  export -n AGENT_TOKEN AGENT_TOKEN_RED AGENT_TOKEN_GREEN AGENT_TOKEN_BLUE OPERATOR_TOKEN INTERNAL_TOKEN 2>/dev/null || true
+  unset INTERNAL_TOKEN
   # shellcheck disable=SC1090
   . "$ENVF"
-  unset_tokens=(-u AGENT_TOKEN -u AGENT_TOKEN_RED -u AGENT_TOKEN_GREEN -u AGENT_TOKEN_BLUE -u OPERATOR_TOKEN -u INTERNAL_TOKEN)
 
   say "starting Postgres 16 (pgserver) in .local-stack/pgdata"
   local uri
@@ -115,10 +119,9 @@ PY
 
   say "starting battlefield on :8000"
   DATABASE_URL="$uri" SCHEMA_PATH="$ROOT/contracts/schema.sql" \
-    start_proc battlefield "$ROOT/battlefield" env "${unset_tokens[@]}" \
     AGENT_TOKEN="$AGENT_TOKEN" AGENT_TOKEN_RED="$AGENT_TOKEN_RED" AGENT_TOKEN_GREEN="$AGENT_TOKEN_GREEN" \
     AGENT_TOKEN_BLUE="$AGENT_TOKEN_BLUE" OPERATOR_TOKEN="$OPERATOR_TOKEN" \
-    uv run --quiet uvicorn app.main:app --host 127.0.0.1 --port 8000
+    start_proc battlefield "$ROOT/battlefield" uv run --quiet uvicorn app.main:app --host 127.0.0.1 --port 8000
   local t=0  # /api/health is operator-only, so this one waits with the token
   until curl -fsS --max-time 3 -H "Authorization: Bearer $OPERATOR_TOKEN" "$A:8000/api/health" >/dev/null 2>&1; do
     pid_alive "$(cat "$PIDS/battlefield")" || die "battlefield exited during startup; see $LOGS/battlefield.log"
@@ -134,14 +137,13 @@ PY
     # each agent process holds only its own token, as AGENT_TOKEN
     own="$(eval "printf '%s' \"\${AGENT_TOKEN_${a^^}}\"")"
     if [[ "$m" == mock ]]; then
-      AGENT_NAME="$a" start_proc "$a" "$ROOT/battlefield" env "${unset_tokens[@]}" AGENT_TOKEN="$own" \
-        uv run --quiet uvicorn mock_agents.server:app --host 127.0.0.1 --port "$port"
+      AGENT_NAME="$a" AGENT_TOKEN="$own" \
+        start_proc "$a" "$ROOT/battlefield" uv run --quiet uvicorn mock_agents.server:app --host 127.0.0.1 --port "$port"
     else
       AGENT_NAME="$a" PORT="$port" DRY_RUN="$dry" PYTHONPATH="." \
         DROID_MODEL="$(eval "printf '%s' \"\${DROID_MODEL_${a^^}:-}\"")" \
         DROID_REASONING="$(eval "printf '%s' \"\${DROID_REASONING_${a^^}:-}\"")" \
-        start_proc "$a" "$ROOT/$a" env "${unset_tokens[@]}" AGENT_TOKEN="$own" \
-        uv run --quiet uvicorn server:app --host 127.0.0.1 --port "$port"
+        AGENT_TOKEN="$own" start_proc "$a" "$ROOT/$a" uv run --quiet uvicorn server:app --host 127.0.0.1 --port "$port"
     fi
     wait_health "$a" "$A:$port/health"
   done
