@@ -278,6 +278,8 @@ def same_action(existing: Any, action: str, entity_type: str | None, entity_id: 
     mints one), so for those the posted fields (args) stand in for the entity."""
     if existing["action"] != action or existing["entity_type"] != entity_type:
         return False
+    if action == "invoices.match" and dict(existing["args"] or {}).get("po_id") != dict(args).get("po_id"):
+        return False  # a verdict for one PO must never authorize matching another
     if entity_type == "gl_entry":
         if dict(existing["args"] or {}) != dict(args):
             return False
