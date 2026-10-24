@@ -95,7 +95,15 @@ Goal for this session: <fill in>
   provenance. `list_audit` now gives any X-Agent caller only `agent IN ('green','blue')` rows and
   never an `attacks.*` action; `agent=red` returns `[]`, not 403. Operator view is unfiltered.
   A new agent that writes audit rows stays hidden from agents until added to that allowlist.
-- Replays broadcast via `bus._broadcast` under a virtual episode id and are not persisted.
+- Replays (done): `POST /replays/{id}/play` creates a real `episodes` row `replay_<fixture>_<8hex>`
+  (status `running`→`finished`/`failed`; seed/mode/days from the fixture's `episode.started`) and
+  re-emits every fixture event through `bus.emit`, paced by original `ts` / speed (gap cap 3 s), so
+  `GET /events`, WS `after_id` catch-up and tickets work; concurrent plays get distinct ids. A
+  caller-supplied `episode_id` must match `replay_[A-Za-z0-9_-]{1,57}` and not exist (else 422/409).
+  Replays have no ledger rows and the runner/controller routes 409 on them. `/fe` for a replay:
+  snapshot score, timeline (cash_in/out null), attacks, compare, feed, thinking, activity `turns`
+  come from events; vendors, verdicts*, ap_aging, leaderboard, search, reports, escalations, entity
+  trails and activity `activity` are table-derived and empty (404 for trails).
 - No pagination on `/api/events` beyond `limit`; fine for 10-day episodes.
 - Day pacing for demos is `DAY_PAUSE_SEC`; there is no per-turn pacing.
 

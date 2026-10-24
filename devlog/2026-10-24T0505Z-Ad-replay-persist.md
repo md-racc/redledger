@@ -1,0 +1,1 @@
+- 2026-10-24T05:05Z · Ad · battlefield: replays are real replay_* episodes (events persisted via bus.emit), so WS catch-up, GET /events and event-derived /fe views (snapshot score, timeline, attacks, compare, feed) work; runner routes 409 on replays; next: contract text for /replays/{id}/play episode_id; blocked: none
