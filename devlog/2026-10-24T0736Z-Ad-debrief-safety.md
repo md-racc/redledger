@@ -1,0 +1,1 @@
+- 2026-10-24T07:36Z · Ad · contracts: tighten lineage debriefs after verification (resolved red attacks only daily, legit items AAR-only, live bank swaps unresolved, revealed attacks scored as of reveal); next: E2a-2 fixes land against it; blocked: none

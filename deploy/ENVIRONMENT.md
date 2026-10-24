@@ -88,6 +88,7 @@ untouched:** they already read `settings.internal_token` and keep working.
 | `DROID_REASONING_RED/GREEN/BLUE` | blank (model default) or `none\|off\|minimal\|low\|medium\|high\|xhigh\|max` | optional; variables (a bad value stops that agent at startup) |
 | `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
 | `BLUE_GATE_LLM_API_KEY`, `CRS_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
+| `CRS_USERNAME`, `CRS_PASSWORD` | own sandbox login or both empty | optional environment secrets; passed only to Blue at runtime |
 | `MAX_CREDITS_PER_EPISODE` | `0` (disabled) | e.g. `40`; variable |
 | `DOMAIN`, `GITHUB_REPO`, `CORS_ORIGINS` | n/a | variables |
 | `DATABASE_URL`, `POSTGRES_*` | compose default | compose default (Postgres not exposed) |
@@ -95,6 +96,27 @@ untouched:** they already read `settings.internal_token` and keep working.
 GitHub Actions *repository* secrets keep only the deploy plumbing: `VULTR_HOST`, `VULTR_USER`,
 `VULTR_SSH_KEY`. Everything the app reads lives in the `production` *environment*, which
 requires reviewer approval (Ad).
+
+### CRS sandbox credentials (runtime prerequisite)
+
+The CRS identity client uses `CRS_USERNAME` and `CRS_PASSWORD`, not `CRS_API_KEY`.
+A human may later add both as **secrets in the GitHub `production` environment**, never
+repository variables, build args, `NEXT_PUBLIC_*` values, or values committed to the repo.
+The SSH roll step forwards both to `deploy/render-env.sh`; its existing safe `emit` function
+writes them single-quoted into the mode-600 runtime file. Compose supplies them only to Blue,
+not the shared agent environment, battlefield, or frontend. The legacy `CRS_API_KEY` plumbing
+remains for compatibility but is obsolete for this client.
+
+The client logs in at `https://api-sandbox.stitchcredit.com/api/users/login` and uses
+`/transunion/identity-manager-verification/basic` only for pinned, approved fictional personas.
+This is identity verification, not a vendor EIN lookup; the public API has no EIN business
+endpoint. Missing credentials or `DRY_RUN=true` produce neutral unknown evidence, never a
+verification-based block. Leave the credentials unset when unused.
+
+This prerequisite does not provision credentials, enable Blue's disabled live SDK path, or
+establish live acceptance. Live CRS login/persona checks, container smoke, and live Factory
+acceptance remain **blocked / not run** until authorized credentials and tooling are available.
+Do not print rendered values or response tokens during those later checks.
 
 ### Credit guard
 

@@ -8,7 +8,8 @@ Every gated green route calls `check()` before mutating. check():
   5. shadow   → records enforced=false and returns Allow regardless of verdict
   6. enforce  → allow → Allow; block → raises GateBlockedError (403);
                 escalate → opens escalation, waits for human up to ESCALATION_TIMEOUT_SEC,
-                timeout = block
+                timeout = block (a headless lineage generation waits its config's
+                headless.escalation_timeout_sec instead: nobody is watching)
 
 Same-key requests are single-flight: they run one at a time, so a key gets one verdict and at most
 one escalation; the later ones replay the first's outcome. Without the lock (the backstop for
@@ -75,6 +76,29 @@ async def controller_mode(episode_id: str) -> str:
     return await db.fetchval("SELECT controller_mode FROM episodes WHERE id=$1", episode_id) or "off"
 
 
+async def _lineage(episode_id: str) -> Any:
+    return await db.fetchrow("SELECT l.id, l.status, l.config FROM episodes e JOIN lineages l ON l.id = e.lineage_id WHERE e.id=$1", episode_id)
+
+
+async def escalation_timeout_sec(episode_id: str) -> float:
+    """ESCALATION_TIMEOUT_SEC, or the lineage's headless.escalation_timeout_sec for a generation its runner
+    owns. A demo episode needs a finished/failed lineage (POST /episodes {lineage_id}), so a lineage that is
+    running or paused can only be gating its runner's own, headless generation."""
+    ln = await _lineage(episode_id)
+    headless = (ln["config"] or {}).get("headless") if ln and ln["status"] in ("running", "paused") else None
+    if headless:  # escalation_policy is always "block" (contract enum): timeout = block, as today
+        return min(float(headless.get("escalation_timeout_sec", 5)), float(settings.escalation_timeout_sec))
+    return float(settings.escalation_timeout_sec)
+
+
+async def blue_playbook_version(episode_id: str) -> int | None:
+    """Blue's latest playbook version in the episode's lineage (0 before any write); None outside lineages."""
+    ln = await _lineage(episode_id)
+    if ln is None:
+        return None
+    return int(await db.fetchval("SELECT COALESCE(MAX(version), 0) FROM playbooks WHERE lineage_id=$1 AND agent='blue'", ln["id"]))
+
+
 async def check(
     c: Caller,
     *,
@@ -122,8 +146,11 @@ async def _check(
     if existing:
         return await _replay(existing, mode, c, action, entity_type, entity_id, amount, args or {})
 
+    # blue caches learned rules by playbook version; the field exists only in lineage episodes
+    version = await blue_playbook_version(c.episode_id)
+    lineage_fields = {} if version is None else {"playbook_version": version}
     t0 = time.monotonic()
-    verdict, reason, confidence, rules = await _ask_blue(c, mode, action, entity_type, entity_id, amount, args or {}, context or {})
+    verdict, reason, confidence, rules = await _ask_blue(c, mode, action, entity_type, entity_id, amount, args or {}, context or {}, **lineage_fields)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
     # Race-safe: two requests that both saw no verdict for this key both asked blue; only the first
@@ -221,7 +248,16 @@ def same_action(existing: Any, action: str, entity_type: str | None, entity_id: 
 
 
 async def _ask_blue(
-    c: Caller, mode: str, action: str, et: str | None, eid: str | None, amount: float | None, args: dict, context: dict
+    c: Caller,
+    mode: str,
+    action: str,
+    et: str | None,
+    eid: str | None,
+    amount: float | None,
+    args: dict,
+    context: dict,
+    *,
+    playbook_version: int | None = None,
 ) -> tuple[str, str, float | None, list[str]]:
     body = {
         "idempotency_key": c.tool_use_id,
@@ -236,6 +272,8 @@ async def _ask_blue(
         "args": args,
         "context": context,
     }
+    if playbook_version is not None:
+        body["playbook_version"] = playbook_version
     try:
         async with httpx.AsyncClient(timeout=settings.gate_timeout_sec) as client:
             r = await client.post(f"{settings.blue_url}/gate", json=body, headers={"Authorization": f"Bearer {settings.agent_token}"})
@@ -298,7 +336,8 @@ async def _final_decision(esc_id: str) -> str:
 async def _escalate(vid: str, c: Caller, action: str, et: str | None, eid: str | None, amount: float | None, reason: str) -> tuple[str, str]:
     assert c.episode_id is not None and c.day is not None
     esc_id = db.new_id("esc")
-    expires = datetime.now(UTC) + timedelta(seconds=settings.escalation_timeout_sec)
+    hold = await escalation_timeout_sec(c.episode_id)
+    expires = datetime.now(UTC) + timedelta(seconds=hold)
     # Registered before the row exists, so an open row with no waiter in this process is always an
     # orphan (battlefield restarted mid-hold): see resolve_escalation / expire_orphaned_escalations.
     fut: asyncio.Future = asyncio.get_running_loop().create_future()
@@ -322,7 +361,7 @@ async def _escalate(vid: str, c: Caller, action: str, et: str | None, eid: str |
         )
         try:
             # shielded: the future outlives our timeout, so a joiner awaiting it is never cancelled
-            decision = await asyncio.wait_for(asyncio.shield(fut), timeout=settings.escalation_timeout_sec)
+            decision = await asyncio.wait_for(asyncio.shield(fut), timeout=hold)
         except TimeoutError:
             # A resolver may have won the row between the deadline and here; then its decision stands.
             decision = "timeout" if await _close(esc_id, "timeout", "system") else await _final_decision(esc_id)

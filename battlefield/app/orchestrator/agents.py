@@ -31,10 +31,12 @@ async def turn(agent: str, episode_id: str, day: int, controller_mode: str, opti
         return {"ok": False, "summary": f"{agent} unreachable: {type(e).__name__}", "duration_sec": 0}
 
 
-async def audit(episode_id: str, day: int, inputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+async def audit(episode_id: str, day: int, inputs: list[dict[str, Any]] | None = None, **lineage: Any) -> dict[str, Any]:
+    """`lineage` holds blue's `lineage` / `debrief` fields in a lineage episode (contracts/agent-service.md); empty otherwise."""
+    body = {"episode_id": episode_id, "day": day, "inputs": inputs or [], **lineage}
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(settings.turn_timeout_sec + 5, connect=10)) as client:
-            r = await client.post(f"{settings.blue_url}/audit", json={"episode_id": episode_id, "day": day, "inputs": inputs or []}, headers=_headers())
+            r = await client.post(f"{settings.blue_url}/audit", json=body, headers=_headers())
             return r.json() if r.status_code < 400 else {"ok": False, "summary": r.text[:200]}
     except Exception as e:
         return {"ok": False, "summary": f"blue unreachable: {type(e).__name__}"}
