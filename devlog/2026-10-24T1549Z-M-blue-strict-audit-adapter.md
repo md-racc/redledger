@@ -1,0 +1,1 @@
+- 2026-10-24T15:49Z · M · blue: opt into OFF strict identity with the pinned seven SDK IDs and bounded permission-once policy; preserve live hard stop and negative identity coverage; next: independent review and authenticated acceptance; blocked: inconclusive bounded SDK probe, no real Ledger or CRS acceptance
