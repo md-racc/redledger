@@ -72,8 +72,12 @@ class AttackPatch(BaseModel):
 
 
 async def _current_attack(c: Caller) -> str | None:
-    """Most recent attack red declared today; used to link created rows."""
-    return await db.fetchval("SELECT id FROM attacks WHERE episode_id=$1 AND day_launched=$2 ORDER BY id DESC LIMIT 1", c.episode_id, c.day)
+    """Most recent attack red declared today; used to link created rows.
+
+    Ordered by `created_at` (ids are random); `id` only breaks ties between rows that share a
+    timestamp (attacks that predate the column all got the upgrade time).
+    """
+    return await db.fetchval("SELECT id FROM attacks WHERE episode_id=$1 AND day_launched=$2 ORDER BY created_at DESC, id DESC LIMIT 1", c.episode_id, c.day)
 
 
 @router.post("/attacks", status_code=201)
@@ -140,7 +144,8 @@ async def request_vendor_change(body: VendorChangeCreate, c: Caller = Depends(al
         raise HTTPException(404, "vendor not found")
     cid = db.new_id("vch")
     await db.execute(
-        "INSERT INTO vendor_changes (id, episode_id, vendor_id, field, old_value, new_value, justification, requested_day, origin) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'red')",
+        "INSERT INTO vendor_changes (id, episode_id, vendor_id, field, old_value, new_value, justification, requested_day, origin, attack_id) "
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'red',$9)",
         cid,
         c.episode_id,
         body.vendor_id,
@@ -149,6 +154,7 @@ async def request_vendor_change(body: VendorChangeCreate, c: Caller = Depends(al
         body.new_value,
         body.justification,
         c.day,
+        await _current_attack(c),
     )
     await audit.record(c, "vendor_changes.create", body.model_dump(), {"id": cid}, 201)
     await audit.mutation(c, "vendor_changes.create", "vendor_change", cid)

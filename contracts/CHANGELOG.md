@@ -8,6 +8,24 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
 
 ## Findings
 
+- 2026-10-24 · Al · **In-process MCP tool IDs are `"<server>___<tool>"`** (three underscores),
+  e.g. `red-ledger___inspect_books`. `session.list_tools()` reports `source=None` for them, so
+  matching on `source` finds nothing and `restrict_tools` silently stays unapplied (the agent
+  then gets Droid's ~34 built-ins). Droid defers MCP tools and loads them through `ToolSearch`;
+  with `restrict_tools` set to the `___` IDs the model still finds and calls the ledger tools.
+  Proved by PR #9's live red run in the red container against `make mock-agents` (droid-sdk
+  0.5.0, Factory CLI 0.248.0, real `FACTORY_API_KEY`).
+- 2026-10-24 · Al · **Model menu and cost.** `list_models(api_key=…)` lists ~60 models, each
+  with a `token_multiplier`; cheapest usable for red: `gemini-3.8-flash` 0.3, `gpt-5.4-mini`
+  0.3, `claude-haiku-4-5` 0.4. A trivial one-tool turn costs ~10k `factory_credits`, mostly
+  ~31k input tokens of tool/system context; a live red turn measured ~6.7k credits (seed 34,
+  controller off, 2 days, `gemini-3.8-flash`, reasoning `low`; turns 14 s / 79 s). Proved by
+  the same PR #9 live run.
+- 2026-10-24 · Al · **In-process MCP tools that `await` stall the run.** A tool that returns
+  instantly completes; the same tool with `await asyncio.sleep(0.3)` or an httpx call hits
+  `RunTimeoutError` every time. Fix in agentkit: `DroidAgent._offload` runs each tool's
+  coroutine to completion on a small thread pool. Proved by PR #9's repro in the red container
+  (same setup as above).
 - 2026-10-23 · Ad · **Droid CLI install works in `python:3.11-slim`.** Proved by deploy run
   40050204221 (`gh run view 40050204221 --log`, job `build (red …)`): "Factory CLI v0.248.0
   installed successfully to /root/.local/bin/droid", and `droid-sdk==0.5.0` resolved via
@@ -21,10 +39,13 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
   agent Dockerfiles hides a failed install (owners Al/M may want it removed now that it works).
 - Still open:
   - Does `Autonomy.OFF` raise a permission request for every MCP tool call? (green dev, Fri night)
-  - Exact tool ID string for in-process MCP tools as seen by `session.list_tools()` (any agent dev)
   - Does `comment=` on a `CANCEL` reach the model as the rejection reason? (green dev)
 
 ## Changes
+
+- 2026-10-24 · Ad · ledger-api.yaml, events.md · agent-facing /audit_log excludes red's rows; legit_injected gains vendor_changes/new_vendors · blue (M), red (Al), frontend (R)
+
+- 2026-10-24 · Ad · schema.sql, ledger-api.yaml · attacks.created_at (in Attack responses); vendor_changes.attack_id (hidden from agents) · red (Al), frontend (R)
 
 - 2026-10-23 · Ad · agent-service.md, ledger-api.yaml, events.md · split INTERNAL_TOKEN into AGENT_TOKEN/OPERATOR_TOKEN, POST /ws/ticket, GET /events operator-only, credit_guard error · all
 

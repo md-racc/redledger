@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS vendor_changes (
   requested_day  INTEGER NOT NULL,
   status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','blocked')),
   resolved_day   INTEGER,
-  origin         TEXT NOT NULL DEFAULT 'sim'
+  origin         TEXT NOT NULL DEFAULT 'sim',
+  attack_id      TEXT                           -- set when origin='red'; never exposed
 );
 CREATE INDEX IF NOT EXISTS vendor_changes_ep ON vendor_changes(episode_id, status);
 
@@ -160,7 +161,8 @@ CREATE TABLE IF NOT EXISTS attacks (
                     CHECK (outcome IN ('pending','extracted','partial','blocked','flagged','failed')),
   amount_extracted  NUMERIC(14,2) NOT NULL DEFAULT 0,
   detected_day      INTEGER,
-  notes             TEXT
+  notes             TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()  -- orders a day's attacks for attack_id linking
 );
 CREATE INDEX IF NOT EXISTS attacks_ep ON attacks(episode_id);
 
@@ -271,3 +273,13 @@ CREATE TABLE IF NOT EXISTS inputs (
 CREATE INDEX IF NOT EXISTS inputs_pending ON inputs(episode_id, target) WHERE consumed_day IS NULL;
 
 -- Team-owned tables live in contracts/ext/<area>/*.sql and are prefixed <area>_ (red_, green_, blue_, fe_).
+
+-- ---------- additive upgrades for databases created by an older version of this file ----------
+-- CREATE TABLE IF NOT EXISTS never adds columns to an existing table, so every column added to a
+-- table above after the initial contracts also gets an idempotent ALTER here. No `make db-reset`.
+
+-- 2026-10-24: attacks.created_at (existing rows get the upgrade time; ties fall back to id),
+-- vendor_changes.attack_id (existing rows stay NULL; scoring falls back to its same-day heuristic).
+ALTER TABLE attacks ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE vendor_changes ADD COLUMN IF NOT EXISTS attack_id TEXT;
+CREATE INDEX IF NOT EXISTS vendor_changes_attack ON vendor_changes(attack_id) WHERE attack_id IS NOT NULL;

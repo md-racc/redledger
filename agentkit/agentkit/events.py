@@ -7,6 +7,7 @@ best-effort and batched; a failed emit never fails a turn.
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Any
 
@@ -20,7 +21,16 @@ log = structlog.get_logger(__name__)
 
 
 class EventEmitter:
-    def __init__(self, settings: AgentSettings, *, episode_id: str, day: int, flush_every: float = 0.5, max_batch: int = 50):
+    def __init__(
+        self,
+        settings: AgentSettings,
+        *,
+        episode_id: str,
+        day: int,
+        flush_every: float = 0.5,
+        max_batch: int = 50,
+        flush_budget_sec: float | None = None,
+    ):
         self.s = settings
         self.episode_id = episode_id
         self.day = day
@@ -30,6 +40,10 @@ class EventEmitter:
         self._flush_every = flush_every
         self._max_batch = max_batch
         self._thinking_buf: list[str] = []
+        # Total wall-clock budget for the final flush, so a dead battlefield can't hang a turn.
+        self._flush_budget = settings.http_timeout_sec if flush_budget_sec is None else flush_budget_sec
+        # One sender at a time: the pump and an explicit flush() never interleave POSTs or split a batch.
+        self._send_lock = asyncio.Lock()
 
     async def __aenter__(self) -> EventEmitter:
         self._client = httpx.AsyncClient(
@@ -46,15 +60,21 @@ class EventEmitter:
         return self
 
     async def __aexit__(self, *exc: object) -> None:
-        await self.flush()
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        if self._client:
-            await self._client.aclose()
+        try:
+            await self.flush()
+        finally:
+            if self._task:
+                # Normally idle by now. If flush() gave up waiting for the lock, the pump is still
+                # mid-POST to a hung battlefield; cancelling it logs that batch as dropped.
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+            # stragglers posted after the flush (late call_soon_threadsafe narration) are counted too
+            self._drop_queued("emitter_closed")
+            if self._client:
+                await self._client.aclose()
 
     # ---------- public ----------
     def emit(self, type_: str, payload: dict[str, Any]) -> None:
@@ -80,8 +100,29 @@ class EventEmitter:
         self.emit(f"x.{self.s.agent_name}.{name}", payload)
 
     async def flush(self) -> None:
+        """Send everything queued (thinking buffer included), batch by batch, within the flush budget.
+        Whatever is still queued when the budget runs out is dropped and logged as `events_dropped`."""
         self._flush_thinking()
-        await self._drain()
+        if self._client is None:  # not entered yet: nothing to send with, keep the queue
+            return
+        deadline = time.monotonic() + self._flush_budget
+        try:
+            # The pump may hold the lock mid-POST to a hung battlefield; that wait counts against the
+            # budget too. (A cancelled Lock.acquire never leaves the lock held.)
+            async with asyncio.timeout(self._flush_budget):
+                await self._send_lock.acquire()
+        except TimeoutError:
+            self._drop_queued("flush_budget_exhausted")
+            return
+        try:
+            while not self._q.empty():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._drop_queued("flush_budget_exhausted")
+                    return
+                await self._send_batch(timeout=remaining)
+        finally:
+            self._send_lock.release()
 
     # ---------- internals ----------
     def _flush_thinking(self) -> None:
@@ -89,23 +130,44 @@ class EventEmitter:
             self.emit(EventType.AGENT_THINKING, {"text": "".join(self._thinking_buf)})
             self._thinking_buf.clear()
 
+    def _drop_queued(self, reason: str) -> None:
+        dropped = 0
+        while not self._q.empty():
+            self._q.get_nowait()
+            dropped += 1
+        if dropped:
+            log.warning("events_dropped", count=dropped, reason=reason, agent=self.s.agent_name, episode_id=self.episode_id, day=self.day)
+
     async def _pump(self) -> None:
         while True:
             await asyncio.sleep(self._flush_every)
             await self._drain()
 
     async def _drain(self) -> None:
-        if self._client is None:
-            return
+        """Pump tick: send everything queued, one batch per POST. The lock is taken per batch so a
+        flush() waits for at most one in-flight POST before it takes over."""
+        while self._client is not None and not self._q.empty():
+            async with self._send_lock:
+                await self._send_batch(timeout=self.s.http_timeout_sec)
+
+    async def _send_batch(self, *, timeout: float) -> None:
+        """Dequeue ≤ max_batch events and POST them. Caller holds `_send_lock` and has checked
+        `_client`. Every dequeued event is either sent or logged as dropped, never silently lost."""
+        assert self._client is not None
         batch: list[dict[str, Any]] = []
         while not self._q.empty() and len(batch) < self._max_batch:
             batch.append(self._q.get_nowait().model_dump())
         if not batch:
             return
         try:
-            # battlefield requires X-Tool-Use-Id on every agent write; a narration batch is its own write
-            r = await self._client.post("/events", json=batch, headers={"X-Tool-Use-Id": uuid.uuid4().hex})
+            # Hard cap on the whole POST (httpx timeouts are per phase); a cut-off batch counts as dropped.
+            async with asyncio.timeout(max(timeout, 0.001)):
+                # battlefield requires X-Tool-Use-Id on every agent write; a narration batch is its own write
+                r = await self._client.post("/events", json=batch, headers={"X-Tool-Use-Id": uuid.uuid4().hex})
             if r.status_code >= 400:
-                log.warning("event_emit_failed", status=r.status_code, body=r.text[:200])
+                log.warning("event_emit_failed", status=r.status_code, body=r.text[:200], dropped=len(batch))
+        except asyncio.CancelledError:  # pump cancelled at __aexit__ (or the caller was cancelled) mid-POST
+            log.warning("events_dropped", count=len(batch), reason="cancelled_mid_post", agent=self.s.agent_name, episode_id=self.episode_id, day=self.day)
+            raise
         except Exception as e:  # never fail a turn over narration
-            log.warning("event_emit_error", error=str(e))
+            log.warning("event_emit_error", error=str(e), dropped=len(batch))
