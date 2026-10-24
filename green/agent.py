@@ -46,6 +46,7 @@ class GreenAgent(DroidAgent):
     name = "green"
     autonomy = "off"  # Do not change without an SDK experiment and shared integration.
     identity = "strict"
+    turn_loop_dry_run = True
     system_prompt = (Path(__file__).parent / "prompts" / "system.md").read_text()
 
     def __init__(self, settings: AgentSettings):
