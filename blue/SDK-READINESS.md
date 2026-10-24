@@ -288,3 +288,78 @@ and exact shared event pair. The gate timing is local ASGI overlap with a two-se
 write, not a real Ledger or production-latency result. All runtime guards and false readiness
 remain unchanged. Real-Ledger, interrupted/unknown-receipt, CRS, #83 seeded and all-real shadow
 acceptance are still outstanding; the one-session spending authorization is exhausted.
+
+## Real-Ledger acceptance harness and authorized live results, 2026-10-24
+
+`tests/sdk_real_ledger_acceptance.py` (not pytest-collected; requires `--allow-model-call`)
+serves the real `AuditAgent` through a test-only `_droid_turn` subclass on `:8013`, points a
+local battlefield (Postgres, mock red/green) at it, and runs a full 1-day enforce episode.
+It verifies, with operator reads only: permission requests at `Autonomy.OFF` for the pinned
+seven tool IDs; exactly one `agent.tool_call`/`agent.tool_result` pair per permission ID;
+every blue `audit_log` execution (sub-300) bound to a permission ID with no duplicate
+`(action, tool_use_id)` commits; the report committed and fetchable; receipt states per write;
+a same-key replay refused (4xx) with no second execution; and `/gate` latency sampled every
+50 ms during the live audit turn. The interrupted scenario SIGKILLs battlefield as the first
+write of any kind (flag, freeze, or report) is sent, restarts it, and requires an `unknown`
+receipt, zero-or-one execution for that key, and a refused replay. Output is a sanitized JSON
+with fixed failure codes; `ready:false`, `runtime_guard_changed:false` and
+`crs_or_provider_access:false` are constant. No raw model text or exception prose is printed.
+CRS credentials are empty; CRS construction is monkeypatched to raise (no provider access).
+
+Eight billable sessions ran against the local stack under the ad-authorized budget
+(own dev key, local only), each diagnosed before any retry:
+
+| # | Scenario | Result |
+|---|----------|--------|
+| 1 | happy | Deadline at 140 s (`TURN_TIMEOUT_SEC=150` too tight); harness timeouts raised |
+| 2 | happy | **Full evidence captured** (below); original verification had two false positives, since corrected |
+| 3 | happy | SDK stall: zero stream events for the whole 170 s budget |
+| 4 | happy | 4 reads, deadline before any write |
+| 5 | interrupted | SDK stall again; kill never triggered |
+| 6 | interrupted | Kill triggered on first write; a harness bug (`lsof tcp:8000` without `-sTCP:LISTEN`) matched the harness's own client connections and self-killed. Fixed; reaper now LISTEN-scoped and self-excluding |
+| 7 | interrupted | 4 reads, deadline before any write |
+| 8 | interrupted | 3 reads, deadline before any write |
+
+### Happy path: proven live (session 2, `ep_edd0d922b9a5`, 9,834 Factory credits)
+
+- 6 tool calls, 6 permission requests, exact one-to-one event pairs, all SDK-reported IDs.
+- Real Ledger commits: `flags.raise` 201 (`tc-wc3db0ypxqj`) and `reports.post` 201
+  (`tc-wwblp0bn3q`); receipts `flag:confirmed`, `report:confirmed`; report fetchable.
+- Same-key replay of the report write returned an **audited 409** (the rejection itself writes
+  an audit row sharing the key, with no sub-300 execution) and no second commit — exactly one
+  execution per `(action, tool_use_id)`; duplicate counting must consider sub-300 rows only.
+- `/gate` under the live audit: 1,817 samples, max **56.6 ms**, p95 8.04 ms, zero errors.
+- Turn summary: "Partial audit: 1 confirmed flags, 0 confirmed freezes; report confirmed;
+  0 unknown writes. crs_identity_check: verification unavailable" — the sole deficit is the
+  deliberately credential-less CRS check (separate acceptance), so acceptance keys on
+  turn-returned + zero unknown/failed writes + confirmed report, not raw `turn.ok`.
+
+### Interrupted path: not captured live; offline coverage stands
+
+Three attempts never reached a write inside the audit budget; the one triggered kill was lost
+to the harness bug above. The receipt semantics it would prove (cancel/timeout/5xx ->
+`unknown` + "do not blindly retry", no duplicate execution, audited replay refusal) remain
+covered by the offline invocation/receipt suite (`tests/test_shared_invocation.py` and
+friends). A live interrupted capture is still outstanding.
+
+### Readiness-relevant findings for M/Ad
+
+1. **Audit budget cap vs model latency.** `audit/agent.py` computes
+   `budget = min(170.0, turn_timeout_sec - 10)`, so raising `TURN_TIMEOUT_SEC` cannot extend an
+   audit. At observed `gemini-3.8-flash` latency (~15-40 s per tool round-trip), the 6-7 call
+   audit finished in time in only 1 of 5 non-stalled sessions; the rest ended truthfully with
+   "Audit deadline reached" (partial audit, gaps recorded, no blind writes — the designed safe
+   degradation). Whether to raise the cap, reorder writes earlier, or accept deadline-partial
+   audits is a product decision; the env knob alone does nothing today.
+2. **Intermittent SDK startup stalls.** 2 of 7 sessions produced zero stream events (not even
+   thinking deltas) for the entire 170 s budget. Minimal probes (bare session, and session with
+   an in-process MCP server + `restrict_tools`) both completed in under 7 s, so it is not
+   account-, model- or MCP-attach-wide; the trigger under the full 7-tool audit configuration
+   is undiagnosed. The bounded budget converts a stall into a truthful partial audit, not a hang.
+3. Reported per-turn `factory_credits` varies widely (9,834 for a 6-call audit; 5,825 and 3,308
+   for one-word probes), suggesting a large fixed session overhead in metering; worth knowing
+   for budget planning.
+
+All runtime guards, the live `_droid_turn` hard stop outside the test subclass, and
+readiness/health remain unchanged: `ready:false`. CRS fixture acceptance and the interrupted
+live capture are still outstanding.
