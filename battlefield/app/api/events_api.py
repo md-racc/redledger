@@ -58,14 +58,22 @@ async def ws(websocket: WebSocket, episode_id: str | None = None, token: str | N
     if not (token_matches(token, settings.operator_token) or verify_ws_ticket(ticket, episode_id)):
         await websocket.close(code=4401)
         return
+    # subscribe before reading history so nothing emitted in between is missed; anything emitted in
+    # that window is then both in history and queued live, so live frames at or below the history
+    # high-water mark are dropped (each event reaches the client once).
     q = bus.subscribe(episode_id)
     try:
+        sent_upto = 0
         if episode_id and after_id is not None:
+            sent_upto = after_id
             for ev in await bus.history(episode_id, after_id, 5000):
                 await websocket.send_text(json.dumps(ev))
+                sent_upto = max(sent_upto, ev["id"])
         while True:
             try:
                 ev = await asyncio.wait_for(q.get(), timeout=20)
+                if isinstance(ev.get("id"), int) and ev["id"] <= sent_upto:
+                    continue
                 await websocket.send_text(json.dumps(ev))
             except TimeoutError:
                 await websocket.send_text(json.dumps({"type": "ping"}))
