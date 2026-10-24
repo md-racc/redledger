@@ -317,6 +317,40 @@ components:
         current_day: { type: integer }
         lineage_id: { type: string, nullable: true }
         generation: { type: integer, nullable: true }
+    FixtureEmployee:
+      type: object
+      required: [name, role, salary, bank_account, start_day]
+      properties:
+        name: { type: string, description: "Free text; e.g. an approved CRS persona's full name (blue/CRS.md)" }
+        role: { type: string }
+        department: { type: string, nullable: true }
+        salary: { type: number }
+        bank_account: { type: string, description: "Must not equal any account already in the episode (vendors.bank_account, employees.bank_account, payments.to_account) nor another fixture's" }
+        start_day: { type: integer, minimum: 0 }
+        hr_record: { type: boolean, default: true }
+        status: { type: string, enum: [active, terminated, frozen], default: active }
+    FixtureExpense:
+      type: object
+      required: [employee_ref, amount, category, submitted_day]
+      properties:
+        employee_ref:
+          description: "Index into this request's `employees` (integer), or the id of an employee already in the episode (string)"
+          oneOf: [ { type: integer, minimum: 0 }, { type: string } ]
+        amount: { type: number, exclusiveMinimum: 0 }
+        category: { type: string }
+        submitted_day: { type: integer, minimum: 0 }
+        memo: { type: string, nullable: true }
+    FixturesCreate:
+      type: object
+      properties:
+        employees: { type: array, items: { $ref: '#/components/schemas/FixtureEmployee' }, maxItems: 50 }
+        expenses: { type: array, items: { $ref: '#/components/schemas/FixtureExpense' }, maxItems: 200 }
+    FixturesCreated:
+      type: object
+      required: [employees, expenses]
+      properties:
+        employees: { type: array, items: { $ref: '#/components/schemas/Employee' } }
+        expenses: { type: array, items: { $ref: '#/components/schemas/Expense' } }
     EpisodeCreate:
       type: object
       required: [controller_mode]
@@ -735,6 +769,35 @@ paths:
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody: { content: { application/json: { schema: { type: object, required: [mode], properties: { mode: { type: string, enum: [off, shadow, enforce] } } } } } }
       responses: { '200': { description: changed } }
+  /episodes/{id}/fixtures:
+    post:
+      summary: Seed operator fixtures (legit employees and expenses) into an episode, e.g. for acceptance runs.
+      description: |
+        Operator only (any X-Agent caller → 401/403 per the token rules); never agent-callable — agents create
+        employees/expenses only through their own routes. Creates the given employees, then the given
+        expenses, in one transaction: all or nothing. Rows are ordinary **legit** data: `origin = 'sim'`,
+        never `red`, never an `attack_id`; scoring treats them like any other legit employee/expense (they
+        count toward legit_processed / false positives exactly as seeded data does) and they never alter
+        attack ground truth. Expenses start `pending` and flow through green's normal gated routes.
+        Running episodes are refused: if the target episode is `running`, or belongs to a lineage whose
+        status is `running` (e.g. a generation mid-run), → 409 `{error: "episode is running"}` and nothing is
+        written, so a live run's legit counts and false-positive cost are never skewed. Allowed when the
+        episode is `created`, `paused` or `finished`. `start_day` / `submitted_day` are only required to be
+        ≥ 0; they are not bounded by the episode's `current_day` (acceptance flows choose them deliberately).
+        Collisions: a fixture `bank_account` equal to any account already in the episode
+        (`vendors.bank_account`, `employees.bank_account`, `payments.to_account`) or to another fixture's →
+        409 and nothing is written (so replaying the same request is refused, not duplicated).
+        Audited as an operator action (`audit_log` agent `operator`, action `fixtures.create`) and emits one
+        `ledger.mutation` per created row (`agent: "operator"`, action `employees.create` /
+        `expenses.create`).
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/FixturesCreate' } } } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/FixturesCreated' } } } }
+        '404': { description: unknown episode, or an expense's employee_ref names no employee in the episode }
+        '409': { description: "{error: 'bank_account collides', bank_account_index: <i>} or {error: 'episode is running'} — nothing written" }
+        '422': { description: invalid body (empty request, bad employee_ref index, non-positive amount, …) }
   /episodes/{id}/attack:
     post:
       summary: Force red's next turn to run a scheme (judge-selected attack).

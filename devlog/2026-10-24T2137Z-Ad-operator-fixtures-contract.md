@@ -1,0 +1,1 @@
+- 2026-10-24T21:37Z · Ad · contracts: operator-only POST /episodes/{id}/fixtures to seed legit employees + expenses (CRS persona acceptance, #102); next: battlefield implementation; blocked: none
