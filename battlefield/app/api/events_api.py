@@ -58,14 +58,24 @@ async def ws(websocket: WebSocket, episode_id: str | None = None, token: str | N
     if not (token_matches(token, settings.operator_token) or verify_ws_ticket(ticket, episode_id)):
         await websocket.close(code=4401)
         return
+    # subscribe before reading history so nothing emitted in between is missed; anything emitted in
+    # that window is then both in history and queued live, so live frames whose id was already sent
+    # from history are dropped (each event reaches the client once). Dedupe on the exact ids sent,
+    # not a high-water mark: ids are a BIGSERIAL but concurrent emits can commit out of id order,
+    # and a stale after_id must not swallow newer live events.
     q = bus.subscribe(episode_id)
     try:
+        sent_from_history: set[int] = set()
         if episode_id and after_id is not None:
             for ev in await bus.history(episode_id, after_id, 5000):
                 await websocket.send_text(json.dumps(ev))
+                sent_from_history.add(ev["id"])
         while True:
             try:
                 ev = await asyncio.wait_for(q.get(), timeout=20)
+                if sent_from_history and ev.get("id") in sent_from_history:
+                    sent_from_history.discard(ev["id"])  # each id is queued live at most once
+                    continue
                 await websocket.send_text(json.dumps(ev))
             except TimeoutError:
                 await websocket.send_text(json.dumps({"type": "ping"}))

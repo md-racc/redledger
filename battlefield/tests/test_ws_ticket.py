@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import time
 from datetime import datetime
 from typing import Any
@@ -64,14 +66,50 @@ def test_star_scope_matches_any_episode() -> None:
     assert verify_ws_ticket(t2, None, now=NOW + 1)
 
 
+def _flip(h: str) -> str:
+    return h[:-1] + ("0" if h[-1] != "0" else "1")
+
+
 def test_tampered_ticket_is_rejected() -> None:
     t, exp = issue_ws_ticket("ep_1", now=NOW)
-    scope, exp_s, sig = t.split(".")
-    flipped = sig[:-1] + ("0" if sig[-1] != "0" else "1")
-    assert not verify_ws_ticket(f"{scope}.{exp_s}.{flipped}", "ep_1", now=NOW)
-    assert not verify_ws_ticket(f"*.{exp_s}.{sig}", "ep_1", now=NOW)  # widened scope
-    assert not verify_ws_ticket(f"{scope}.{exp + 3600}.{sig}", "ep_1", now=NOW)  # extended expiry
+    scope, exp_s, nonce, sig = t.split(".")
+    assert not verify_ws_ticket(f"{scope}.{exp_s}.{nonce}.{_flip(sig)}", "ep_1", now=NOW)
+    assert not verify_ws_ticket(f"*.{exp_s}.{nonce}.{sig}", "ep_1", now=NOW)  # widened scope
+    assert not verify_ws_ticket(f"{scope}.{exp + 3600}.{nonce}.{sig}", "ep_1", now=NOW)  # extended expiry
     assert verify_ws_ticket(t, "ep_1", now=NOW)
+
+
+def test_tampered_nonce_is_rejected() -> None:
+    t, _ = issue_ws_ticket("ep_1", now=NOW)
+    scope, exp_s, nonce, sig = t.split(".")
+    assert not verify_ws_ticket(f"{scope}.{exp_s}.{_flip(nonce)}.{sig}", "ep_1", now=NOW)
+    assert verify_ws_ticket(t, "ep_1", now=NOW)
+
+
+@pytest.mark.parametrize("bad", [lambda s: s.upper(), lambda s: s[:-1], lambda s: s + "0", lambda s: " " + s[1:], lambda s: "g" + s[1:]])
+def test_noncanonical_nonce_is_rejected(bad: Any) -> None:
+    t, exp = issue_ws_ticket("ep_1", now=NOW)
+    scope, exp_s, nonce, _ = t.split(".")
+    alt = bad(nonce)
+    # even correctly signed over the altered nonce, a non-canonical nonce never verifies
+    assert not verify_ws_ticket(f"{scope}.{exp_s}.{alt}.{auth_mod._ticket_sig(scope, exp, alt)}", "ep_1", now=NOW)
+    assert verify_ws_ticket(t, "ep_1", now=NOW)
+
+
+def test_two_tickets_same_second_differ_and_each_works_once() -> None:
+    t1, exp1 = issue_ws_ticket("ep_1", now=NOW)
+    t2, exp2 = issue_ws_ticket("ep_1", now=NOW)
+    assert exp1 == exp2 and t1 != t2
+    assert verify_ws_ticket(t1, "ep_1", now=NOW)
+    assert verify_ws_ticket(t2, "ep_1", now=NOW)
+    assert not verify_ws_ticket(t1, "ep_1", now=NOW)
+    assert not verify_ws_ticket(t2, "ep_1", now=NOW)
+
+
+def test_old_three_part_ticket_is_rejected() -> None:
+    exp = NOW + WS_TICKET_TTL_SEC
+    old_sig = hmac.new(OPERATOR_TOKEN.encode(), f"ep_1|{exp}".encode(), hashlib.sha256).hexdigest()
+    assert not verify_ws_ticket(f"ep_1.{exp}.{old_sig}", "ep_1", now=NOW)
 
 
 def test_ticket_signed_with_other_key_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -81,26 +119,27 @@ def test_ticket_signed_with_other_key_is_rejected(monkeypatch: pytest.MonkeyPatc
     assert not verify_ws_ticket(t, "ep_1", now=NOW)
 
 
-@pytest.mark.parametrize("junk", [None, "", "abc", "ep_1.notanint.deadbeef", "ep_1..", "..."])
+@pytest.mark.parametrize("junk", [None, "", "abc", "ep_1.notanint.deadbeef", "ep_1..", "...", "....", "ep_1.1.2.3.4"])
 def test_malformed_ticket_is_rejected(junk: str | None) -> None:
     assert not verify_ws_ticket(junk, "ep_1", now=NOW)
 
 
 def test_used_set_is_pruned_of_expired_tickets() -> None:
     t, exp = issue_ws_ticket("ep_1", now=NOW)
+    nonce = t.split(".")[2]
     assert verify_ws_ticket(t, "ep_1", now=NOW)
-    assert f"ep_1|{exp}" in auth_mod._used_tickets
+    assert f"ep_1|{exp}|{nonce}" in auth_mod._used_tickets
     verify_ws_ticket(None, "ep_1", now=exp + 1)
-    assert f"ep_1|{exp}" not in auth_mod._used_tickets
+    assert f"ep_1|{exp}|{nonce}" not in auth_mod._used_tickets
 
 
 @pytest.mark.parametrize("spell", ["0{e}", "00{e}", "+{e}", " {e}", "{e} ", "\t{e}", "{e}\n", "{s}_{r}"])
 def test_noncanonical_exp_cannot_replay(spell: str) -> None:
     t, exp = issue_ws_ticket("ep_1", now=NOW)
-    scope, exp_s, sig = t.split(".")
+    scope, exp_s, nonce, sig = t.split(".")
     spelled = spell.format(e=exp_s, s=exp_s[:2], r=exp_s[2:])
     assert int(spelled) == exp  # a naive int() parse sees the same, validly signed, exp
-    alt = f"{scope}.{spelled}.{sig}"
+    alt = f"{scope}.{spelled}.{nonce}.{sig}"
     assert not verify_ws_ticket(alt, "ep_1", now=NOW)  # rejected even before first use
     assert verify_ws_ticket(t, "ep_1", now=NOW)
     assert not verify_ws_ticket(alt, "ep_1", now=NOW)  # and cannot replay after it
@@ -109,8 +148,8 @@ def test_noncanonical_exp_cannot_replay(spell: str) -> None:
 @pytest.mark.parametrize("bad", [lambda s: s.upper(), lambda s: " " + s, lambda s: s + "00", lambda s: s[:-1]])
 def test_noncanonical_sig_is_rejected(bad: Any) -> None:
     t, _ = issue_ws_ticket("ep_1", now=NOW)
-    scope, exp_s, sig = t.split(".")
-    assert not verify_ws_ticket(f"{scope}.{exp_s}.{bad(sig)}", "ep_1", now=NOW)
+    scope, exp_s, nonce, sig = t.split(".")
+    assert not verify_ws_ticket(f"{scope}.{exp_s}.{nonce}.{bad(sig)}", "ep_1", now=NOW)
     assert verify_ws_ticket(t, "ep_1", now=NOW)
 
 
@@ -119,7 +158,8 @@ def test_bad_scope_is_rejected(scope: str) -> None:
     with pytest.raises(ValueError):
         issue_ws_ticket(scope, now=NOW)
     exp = NOW + WS_TICKET_TTL_SEC
-    assert not verify_ws_ticket(f"{scope}.{exp}.{auth_mod._ticket_sig(scope, exp)}", scope, now=NOW)
+    nonce = "0123456789abcdef"
+    assert not verify_ws_ticket(f"{scope}.{exp}.{nonce}.{auth_mod._ticket_sig(scope, exp, nonce)}", scope, now=NOW)
 
 
 def test_scope_charset_allows_real_ids() -> None:
@@ -201,3 +241,92 @@ def test_ws_rejections(history: list) -> None:
     expired, _ = issue_ws_ticket("ep_1", now=time.time() - WS_TICKET_TTL_SEC - 5)
     assert _rejected(f"/api/ws?episode_id=ep_1&ticket={expired}") == 4401
     assert history == []
+
+
+def test_two_route_tickets_in_the_same_second_both_connect(history: list) -> None:
+    t1 = client.post("/api/ws/ticket", json={"episode_id": "ep_1"}, headers=auth()).json()["ticket"]
+    t2 = client.post("/api/ws/ticket", json={"episode_id": "ep_1"}, headers=auth()).json()["ticket"]
+    assert t1 != t2
+    for t in (t1, t2):
+        with client.websocket_connect(f"/api/ws?episode_id=ep_1&after_id=0&ticket={t}") as ws:
+            assert ws.receive_json()["id"] == 1
+    assert _rejected(f"/api/ws?episode_id=ep_1&ticket={t1}") == 4401
+    assert _rejected(f"/api/ws?episode_id=ep_1&ticket={t2}") == 4401
+
+
+def test_ws_old_format_ticket_is_4401(history: list) -> None:
+    exp = int(time.time()) + WS_TICKET_TTL_SEC
+    old_sig = hmac.new(OPERATOR_TOKEN.encode(), f"ep_1|{exp}".encode(), hashlib.sha256).hexdigest()
+    assert _rejected(f"/api/ws?episode_id=ep_1&ticket=ep_1.{exp}.{old_sig}") == 4401
+    assert history == []
+
+
+def test_ws_drops_live_duplicates_of_catch_up_frames(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Events emitted between subscribe and the history read are both in history and queued live."""
+
+    def ev(i: int) -> dict[str, Any]:
+        return {"id": i, "type": "day.started", "episode_id": "ep_1"}
+
+    async def racy_history(episode_id: str, after_id: int = 0, limit: int = 500) -> list[dict[str, Any]]:
+        # at/below after_id: only possible via an out-of-order commit; delivered (a client-side
+        # duplicate at worst, deduped by id) rather than risk dropping a real event
+        bus._broadcast(episode_id, ev(2))
+        bus._broadcast(episode_id, ev(4))  # emitted in the window: also in the history below
+        bus._broadcast(episode_id, ev(5))  # emitted after the history read: live only
+        return [ev(3), ev(4)]
+
+    monkeypatch.setattr(bus, "history", racy_history)
+    with client.websocket_connect(f"/api/ws?episode_id=ep_1&after_id=2&token={OPERATOR_TOKEN}") as ws:
+        got = [ws.receive_json()["id"] for _ in range(4)]
+    assert got == [3, 4, 2, 5]  # 4 arrives once
+
+
+def test_ws_keeps_live_events_that_commit_out_of_id_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """History sees [3, 5] because 4 hadn't committed yet; 4 then arrives live and must not be lost."""
+
+    def ev(i: int) -> dict[str, Any]:
+        return {"id": i, "type": "day.started", "episode_id": "ep_1"}
+
+    async def history(episode_id: str, after_id: int = 0, limit: int = 500) -> list[dict[str, Any]]:
+        bus._broadcast(episode_id, ev(5))  # in history and queued live
+        bus._broadcast(episode_id, ev(4))  # committed after the history read, lower id
+        bus._broadcast(episode_id, ev(6))
+        return [ev(3), ev(5)]
+
+    monkeypatch.setattr(bus, "history", history)
+    with client.websocket_connect(f"/api/ws?episode_id=ep_1&after_id=0&token={OPERATOR_TOKEN}") as ws:
+        got = [ws.receive_json()["id"] for _ in range(4)]
+    assert got == [3, 5, 4, 6]
+
+
+def test_ws_stale_after_id_does_not_swallow_live_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A tab left open across `make db-reset` reconnects with an after_id above every real id."""
+
+    def ev(i: int) -> dict[str, Any]:
+        return {"id": i, "type": "day.started", "episode_id": "ep_1"}
+
+    async def history(episode_id: str, after_id: int = 0, limit: int = 500) -> list[dict[str, Any]]:
+        bus._broadcast(episode_id, ev(7))
+        return []
+
+    monkeypatch.setattr(bus, "history", history)
+    with client.websocket_connect(f"/api/ws?episode_id=ep_1&after_id=999&token={OPERATOR_TOKEN}") as ws:
+        got = [ws.receive_json()["id"] for _ in range(1)]
+    assert got == [7]
+
+
+def test_ws_all_episodes_stream_is_not_filtered(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def no_history(*a: Any, **k: Any) -> list[dict[str, Any]]:
+        raise AssertionError("no history without episode_id")
+
+    monkeypatch.setattr(bus, "history", no_history)
+    real_subscribe = bus.subscribe
+
+    def subscribe_and_queue(episode_id: str | None):
+        q = real_subscribe(episode_id)
+        q.put_nowait({"id": 1, "type": "day.started", "episode_id": "ep_9"})
+        return q
+
+    monkeypatch.setattr(bus, "subscribe", subscribe_and_queue)
+    with client.websocket_connect(f"/api/ws?token={OPERATOR_TOKEN}") as ws:
+        assert ws.receive_json()["id"] == 1

@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+import secrets
 import time
 from dataclasses import dataclass
 
@@ -109,21 +110,24 @@ def agent_episode(c: Caller, episode_id_query: str | None = None) -> str:
 
 
 # ---------- WebSocket tickets ----------
-# `<scope>.<exp>.<sig>`: scope = episode_id or "*", exp = unix seconds, sig = hex
-# HMAC-SHA256(key=OPERATOR_TOKEN, msg=f"{scope}|{exp}"). Single use, in-process only.
-# Every part must be in canonical form (no leading zeros/sign/whitespace/underscores in exp,
-# lowercase hex sig), and the used-set is keyed by the canonical `scope|exp`, so one ticket has
-# exactly one spelling and cannot be replayed under another.
+# `<scope>.<exp>.<nonce>.<sig>`: scope = episode_id or "*", exp = unix seconds, nonce = 16 random
+# lowercase hex chars, sig = hex HMAC-SHA256(key=OPERATOR_TOKEN, msg=f"{scope}|{exp}|{nonce}").
+# Single use, in-process only. The nonce makes two tickets minted in the same second for the same
+# scope distinct, so each works once. Every part must be in canonical form (no leading
+# zeros/sign/whitespace/underscores in exp, lowercase hex nonce and sig), and the used-set is
+# keyed by the canonical `scope|exp|nonce`, so one ticket has exactly one spelling and cannot be
+# replayed under another. Old 3-part tickets are rejected (they lived 60 s; nothing to migrate).
 
 TICKET_SCOPE_RE = re.compile(r"\*|[A-Za-z0-9_-]{1,64}")
 _TICKET_EXP_RE = re.compile(r"[1-9][0-9]{0,11}")
+_TICKET_NONCE_RE = re.compile(r"[0-9a-f]{16}")
 _TICKET_SIG_RE = re.compile(r"[0-9a-f]{64}")
 
-_used_tickets: dict[str, int] = {}  # canonical f"{scope}|{exp}" -> exp, pruned on every check
+_used_tickets: dict[str, int] = {}  # canonical f"{scope}|{exp}|{nonce}" -> exp, pruned on every check
 
 
-def _ticket_sig(scope: str, exp: int) -> str:
-    return hmac.new(settings.operator_token.encode(), f"{scope}|{exp}".encode(), hashlib.sha256).hexdigest()
+def _ticket_sig(scope: str, exp: int, nonce: str) -> str:
+    return hmac.new(settings.operator_token.encode(), f"{scope}|{exp}|{nonce}".encode(), hashlib.sha256).hexdigest()
 
 
 def issue_ws_ticket(episode_id: str | None, *, now: float | None = None) -> tuple[str, int]:
@@ -135,7 +139,8 @@ def issue_ws_ticket(episode_id: str | None, *, now: float | None = None) -> tupl
     if not TICKET_SCOPE_RE.fullmatch(scope):
         raise ValueError(f"episode_id must match {TICKET_SCOPE_RE.pattern}")
     exp = int(now if now is not None else time.time()) + WS_TICKET_TTL_SEC
-    return f"{scope}.{exp}.{_ticket_sig(scope, exp)}", exp
+    nonce = secrets.token_hex(8)
+    return f"{scope}.{exp}.{nonce}.{_ticket_sig(scope, exp, nonce)}", exp
 
 
 def verify_ws_ticket(ticket: str | None, episode_id: str | None, *, now: float | None = None) -> bool:
@@ -146,15 +151,15 @@ def verify_ws_ticket(ticket: str | None, episode_id: str | None, *, now: float |
     if not ticket:
         return False
     parts = ticket.split(".")
-    if len(parts) != 3:
+    if len(parts) != 4:
         return False
-    scope, exp_s, sig = parts
-    if not (TICKET_SCOPE_RE.fullmatch(scope) and _TICKET_EXP_RE.fullmatch(exp_s) and _TICKET_SIG_RE.fullmatch(sig)):
+    scope, exp_s, nonce, sig = parts
+    if not (TICKET_SCOPE_RE.fullmatch(scope) and _TICKET_EXP_RE.fullmatch(exp_s) and _TICKET_NONCE_RE.fullmatch(nonce) and _TICKET_SIG_RE.fullmatch(sig)):
         return False
     exp = int(exp_s)
-    if not hmac.compare_digest(sig.encode(), _ticket_sig(scope, exp).encode()):
+    if not hmac.compare_digest(sig.encode(), _ticket_sig(scope, exp, nonce).encode()):
         return False
-    key = f"{scope}|{exp}"
+    key = f"{scope}|{exp}|{nonce}"
     if exp < t or key in _used_tickets:
         return False
     if scope != "*" and scope != episode_id:
