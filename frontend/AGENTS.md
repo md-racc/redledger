@@ -48,7 +48,7 @@ into `UIState`; `lib/types.ts` has the shapes; `contracts/events.md` is the auth
 - `lib/reducer.ts` — idempotent reducer; `lib/reducer.test.ts` shows the pattern.
 - `lib/api.ts` — every REST route, including `/api/fe/*`, via the same-origin proxy. No token.
 - `lib/mock.ts` + `public/mocks/sample.jsonl` — fixture replay with `NEXT_PUBLIC_MOCK=true`.
-- `app/page.tsx` — a throwaway skeleton proving the data path. Replace freely; keep the hooks.
+- `app/page.tsx` — the 3D arena front door (see `ARENA.md`). The old throwaway skeleton that proves the data path now lives at `app/ops/page.tsx` (`/ops`).
 
 ## Demo-critical surfaces (README §15)
 
