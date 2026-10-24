@@ -47,12 +47,14 @@ Branching, commits, PRs, and the coding-agent git rules are in `GIT.md`. Short v
 
 1. **Agents never touch Postgres.** Only `battlefield` has `DATABASE_URL`. Red, green, and blue
    read and write the books exclusively through `agentkit.LedgerClient` → Ledger API over HTTP.
-2. **Agents never call each other.** Red/green/blue do not know each other's URLs. The only
-   exception is green's Droid permission handler mirroring `POST blue/gate`, which uses
-   `BLUE_URL` and the same idempotency key the ledger call uses.
-3. **The Ledger API is the enforcement point.** Blue's verdict is consulted inside battlefield on
-   green's gated routes. Anything else (green's permission handler, UI hints) is a mirror, never a
-   second source of truth.
+2. **Agents never call each other.** Red/green/blue do not know each other's URLs. No
+   exceptions: blue `/gate` is called only by battlefield. Green learns the verdict before acting by
+   preparing the action (`POST /api/preparations`, keyed by its tool-use id) and acting on the
+   returned `effective` (design D1, contracts #80).
+3. **The Ledger API is the enforcement point.** Blue's verdict is consulted inside battlefield, at
+   preparation and on green's gated routes, which consume the matching preparation. Anything else
+   (green's permission handler, UI hints) only reflects that decision, never a second source of
+   truth.
 4. **`origin` is secret during play.** `origin='red'` rows are ground truth for scoring. Battlefield
    strips `origin` from every response to any `X-Agent`. Never leak it through another field, an
    error message, or an event payload visible to agents. The only exception is battlefield's
@@ -67,9 +69,11 @@ Branching, commits, PRs, and the coding-agent git rules are in `GIT.md`. Short v
 6. **Contracts beat code.** If code disagrees with `contracts/`, the code is wrong. If you need
    the contract to change, change the contract first (PR, CHANGELOG entry, ping affected owners),
    then the code.
-7. **Idempotency keys are the Droid `tool_use_id`** when the call originates from a Droid tool,
-   else a UUID4. Blue caches `/gate` verdicts by key for 120 s. Never reuse a key across different
-   actions.
+7. **Idempotency keys are the SDK-reported Droid `tool_use_id`** (`<id>:<n>` for a tool's n-th
+   write). Strict agents (`identity="strict"`: green and blue live, D7) refuse unverified, explicit or
+   ambiguous ids before anything is sent (#84). A UUID4 is used only under DRY_RUN or by
+   best-effort agents (red, pending Al). Preparations expire after 120 s. Never reuse a key across
+   different actions: a different binding under the same key is a 409.
 8. **Everything must run under `DRY_RUN=true` with no Factory or LLM keys.** Agents return canned
    turns; blue's gate runs rules only. Frontend must run with `NEXT_PUBLIC_MOCK=true` and no
    backend. Don't break these paths; they are how four of five people develop.
@@ -141,17 +145,24 @@ Branching, commits, PRs, and the coding-agent git rules are in `GIT.md`. Short v
 Subclass `agentkit.DroidAgent`. It handles session lifecycle, in-process MCP server creation
 from your tool functions, stream→event forwarding, timeouts, and DRY_RUN. You supply: a system
 prompt, a list of tool functions (thin wrappers over `LedgerClient`), a model id, an autonomy
-level, and optionally a permission handler.
+level, an `identity` policy (`strict` | `best_effort`; strict by default at autonomy `off`), and
+optionally a permission handler. Live turns and reflections run on their own thread and loop
+(`agentkit.sync.run_on_turn_loop`), so the service loop (`/health`, blue's `/gate`) stays responsive;
+share turn-scoped state across loops only through `agentkit.TurnLock`. `ledger_tool(...,
+redact=fn)` redacts `agent.tool_call` arguments on every narration path.
 
 - `system_prompt` is a **string** (replaces Droid's default coding prompt). Never use the
   `append` preset form; the default prompt is about editing code and will confuse the agent.
 - `disable_builtin_skills=True` always. `restrict_tools` to your MCP server's tools; verify the
   exact tool IDs with `session.list_tools()` once and hardcode them.
-- Red: `Autonomy.HIGH`, permission handler always `PROCEED_ONCE`.
-- Green: `Autonomy.OFF` so every tool call raises a permission request; handler calls
-  `POST blue/gate` with the ledger idempotency key and returns `CANCEL` on block. Verify on day
-  one that MCP tool calls actually trigger permission requests at `OFF`; if they don't, document
-  the finding in `contracts/CHANGELOG.md` and rely on ledger-side enforcement alone.
+- Red: `Autonomy.HIGH`, permission handler always `PROCEED_ONCE`, best-effort identity.
+- Green: `Autonomy.OFF`, strict identity, so every tool call raises a permission request; the
+  handler prepares the action (`LedgerClient.prepare`) and answers `PROCEED_ONCE` on
+  `effective: allow`, `CANCEL` with the contract's cause otherwise (`contracts/agent-service.md`,
+  Green). Whether every MCP call at `OFF` raises a request is still an open Finding; if it doesn't,
+  record it in `contracts/CHANGELOG.md` and rely on ledger-side enforcement alone.
+- Blue audit: `Autonomy.OFF`, strict identity, permission handler always `PROCEED_ONCE` (D11, #90);
+  live audit stays disabled until its readiness blockers are proven.
 - Never return `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*` from any handler. They disable the gate.
 - Handlers may be async and may do I/O. They must not start a turn on the same session.
 - Pin models via `DROID_MODEL_*`. Don't use `model="auto"` in anything that runs during judging.

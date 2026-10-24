@@ -25,7 +25,7 @@ own `AGENTS.md` written for the developer who owns it.
 |---|---|---|
 | **Ad** (repo owner) | `battlefield/`, `agentkit/`, `contracts/`, compose, Makefile, CI, deploy | The center spoke: Ledger API, gatekeeper, orchestrator, event bus, scoring, mock agents, frontend read API, hosting |
 | **Al** | `red/` | Attacker: scheme catalog, red tools, red Droid session |
-| **M** | `green/`, `blue/` | Finance-ops agent (gated AP workflow, Droid permission-handler mirror) and controller (gate rules + LLM, audit Droid session). Also tunes seed/legit-traffic realism via PRs to Ad |
+| **M** | `green/`, `blue/` | Finance-ops agent (gated AP workflow that prepares each action before executing it) and controller (gate rules + LLM, audit Droid session). Also tunes seed/legit-traffic realism via PRs to Ad |
 | **R** | `frontend/` + presentation | Everything a judge sees: dashboard, demo choreography, pitch deck. Consumes the event stream and `/api/fe` |
 
 Branch prefixes match directories (`GIT.md` §1). CI blocks a PR that touches files outside its
@@ -80,10 +80,11 @@ separate `OPERATOR_TOKEN` (§13).
 ### Why this shape
 
 - **One enforcement point.** Fraud is caught where money moves: the Ledger API. Blue's verdict
-  is consulted there. Green's Droid permission handler mirrors the same verdict for the
-  Factory-native demo, but the ledger is the source of truth.
+  is consulted there: when green prepares an action and again when the gated route consumes
+  that preparation. Green's Droid permission handler acts on the prepared decision; the ledger is
+  the source of truth.
 - **Agents are black boxes to each other.** Red, green, and blue share only the ledger. They
-  never call each other (one exception: green's permission handler → blue `/gate`). The
+  never call each other; blue `/gate` is called only by battlefield. The
   orchestrator sequences them. Each team owns one container end to end and honors two
   contracts: the Ledger API and the `/turn` endpoint.
 - **Ground truth is hidden.** Battlefield tags red-originated rows with `origin='red'`
@@ -100,7 +101,7 @@ separate `OPERATOR_TOKEN` (§13).
 |---------------|------------------------------------------|------|-------|---------------------------------|
 | `battlefield` | Python 3.11, FastAPI, asyncpg            | 8000 | Ad    | postgres, red, green, blue      |
 | `red`         | Python 3.11, Droid SDK, FastAPI          | 8001 | Al    | battlefield                     |
-| `green`       | Python 3.11, Droid SDK, FastAPI          | 8002 | M     | battlefield, blue (mirror gate) |
+| `green`       | Python 3.11, Droid SDK, FastAPI          | 8002 | M     | battlefield                     |
 | `blue`        | Python 3.11, Droid SDK + direct LLM API  | 8003 | M     | battlefield                     |
 | `frontend`    | Next.js 15, TypeScript, Tailwind         | 3000 | R     | battlefield                     |
 | `postgres`    | Postgres 16 (Timescale image optional)   | 5432 | Ad    | —                               |
@@ -184,7 +185,7 @@ Agent requests also carry `X-Agent`, `X-Episode`, `X-Day`, and on writes `X-Tool
 |---|---|---|
 | Reads | `GET /vendors /vendors/{id} /vendor_changes /employees /purchase_orders /invoices /invoices/{id} /payments /expenses /bank/transactions /gl/entries /reports/{id}`; `GET /flags` (green, blue); `GET /audit_log` (blue); `GET /attacks` (red) | agents + operator |
 | Red writes | `POST /attacks` (declare before executing), `PATCH /attacks/{id}`, `POST /vendors /vendor_changes /invoices /expenses /employees` | red |
-| Green writes (gated) | `POST /invoices/{id}/match\|approve\|reject\|pay`, `/vendor_changes/{id}/approve\|reject`, `/expenses/{id}/approve\|pay`, `POST /gl/entries` | green |
+| Green writes (gated) | `POST /preparations` (gate a pending action ahead of execution; returns `effective`), `GET /preparations/{key}`; `POST /invoices/{id}/match\|approve\|reject\|pay`, `/vendor_changes/{id}/approve\|reject`, `/expenses/{id}/approve\|pay`, `POST /gl/entries` (consume the matching preparation, else gate inline) | green |
 | Blue writes | `POST /flags`, `/vendors/{id}/freeze\|unfreeze`, `/reports` | blue |
 | Events (write) | `POST /events` (agents: `agent.*` and `x.*` only) | agents |
 | Events (read) | `GET /events?episode_id=&after_id=`, `POST /ws/ticket {episode_id?}` → `{ticket, expires_at}`, `WS /ws?episode_id=&ticket=&after_id=` (or `&token=<OPERATOR_TOKEN>` for curl) | operator only |
@@ -272,7 +273,7 @@ New with the token split:
 
 | Variable | Read by | Meaning |
 |---|---|---|
-| `AGENT_TOKEN` | battlefield, red, green, blue | Bearer for agent ↔ battlefield calls (any request with `X-Agent`) and green → blue `/gate`. Replaces `INTERNAL_TOKEN`, which still works as a fallback for both tokens |
+| `AGENT_TOKEN` | battlefield, red, green, blue | Bearer for agent ↔ battlefield calls (any request with `X-Agent`) and battlefield → agent calls. Replaces `INTERNAL_TOKEN`, which still works as a fallback for both tokens |
 | `OPERATOR_TOKEN` | battlefield, frontend server, Makefile | Bearer for everything without `X-Agent`: control plane, `/fe/*`, `GET /events`, `/inputs`, `POST /ws/ticket`. Must differ from `AGENT_TOKEN` |
 | `MAX_CREDITS_PER_EPISODE` | battlefield | Pause an episode once its summed `factory_credits` reach this (`error` event, `where: credit_guard`; resume by hand). `0` = off |
 | `DRY_RUN_RED`, `DRY_RUN_GREEN`, `DRY_RUN_BLUE` | compose → each agent's `DRY_RUN` | Per-agent override of `DRY_RUN`; blank = follow `DRY_RUN`. Lets one agent run live while the others stay keyless |
@@ -354,7 +355,7 @@ token by whether the request carries `X-Agent`:
 
 | Token | Held by | Authorizes |
 |---|---|---|
-| `AGENT_TOKEN` | battlefield, red, green, blue | every Ledger API request with `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes`; green → blue `/gate` mirror |
+| `AGENT_TOKEN` | battlefield, red, green, blue | every Ledger API request with `X-Agent`; battlefield → agent `/turn` `/gate` `/audit` `/schemes` `/reflect` |
 | `OPERATOR_TOKEN` | battlefield, frontend **server**, Makefile/curl, Ad | every request without `X-Agent`: control plane, `/fe/*`, `GET /events`, `/inputs`, `POST /ws/ticket`, `/ws?token=` |
 | WS ticket | browser, 60 s, single use | one `/ws` connection for one episode (or `*`) |
 | none | anyone | `battlefield/extensions/fe_*` routes deliberately marked public |
