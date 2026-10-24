@@ -1,0 +1,1 @@
+- 2026-10-24T23:54Z · Ad · docs: README §11 rows for ADMIN_KEY and the CF_ACCESS public read-only mode (#152); next: frontend viewers/admins; blocked: none
