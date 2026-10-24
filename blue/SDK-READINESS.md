@@ -6,6 +6,20 @@ with no environment bypass.** `/health` retains its shape: `ok=true` means the s
 `droid_ok=false` truthfully reports the
 unavailable live audit, including when SDK imports succeed. Health never runs diagnostics.
 
+## Strict-policy opt-in prerequisite (#84)
+
+Blue explicitly selects `autonomy="off"` and `identity="strict"` and answers permission
+requests only with `PROCEED_ONCE` (lazy SDK import). The immutable seven-ID allowlist below,
+including CRS, seeds a fresh per-agent list before the first SessionConfig. Blue overrides
+only the expected IDs; shared `_learn_tool_ids` validates every strict-live turn before
+streaming and rejects missing/extra/lookalike IDs or listing failures.
+
+`tests/test_strict_adapter.py` exercises that policy with controlled module/session doubles
+and synthetic ledger context, not an authenticated SDK or provider. This is not a live
+adapter: the real `_droid_turn` hard stop and false readiness/health remain unchanged.
+Owner-loop/narration work in #85 is separate; no authenticated invocation proof or guard lift
+is claimed here.
+
 ## Invocation/receipt integration covered offline — not live qualification
 
 `tests/test_shared_invocation.py` uses the real shared `Invocation`, `bind_invocation`,
