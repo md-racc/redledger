@@ -5,6 +5,11 @@ SHELL := /bin/bash
 # $(shell ...), and EXPANDS them to do so: `make help EP='$(shell touch x)'` would run `touch x`
 # on your machine. So the user-input variables are never exported; targets that need one pass it
 # explicitly (prod-*, devlog below). This must stay above the first $(shell ...) (env_get/TOKEN).
+# Defaults for the local episode targets. Must precede `unexport` below: GNU make 4.4 `unexport`
+# defines the names (empty), after which `?=` would be a no-op. Prod targets ignore these (prodarg).
+MODE ?= shadow
+DAYS ?= 10
+SEED ?= 42
 unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG
 COMPOSE := docker compose
 DEV := -f docker-compose.yml -f docker-compose.dev.yml
@@ -46,9 +51,6 @@ db-shell: ## psql into the running db
 	$(COMPOSE) exec postgres psql -U redledger redledger
 
 # ---------- episode control (curl against battlefield) ----------
-MODE ?= shadow
-DAYS ?= 10
-SEED ?= 42
 episode: ## create + start an episode: make episode MODE=enforce SEED=42 DAYS=10
 	@curl -s $(AUTH) -X POST $(API)/api/episodes -d '{"controller_mode":"$(MODE)","seed":$(SEED),"days":$(DAYS)}' | tee /tmp/rl_ep.json; echo
 	@EP=$$(python3 -c 'import json;print(json.load(open("/tmp/rl_ep.json"))["id"])'); echo "episode $$EP"; \
