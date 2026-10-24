@@ -1,0 +1,1 @@
+- 2026-10-24T03:23Z · M · green: retain AP failure/recovery regressions and propagate #13 dispatch guard; clarify landed SDK fixes versus missing preflight/identity/worker-context support; next: integrate reviewed Ad/Blue support; blocked: live demo hold and shared event hardening
