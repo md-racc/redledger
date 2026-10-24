@@ -57,6 +57,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [battlefield, frontend]
+    networks: [edge]  # reaches battlefield + frontend only; never the agents or data networks
 
 volumes:
   caddy_data:
