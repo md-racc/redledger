@@ -1,0 +1,1 @@
+- 2026-10-24T04:19Z · M · blue: add offline readiness diagnostics and truthful health; next: Ad bridge work and independent review; blocked: live SDK context/ID transport and loop blocking (findings/handoff: blue/SDK-READINESS.md)
