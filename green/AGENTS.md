@@ -51,6 +51,8 @@ PO amounts that drift a few percent, legit no-PO vendors, occasional legit bank-
 
 ## Local loop
 
+`AGENT_TOKEN` replaces `INTERNAL_TOKEN` (still accepted as a fallback); use your own `FACTORY_API_KEY` locally. Pass `AGENT_TOKEN=<your .env value>` (compose default `change-me-agent`) where the command below says `INTERNAL_TOKEN=change-me`, or battlefield and your service 401 each other.
+
 ```
 make mock-agents                       # battlefield + stub red/blue
 docker compose stop green

@@ -15,7 +15,7 @@ TOKEN := $(if $(TOKEN),$(TOKEN),change-me)
 AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
 
 .PHONY: help up up-dry mock-agents down logs ps db-reset db-shell seed episode step toggle attack escalations score record replay \
-        install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog
+        install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog devlog-show
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -93,5 +93,29 @@ test-frontend:
 	cd frontend && npm test --silent
 schema-dump: ## copy canonical schema into battlefield/db (for local non-docker runs)
 	cp contracts/schema.sql battlefield/db/schema.sql && rm -rf battlefield/db/ext && cp -r contracts/ext battlefield/db/ext
-devlog: ## append a DEVLOG entry: make devlog WHO=Ad MSG="..."
-	@printf -- "- %s · %s · %s\n" "$$(date -u +%Y-%m-%dT%H:%MZ)" "$(WHO)" "$(MSG)" >> DEVLOG.md && tail -1 DEVLOG.md
+# devlog: one fragment file per PR, so PRs never conflict on DEVLOG.md (GIT.md §6).
+# WHO/MSG/SLUG reach the shell via the environment, unexpanded ($(value ...)), so a MSG like
+# '$11,004 "quoted"' is written verbatim: make never sees `$1`, the shell never re-parses it.
+devlog: export DEVLOG_WHO := $(value WHO)
+devlog: export DEVLOG_MSG := $(value MSG)
+devlog: export DEVLOG_SLUG := $(value SLUG)
+devlog: ## write devlog/<ts>-<who>-<slug>.md: make devlog WHO=Ad MSG="..." [SLUG=topic, default: branch topic]
+	@set -euo pipefail; \
+	 [ -n "$$DEVLOG_WHO" ] || { echo "devlog: WHO is required (Ad|Al|M|R)" >&2; exit 1; }; \
+	 [ -n "$$DEVLOG_MSG" ] || { echo "devlog: MSG is required" >&2; exit 1; }; \
+	 [[ "$$DEVLOG_WHO" =~ ^[A-Za-z][A-Za-z0-9_-]*$$ ]] || { echo "devlog: WHO must be a plain name (Ad|Al|M|R)" >&2; exit 1; }; \
+	 slug="$$DEVLOG_SLUG"; \
+	 if [ -z "$$slug" ]; then br="$$(git rev-parse --abbrev-ref HEAD)"; slug="$${br#*/}"; fi; \
+	 slug="$$(printf '%s' "$$slug" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9-' '-' | sed -e 's/^-*//' -e 's/-*$$//')"; \
+	 [ -n "$$slug" ] || { echo "devlog: could not derive SLUG; pass SLUG=topic" >&2; exit 1; }; \
+	 now="$$(date -u +%Y-%m-%dT%H%M)"; \
+	 f="devlog/$${now}Z-$${DEVLOG_WHO}-$${slug}.md"; \
+	 [ ! -e "$$f" ] || { echo "devlog: $$f already exists" >&2; exit 1; }; \
+	 mkdir -p devlog; \
+	 msg="$$(printf '%s' "$$DEVLOG_MSG" | tr '\n' ' ')"; \
+	 printf -- '- %s · %s · %s\n' "$${now:0:13}:$${now:13:2}Z" "$$DEVLOG_WHO" "$$msg" > "$$f"; \
+	 echo "$$f"; cat "$$f"
+devlog-show: ## print the combined log (DEVLOG.md history + devlog/ fragments), oldest first
+	@shopt -s nullglob; \
+	 { grep -h '^- [0-9]' DEVLOG.md || true; for f in devlog/[0-9]*.md; do grep -h '^- [0-9]' "$$f" || true; done; } \
+	 | LC_ALL=C sort -s -k2,2

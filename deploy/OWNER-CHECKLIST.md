@@ -5,11 +5,12 @@ In order. ~45 minutes. Items marked ⚑ are the ones that bite if skipped.
 ## 1. Repo (10 min)
 
 - [ ] Unzip, `git init`, first commit `chore: scaffold`, push `main`.
-- [ ] ⚑ Replace `@AD_HANDLE @AL_HANDLE @M_HANDLE @R_HANDLE` in `.github/CODEOWNERS` with real GitHub usernames. CODEOWNERS with fake handles silently requires no one.
-- [ ] ⚑ Branch protection on `main` (Settings → Branches → Add rule, pattern `main`):
-  require a pull request; require 1 approval; **require review from Code Owners**; dismiss stale approvals;
-  require status checks by their real job names: `python (agentkit)`, `python (battlefield)`, `python (red)`, `python (green)`, `python (blue)`, `frontend`, `ownership-guard`, `contracts-guard` (they appear after the first PR runs CI);
+- [x] `.github/CODEOWNERS` has real handles (Ad=@md-racc, Al=@Alex-Epstein, M=@moterodiaz, R=@RaagaSundar). It is routing/notification only: owners get auto-requested; it gates nothing.
+- [x] ⚑ Branch protection on `main`: require a pull request; **0 approvals; code-owner review off** (integration merges; GIT.md §4);
+  require status checks by their real job names: `python (agentkit)`, `python (battlefield)`, `python (red)`, `python (green)`, `python (blue)`, `frontend`, `ownership-guard`, `contracts-guard` (skipped = pass);
   do not allow force pushes; do not allow deletions; **include administrators**.
+- [x] Ad's machine only: a local, **uncommitted** removal of the `gh pr merge*` deny in `.claude/settings.json` so the orchestrator can merge (`git update-index --skip-worktree .claude/settings.json`). Never commit it; teammates keep the committed denies.
+- [x] Integration loop (AGENTS.md §10, GIT.md §4): PR steward subagent polls and assesses; an independent verifier reviews core/cross-area PRs; merge with `gh pr merge --squash --match-head-commit <assessed sha>`; resync PR branches with plain merges of `origin/main`, never force.
 - [ ] Settings → General → Pull Requests: allow **squash merging only**; default to PR title + description; **automatically delete head branches**.
 - [ ] Settings → Actions → General: allow GitHub Actions; workflow permissions "Read and write" (deploy.yml pushes to GHCR).
 - [ ] Add collaborators Al, M, R with Write (not Admin). You stay the only admin.
@@ -66,7 +67,7 @@ Do this locally before anyone else starts; it's the proof the skeleton holds.
 
 ## 6. Things that will come to you anyway
 
-- Contracts PRs. Review fast; they block people. Ask "could this be an extension instead?" first (README §16).
+- Contracts PRs. Ask "could this be an extension instead?" first (README §16). Verifier pass, then merge on owner authority and post an FYI in the PR + team channel; owners object with a follow-up contracts PR.
 - `make db-reset` requests after a schema change. Record fixtures before wiping the staging DB.
 - Factory credit burn. `turn.ended` events carry `factory_credits`; `GET /api/fe/episodes/{ep}/agents/activity` sums them. Check it Saturday afternoon. `MAX_CREDITS_PER_EPISODE` pauses a runaway episode (`error` event, `where: credit_guard`); resume it by hand.
 - The scoring gap for `bank_swap` (battlefield/AGENTS.md → Known gaps). M will hit it the moment blue blocks a vendor change correctly and gets no credit.

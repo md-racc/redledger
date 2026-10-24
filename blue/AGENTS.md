@@ -51,6 +51,8 @@ Blue is scored on both sides: dollars blocked *and* false-positive cost. "Block 
 
 ## Tuning loop
 
+`AGENT_TOKEN` replaces `INTERNAL_TOKEN` (still accepted as a fallback); use your own `FACTORY_API_KEY` locally. A blue you run on the host needs the same `AGENT_TOKEN` battlefield has (compose default `change-me-agent`).
+
 Every rule change: run two seeded episodes (`make episode MODE=enforce SEED=42`, then a
 different seed), compare `/api/fe/episodes/<EP>/verdicts/rules`. A rule that fires mostly on
 `origin=sim` rows is a false-positive machine; narrow it or lower its severity.
