@@ -119,3 +119,28 @@ async def test_the_shipped_crs_persona_file_seeds_cleanly(episode: str) -> None:
         r = await cl.post(f"/api/episodes/{episode}/fixtures", json=body, headers=f.auth())
     assert r.status_code == 201, r.text
     assert [e["name"] for e in r.json()["employees"]] == PERSONAS and len(r.json()["expenses"]) == 3
+
+
+@pytest.mark.parametrize(
+    ("episode_status", "lineage_status", "expected"),
+    [("running", None, 409), ("paused", "running", 409), ("created", None, 201), ("paused", None, 201), ("finished", "finished", 201)],
+)
+async def test_running_episodes_and_running_lineages_are_refused(episode: str, episode_status: str, lineage_status: str | None, expected: int) -> None:
+    if lineage_status is not None:
+        ln = f.uid("ln")
+        await db.execute(
+            "INSERT INTO lineages (id, base_seed, config, status) VALUES ($1, 1, $2, $3)",
+            ln,
+            {"generations": 1, "days": 1, "controller_mode": "enforce", "reveal_days": 3, "reveal_generations": 2, "max_credits": 0},
+            lineage_status,
+        )
+        await db.execute("UPDATE episodes SET lineage_id=$2, generation=1 WHERE id=$1", episode, ln)
+    await db.execute("UPDATE episodes SET status=$2 WHERE id=$1", episode, episode_status)
+    async with _client() as cl:
+        r = await cl.post(f"/api/episodes/{episode}/fixtures", json=_body(), headers=f.auth())
+    assert r.status_code == expected, r.text
+    created = await db.fetchval("SELECT COUNT(*) FROM employees WHERE episode_id=$1 AND name = ANY($2::text[])", episode, PERSONAS)
+    if expected == 409:
+        assert r.json() == {"error": "episode is running"} and created == 0
+    else:
+        assert created == 3

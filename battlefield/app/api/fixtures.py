@@ -70,9 +70,16 @@ async def create_fixtures(episode_id: str, body: FixturesCreate) -> Any:
             return _collision(i)
 
     async with db.pool().acquire() as conn, conn.transaction():
-        ep = await conn.fetchrow("SELECT current_day FROM episodes WHERE id=$1 FOR SHARE", episode_id)
+        ep = await conn.fetchrow(
+            "SELECT e.current_day, e.status, l.status AS lineage_status FROM episodes e "
+            "LEFT JOIN lineages l ON l.id = e.lineage_id WHERE e.id=$1 FOR SHARE OF e",
+            episode_id,
+        )
         if ep is None:
             raise HTTPException(404, "unknown episode")
+        if ep["status"] == "running" or ep["lineage_status"] == "running":
+            # seeding a live run would skew its legit counts and false-positive cost
+            return JSONResponse({"error": "episode is running"}, status_code=409)
         day = ep["current_day"]
         taken = {r["a"] for r in await conn.fetch(_ACCOUNTS_SQL, episode_id) if r["a"]}
         for i, a in enumerate(accounts):
