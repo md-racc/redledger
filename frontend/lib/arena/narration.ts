@@ -10,6 +10,7 @@
 // Scores are never computed here: the overlay shows `score.updated` and `episode.ended.final_score` as they come. Events reach this
 // after the pacer (useFeed), and `CaptionQueue` gives each caption time to be read. Pure, tested (narration.test.ts).
 import type { RLEvent } from "../types";
+import { FAIL_SAFE_NOTE, failSafeLabel, isFailSafe } from "../verdictCause";
 import { ruleWhy } from "./escalation";
 import { cardFor, money } from "./headlines";
 
@@ -83,6 +84,7 @@ export function captionFor(e: RLEvent, days = 0): Caption | null {
     }
     case "gate.verdict": {
       if (p.verdict !== "block" && p.verdict !== "escalate") return null;
+      if (isFailSafe(p)) return { key: `failsafe:${p.verdict}`, tone: "ink", tag: "Fail-safe", text: failSafeLabel(p.verdict), sub: FAIL_SAFE_NOTE };
       const reason = humanReason(p);
       const amt = money(p.amount);
       const what = `${actionWords(p.action)}${amt ? ` · ${amt}` : ""}`;

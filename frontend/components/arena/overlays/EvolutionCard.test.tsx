@@ -11,7 +11,7 @@ import type { LineageReport, LoadedLineage } from "@/lib/arena/lineage";
 beforeAll(() => { (globalThis as { React?: typeof React }).React = React; });
 
 const sample = JSON.parse(readFileSync(join(__dirname, "../../../public/mocks/lineage-report.json"), "utf8")) as LineageReport;
-const html = (initial: LoadedLineage) => renderToStaticMarkup(<EvolutionCard open driven={false} preferLive={initial.source === "live"} onClose={() => {}} initial={initial} />);
+const html = (initial: LoadedLineage, detail = false) => renderToStaticMarkup(<EvolutionCard open driven={false} preferLive={initial.source === "live"} onClose={() => {}} initial={initial} initialDetail={detail} />);
 const columns = (out: string) => [...out.matchAll(/<h4><span>Gen (\d+)<\/span>/g)].map((m) => Number(m[1]));
 
 describe("the Evolution card", () => {
@@ -33,7 +33,7 @@ describe("the Evolution card", () => {
   });
 
   it("never claims a control was retired because it went quiet", () => {
-    const out = html({ report: sample, source: "recorded" });
+    const out = html({ report: sample, source: "recorded" }, true);
     expect(out).not.toContain("controls retired");
     expect(out).toContain("controls switched on");
     expect(out).toContain("split sibling");
@@ -44,9 +44,32 @@ describe("the Evolution card", () => {
   });
 
   it("renders red's learning as words", () => {
-    const out = html({ report: sample, source: "recorded" });
+    const out = html({ report: sample, source: "recorded" }, true);
     expect(out).not.toContain("[object Object]");
     expect(out).toContain("outcomes of gen 3: split v2 extracted ×2, bank swap blocked");
+  });
+
+  it("opens in the simple view: how to read it, red's and blue's totals in words, no rule statistics", () => {
+    const out = html({ report: sample, source: "recorded" });
+    expect(out).toContain("Each column is one generation");
+    expect(out).toMatch(/Red&#x27;s take went up from \$3,000 in generation 1 to \$15,500 in generation 4\./);
+    expect(out).toMatch(/Blue&#x27;s blocked total went up from \$2,000 in generation 1 to \$5,000 in generation 4\./);
+    expect(out).toContain("Show detail");
+    expect(out).toContain("Red tried");
+    expect(out).toContain("Blue caught red with:");
+    // the numbers behind it stay one click away
+    for (const jargon of ["precision", "recall", "not fired after this generation", "outcomes of gen"]) expect(out, jargon).not.toContain(jargon);
+    // the honest labels stay in the simple view
+    expect(out).toContain("controls switched on");
+    expect(out).toContain("controls switched off");
+  });
+
+  it("shows the rule statistics and the playbook diffs under Show detail", () => {
+    const out = html({ report: sample, source: "recorded" }, true);
+    expect(out).toContain("Simple view");
+    expect(out).toContain("precision 0.50");
+    expect(out).toContain("recall 0.50");
+    expect(out).toContain("Red tried · blue&#x27;s controls");
   });
 
   it("names the fallback when the asked-for lineage was not found", () => {

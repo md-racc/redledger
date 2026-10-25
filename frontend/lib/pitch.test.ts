@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { LiveRuns } from "./arena/liveRuns";
+import { runScore, type LiveRuns } from "./arena/liveRuns";
 
 // Windows checkouts may hold CRLF: the tests care about the words, not the line endings
 const read = (p: string) => readFileSync(join(__dirname, "..", p), "utf8").replace(/\r\n/g, "\n");
@@ -38,6 +38,8 @@ describe("the numbers", () => {
     expect(Math.round(runs.runs.off.score.dollars_extracted)).toBe(10285);
     for (const doc of [story, pitch]) expect(doc).toContain("$10,285");
     expect(pitch).toMatch(/ten thousand two hundred eighty-five dollars/);
+    expect(runScore(runs.runs.enforce).dollars_extracted).toBe(0); // "Controller on: zero", from the controls report
+    expect(pitch).toMatch(/red got zero/);
   });
 
   it("never quote the pre-rescoring controller-on figure as a loss", () => {

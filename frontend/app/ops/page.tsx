@@ -11,6 +11,7 @@ import { loadFixture, replay } from "@/lib/mock";
 import { attacksByDay, blockedVerdicts, initialState, openEscalations, reduce } from "@/lib/reducer";
 import { useRole } from "@/lib/role";
 import type { RLEvent, UIState } from "@/lib/types";
+import { FAIL_SAFE_NOTE, failSafeLabel, isFailSafe } from "@/lib/verdictCause";
 import { connect } from "@/lib/ws";
 
 const MOCK = process.env.NEXT_PUBLIC_MOCK === "true";
@@ -89,7 +90,7 @@ export default function Page() {
           <h2 className="font-bold">Needs a human</h2>
           {esc.map((e) => (
             <div key={e.escalation_id} className="flex gap-3 items-center">
-              <span>{e.action} ${e.amount?.toLocaleString()} — {e.reason}</span>
+              <span className={isFailSafe(e) ? "opacity-60" : undefined}>{e.action} ${e.amount?.toLocaleString()} — {isFailSafe(e) ? failSafeLabel("escalate") : e.reason}</span>
               {admin && <button className="border px-2" onClick={() => api.resolve(e.escalation_id, "approve")}>approve</button>}
               {admin && <button className="border px-2" onClick={() => api.resolve(e.escalation_id, "block")}>block</button>}
             </div>
@@ -110,10 +111,17 @@ export default function Page() {
         <div>
           <h2 className="font-bold">Verdicts</h2>
           {blockedVerdicts(state).slice(-12).reverse().map((v) => (
-            <div key={v.verdict_id} className="border-b py-1">
-              d{v.day} <b>{v.verdict.toUpperCase()}</b> {v.action} {v.amount ? `$${v.amount.toLocaleString()}` : ""}
-              <div className="opacity-70">{v.reason}</div>
-            </div>
+            isFailSafe(v) ? (
+              <div key={v.verdict_id} className="border-b py-1 opacity-60" title={FAIL_SAFE_NOTE}>
+                d{v.day} <i>{failSafeLabel(v.verdict)}</i> {v.action} {v.amount ? `$${v.amount.toLocaleString()}` : ""}
+                <div>{FAIL_SAFE_NOTE}</div>
+              </div>
+            ) : (
+              <div key={v.verdict_id} className="border-b py-1">
+                d{v.day} <b>{v.verdict.toUpperCase()}</b> {v.action} {v.amount ? `$${v.amount.toLocaleString()}` : ""}
+                <div className="opacity-70">{v.reason}</div>
+              </div>
+            )
           ))}
         </div>
       </section>

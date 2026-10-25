@@ -12,6 +12,7 @@ import { focus } from "./focus";
 import type { ArenaSim } from "./sim";
 import type { AttackOutcome } from "./types";
 import type { RLEvent } from "../types";
+import { isFailSafe } from "../verdictCause";
 
 /** Which gate rule most plausibly stops each scheme. Used when a block can't be tied to a verdict. */
 export const SCHEME_RULE: Record<string, string> = {
@@ -56,7 +57,8 @@ export class Director {
 
       case "gate.verdict": {
         const rules: string[] = p.rules_fired ?? [];
-        const guard = rules.length ? guardForRule(rules[0]) : null;
+        // a fail-safe verdict is no guard's catch: nobody flashes for it (lib/verdictCause.ts)
+        const guard = rules.length && !isFailSafe(p) ? guardForRule(rules[0]) : null;
         if (guard && p.verdict_id) this.verdictGuard.set(p.verdict_id, guard);
         if (p.verdict === "block" && guard) {
           this.blocks.push({ guardId: guard, day: e.day });

@@ -169,16 +169,16 @@ function EscalationBar({ feed, pitch = false }: { feed: Feed; pitch?: boolean })
   // a real recording played back: its outcomes are what happened, so the only honest button is Block
   const approvable = canApprove({ recording: feed.recording, source: feed.source });
   return (
-    <div className={`escalation ${pitch ? "is-pitch" : ""}`} role="alert" style={{ ["--left" as string]: String(Math.min(1, left / total)) }}>
+    <div className={`escalation ${pitch ? "is-pitch" : ""} ${x.failSafe ? "is-failsafe" : ""}`} role="alert" style={{ ["--left" as string]: String(Math.min(1, left / total)) }}>
       {pitch && <i className="escalation-meter" aria-hidden />}
       <div className="escalation-head">
-        <span className="escalation-tag">Your decision</span>
+        <span className="escalation-tag">{x.failSafe ? "Fail-safe · your decision" : "Your decision"}</span>
         <span className="escalation-clock" title="If nobody decides before it runs out, the payment is blocked"><b>{left}</b> s left</span>
       </div>
       <h3>{x.title}</h3>
       <p className="escalation-what">{x.what}</p>
       <div className="escalation-why">
-        <h4>Why the controller stopped it</h4>
+        <h4>{x.failSafe ? "Why it is held" : "Why the controller stopped it"}</h4>
         <ul>{x.why.map((w) => <li key={w}>{w}</li>)}</ul>
       </div>
       <div className="escalation-act">

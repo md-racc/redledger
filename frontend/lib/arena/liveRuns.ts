@@ -1,17 +1,34 @@
 // The recorded live-red runs (docs/recordings, #136), summarised by tools/gen-live-runs.mjs into public/mocks/live-runs.json. Owner: Dev R.
 //
 // The 90-second show plays the mock-agent recording (richer to watch: every scheme, a decision to make). These are the real runs it stands in
-// for: the same seed for ten days with the controller off and on, red live on Droid. The Compare card's "Real run" tab shows them so the
-// numbers the pitch says out loud ("about ten thousand lost, about eighteen hundred") are on screen too.
+// for: the same seed for ten days with the controller off and on, red live on Droid. The Compare card's "Real run" tab shows them.
+//
+// Money lost comes from the live controls report (#207 scoring: lost = reached an attacker-controlled account), carried as
+// `controls_report`. `score` is the recording's own pre-#207 scoreboard: for the controller-on run it counted $1,824.22 that was a
+// decoy invoice paid into the real vendor's account, so it must not be shown as money lost. `runScore` is what the card shows.
 import type { Score } from "../types";
+
+/** Headline figures from the live controls report (`/report/<episode>`), copied by tools/gen-live-runs.mjs. */
+export interface ControlsReportFigures {
+  lost: number;
+  to_attacker: number;
+  caught: number;
+  launched: number;
+  blocked: number;
+  fp_cost: number;
+  note: string;
+  source: string;
+}
 
 export interface LiveRun {
   episode_id: string;
   mode: "off" | "shadow" | "enforce";
   seed: number;
   days: number;
+  /** the recording's own final scoreboard (pre-#207); prefer `runScore` */
   score: Score;
-  /** cumulative, one row per day */
+  controls_report?: ControlsReportFigures;
+  /** cumulative, one row per day, from the recording's scoreboard; prefer `lostByDay` */
   by_day: { day: number; extracted: number; blocked: number }[];
   attacks: { day: number; scheme_id: string; display_name: string; target_amount: number }[];
   escalations: { opened: number; timed_out: number };
@@ -35,6 +52,19 @@ export function loadLiveRuns(): Promise<LiveRuns | null> {
     .catch(() => null)
     .then((v) => { if (!v) cached = null; return v; });
   return cached;
+}
+
+/** The score the card shows: the controls report's figures where there are some, else the recording's scoreboard. */
+export function runScore(run: LiveRun): Score {
+  const r = run.controls_report;
+  if (!r) return run.score;
+  return { ...run.score, dollars_extracted: r.lost, dollars_blocked: r.blocked, false_positive_cost: r.fp_cost, attacks_caught: r.caught, attacks_launched: r.launched };
+}
+
+/** Cumulative money lost per day, never above the controls report's total (a scoreboard figure the report rescored as no loss drops out). */
+export function lostByDay(run: LiveRun): { day: number; lost: number }[] {
+  const cap = runScore(run).dollars_extracted;
+  return run.by_day.map((d) => ({ day: d.day, lost: Math.min(d.extracted, cap) }));
 }
 
 /** "10 duplicate invoices" style tally of what red launched, most common first. */

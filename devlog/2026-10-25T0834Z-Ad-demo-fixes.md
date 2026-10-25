@@ -1,0 +1,1 @@
+- 2026-10-25T08:34Z · Ad · frontend: fail-safe blocks are labelled as fail-safe (verdict cause), Compare card shows controls-report figures ($0 controller-on, not $1,824); stacked on #223; next: judging-hour run; blocked: none
