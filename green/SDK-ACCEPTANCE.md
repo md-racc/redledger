@@ -18,7 +18,8 @@ Keyless configuration and mocked HTTP tests are not SDK restriction or real Ledg
 - Maximum **45 seconds per Stage A Session**, **135 seconds per Stage B Session**,
   including opening/closing: **18 minutes aggregate**. Reject a hold/HTTP budget plus
   cleanup margin that cannot fit; never shorten the configured escalation to pass.
-- Proposed **50,000 Factory credits total**, model `gemini-3.8-flash`, reasoning `low`.
+- Proposed **50,000 Factory credits total**, model `gpt-5.4-mini` (the #118 stall finding rules
+  out `gemini-3.8-flash` for timed turns), reasoning `low`.
   This is a proposed ceiling, not a price estimate or authorization.
 - Require an enforceable service-side spend cap before starting, or explicit approval of
   the possible one-in-flight overrun. Post-stream usage alone cannot enforce a hard credit cap.
@@ -77,10 +78,13 @@ preparation semantics and key parity, consumption state, write cardinality, exac
 (`control_hold` vs `escalation_timeout`, never conflated), cancel-comment nonce delivery, and
 fixture mutation/payment counts. It adds a fourth CLI gate, `--isolated-ledger URL`, attesting
 an Ad-coordinated stack. Every CLI invocation currently refuses before SDK/auth/settings/network
-access, even with all gates: a real Session against the mocked runner would spend credits without
-qualifying real-Ledger behavior. A separately reviewed PR adds the real-Ledger mode once Ad's
-isolated fixtures and an active-turn window exist; the 135-second budget includes the real
-escalation hold and is never shortened.
+access, even with all gates; only then does it hand off to `tests/stageb_real_driver.py`, the
+real-Ledger mode. The driver spawns (or, with `--green-external`, health-checks) a live green
+against the attested isolated battlefield, fixtures the case, steps one paused day, and evaluates
+the day's operator-side events, audit rows and books; exit 0 with `acceptance_passed: true` is
+the only acceptance receipt. It has not yet produced acceptance evidence: the first run is
+pending Ad's isolated stack, an active-turn window, and operator budget approval (#78). The
+135-second budget includes the real escalation hold and is never shortened.
 
 Keyless verification from the checkout root:
 `UV_OFFLINE=1 UV_NO_SYNC=1 UV_NO_ENV_FILE=1 UV_PROJECT_ENVIRONMENT=/tmp/redledger-green-tests PYTHONPATH="$PWD/green:$PWD/agentkit" make lint test-green TOKEN=test-operator`

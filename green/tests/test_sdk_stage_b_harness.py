@@ -330,27 +330,37 @@ def test_default_invocation_without_case_refuses_keyless(monkeypatch):
     assert exc.value.code == 2
 
 
-def test_full_gates_still_refuse_until_real_ledger_mode(monkeypatch):
+def test_full_gates_hand_off_to_the_real_driver(monkeypatch):
+    import stageb_real_driver
+
     original = builtins.__import__
 
     def guarded(name, *args, **kwargs):
+        # The handoff imports the driver, and still nothing that could touch SDK/auth/network.
         assert name not in ("droid_sdk", "agent", "agentkit", "httpx", "respx")
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded)
     monkeypatch.setattr(h, "run_case", lambda *a: pytest.fail("runner touched"))
-    with pytest.raises(SystemExit) as exc:
-        h.main(
-            [
-                "--case",
-                "off_allow",
-                "--allow-model-call",
-                "--operator-approval",
-                "operator",
-                "--spend-cap-attestation",
-                h.ATTESTATION,
-                "--isolated-ledger",
-                "http://isolated.invalid",
-            ]
-        )
-    assert exc.value.code == 2
+    seen = {}
+
+    def fake_run(args):
+        seen.update(case=args.case, isolated_ledger=args.isolated_ledger)
+        return 17
+
+    monkeypatch.setattr(stageb_real_driver, "run", fake_run)
+    code = h.main(
+        [
+            "--case",
+            "off_allow",
+            "--allow-model-call",
+            "--operator-approval",
+            "operator",
+            "--spend-cap-attestation",
+            h.ATTESTATION,
+            "--isolated-ledger",
+            "http://isolated.invalid",
+        ]
+    )
+    assert code == 17  # the driver's exit code propagates verbatim
+    assert seen == {"case": "off_allow", "isolated_ledger": "http://isolated.invalid"}

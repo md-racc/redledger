@@ -1,13 +1,15 @@
 """Future manual Stage B only. Default refusal is keyless; pytest uses fake SDKs.
 
-WARNING: the real Stage B path is NOT executed or authorized in this milestone. It requires
+WARNING: the real Stage B path is NOT executed or authorized by default. It requires
 Ad-coordinated isolated-Ledger fixtures (attested via --isolated-ledger URL) and an active turn;
-only LedgerClient is agent-facing. Every CLI invocation refuses, even with all attestation gates,
-until a separately reviewed real-Ledger mode lands: a real SDK Session against the mocked runner
-would spend credits without qualifying real-Ledger behavior. The 135-second per-Session budget
-includes the real escalation hold and must never be shortened to make a case pass. The mocked
-runner below qualifies harness behavior only; it is not real-Ledger gate, consumption, or
-write-count evidence, and it performs no SDK, auth, settings, or network access at all.
+only LedgerClient is agent-facing. Every CLI invocation refuses unless all four attestation gates
+pass; only then does it hand off to tests/stageb_real_driver.py, the separately reviewed
+real-Ledger mode, which spawns (or health-checks) a live green and steps one real day on the
+isolated stack. No acceptance evidence exists until an operator-approved run records one: the
+driver has not yet produced any. The 135-second per-Session budget includes the real escalation
+hold and must never be shortened to make a case pass. The mocked runner below qualifies harness
+behavior only; it is not real-Ledger gate, consumption, or write-count evidence, and it performs
+no SDK, auth, settings, or network access at all.
 """
 
 import argparse
@@ -355,13 +357,20 @@ async def run_case(case: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Keyless CLI: in this milestone every invocation refuses before SDK/auth/settings/network."""
+    """Keyless CLI: refuses before SDK/auth/settings/network unless every attestation gate passes."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=CASES, required=True)
     parser.add_argument("--allow-model-call", action="store_true")
     parser.add_argument("--operator-approval")
     parser.add_argument("--spend-cap-attestation", choices=[ATTESTATION])
     parser.add_argument("--isolated-ledger", metavar="URL")
+    parser.add_argument("--green-port", type=int, default=8002, help="Stage B real mode: green's port on this machine")
+    parser.add_argument(
+        "--green-external",
+        action="store_true",
+        help="Stage B real mode: green is already running on --green-port; health-check it instead of spawning",
+    )
+    parser.add_argument("--seed", type=int, default=None, help="Stage B real mode: episode seed (driver default when unset)")
     args = parser.parse_args(argv)
     if (
         not args.allow_model_call
@@ -373,10 +382,13 @@ def main(argv: list[str] | None = None) -> int:
             "Refused before SDK/auth/settings/network: explicit model permission, operator approval, "
             "spend-cap attestation and an Ad-coordinated isolated-ledger URL are required."
         )
-    # Even fully attested invocations refuse: the real-Ledger mode awaits Ad's isolated stack and a
-    # separately reviewed PR. Spending a Session against the mocked runner could never qualify Stage B.
+    # Every gate passed: hand off to the real driver. The import is deferred to this point so the
+    # refusal paths above — and pytest collection — never import driver code; the driver itself
+    # imports no SDK/auth/settings/network module until its own env validation has passed.
     # Usage is post-hoc, never a hard cap; the operator tracks cumulative Session/credit budget.
-    parser.error("Real-Ledger Stage B mode is not implemented in this milestone; pytest exercises the fake runner only.")
+    import stageb_real_driver
+
+    return stageb_real_driver.run(args)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,1 @@
+- 2026-10-25T0115Z · M · green: Stage B real-Ledger driver landed behind the harness's four attestation gates (stageb_real_driver.py: spawns/health-checks live green, steps one paused day, evaluates operator-side evidence, exit-0 acceptance receipt); not yet run — needs Ad's isolated stack, #160's guard lift, and the #78 budget; blocked: D15 budget/runtime approval from Ad
