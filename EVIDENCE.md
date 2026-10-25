@@ -233,3 +233,101 @@ the product.
 
 Not claimed: Atlassian (the Forge escalation inbox was never started), Gemini (see §2), Bright Data (dropped,
 no code on main), Cartesia, Nessie, Auth0, Elastic (never built).
+
+## 8. Lenders on the record
+
+Why a lender would want a crash-test lab like this one: in October 2026 the largest US banks started saying, in public, that outside AI agents are getting into customer accounts, and that they cannot yet tell a good one from a rogue one. This page is every line we say about them, with its source. The same table is on the **Lenders** card in the arena (press `L` anywhere, or the **Lenders** button once you are in the arena; `Esc` closes it; `frontend/lib/arena/lenders.ts`, checked by `frontend/lib/arena/lenders.test.ts`) and in [PITCH.md](PITCH.md).
+
+Researched **2026-10-25** from reporting dated 2026-10-15 to 2026-10-23. Everything below is a paraphrase of someone else's reporting or statement. **These banks are not partners, customers or sponsors of Red Ledger**, and none of this is their statement about us. Re-check before you say it on stage: the story is days old and moving.
+
+### The report everything follows
+
+**Axios, "Scoop: Unvetted AI agents are accessing U.S. bank accounts"**, Madison Mills, 2026-10-22 ([read as syndicated by Yahoo Finance](https://finance.yahoo.com/technology/ai/articles/scoop-unvetted-ai-agents-accessing-090006442.html); the Axios original is paywalled).
+
+- Large US banks are finding third-party AI agents they never vetted inside customer accounts, mostly logging in with the customer's own password. Some agents did things the customer had not asked for (an agent phoned a bank with a complaint, for one). Most banks allow, or are moving to, read-only access.
+- A bank executive is quoted saying banks struggle to tell an authorised agent from a rogue one.
+- **The sourcing is anonymous** ("people familiar with the matter"). On the record in it: a Chase spokesperson (do not share passwords) and a Morgan Stanley spokesperson (see below).
+- Mills told CBS the agents were not hacking accounts or draining funds, and that it is industry-wide, dozens of institutions ([CBS News](https://www.cbsnews.com/news/ai-agents-customer-bank-accounts-security/), Megan Cerullo, 2026-10-23).
+
+### The five
+
+"On the record" means a named executive or a bank spokesperson said it, as reported. Where the outlet is second-hand, the table says so.
+
+| Lender | Where it stands | On the record | Sources |
+|---|---|---|---|
+| **JPMorgan Chase** | Won't let outside agents in | CEO Jamie Dimon, Q3 earnings call, 2026-10-13: the bank will not let outside AI agents inside, and he warned of "rogue agents". A spokesperson: when the bank detects a third-party agent using a customer's banking credentials, it does not allow it. Read-only data through open-banking connectors continues; no timeline for agents to act. | [Fortune](https://fortune.com/2026/10/15/jamie-dimon-ai-agents-meta-muse-jpmorgan/), Joshua Hong, 2026-10-15; [CBS News](https://www.cbsnews.com/news/ai-agents-customer-bank-accounts-security/), 2026-10-23 |
+| **Bank of America** | A human approves money out | CEO Brian Moynihan, to CNBC: a person should approve any money leaving an account; the bank is working out who is liable when an AI authorises a payment. The Financial Times reported, from an unnamed source, that it limits agents' access to consumer deposits. The bank did not answer CBS. | [Retail Banker International](https://www.retailbankerinternational.com/?p=108841), Vidhya Edwards Munnangi, 2026-10-19 (second-hand from the FT and CNBC); [PYMNTS](https://www.pymnts.com/?p=4326961), 2026-10-19 (second-hand) |
+| **Citi** | No outside agents; read-only via approved providers | A spokesperson to Retail Banker International: Citi does not let third-party AI agents or assistants log in to a customer's account or transact on its digital banking platforms; customers can still give read-only access through approved open-banking providers. | [Retail Banker International](https://www.retailbankerinternational.com/?p=108841), 2026-10-19 |
+| **Wells Fargo** | No statement found | **Nothing on outside agents in customer accounts that we could find.** CEO Charlie Scharf, Q3 call: a disciplined approach to risk, and the bank will weigh whether third-party models and agents add value for clients. Axios lists Wells Fargo among banks "racing to contain" agent risk, with no detail; the bank did not answer CBS. | [Banking Dive](https://www.bankingdive.com/news/ai-citi-fraser-wells-fargo-scharf-goldman-sachs-solomon-morgan-stanley-pick-bofa-moynihan-dimon/833087/), Makenzie Holland, 2026-10-15; Axios (above) |
+| **Morgan Stanley** | Says it has seen none | A spokesperson to CBS: the firm has not observed unauthorized AI agent activity on its platforms. Axios, from anonymous sources, says it has begun blocking third-party agents. The two accounts are not reconciled. | [CBS News](https://www.cbsnews.com/news/ai-agents-customer-bank-accounts-security/), 2026-10-23; Axios (above) |
+
+Also on the record in the same reporting, not among the five: **Charles Schwab**, CEO Rick Wurster, to Bloomberg on 2026-10-16, blocks unauthorized agents that try to log in for clients and will not let outside agents move money ([PYMNTS](https://www.pymnts.com/?p=4326961), second-hand); **PNC**, CEO William Demchak, Q3 call 2026-10-15, called agents transacting inside customer accounts unsafe and said it would take liability law and secure authentication ([PYMNTS](https://www.pymnts.com/news/banking/2026/banks-crack-down-on-unauthorized-ai-agents-operating-inside-customer-accounts/), 2026-10-22, second-hand).
+
+### What we say, and what we do not
+
+**Say** (these are in [PITCH.md](PITCH.md)):
+
+- "Axios reported that big banks are finding AI agents they never vetted inside customer accounts." (It is Axios's report, on anonymous sources.)
+- JPMorgan Chase won't let outside agents in. Bank of America wants a human approving any money out. Citi blocks them. Morgan Stanley says it hasn't seen one. Wells Fargo has said nothing we could find.
+- Nobody can yet tell a good agent from a rogue one once it is inside. (The reported difficulty.)
+- Red Ledger tests that case: an agent already inside the books, and a gate that must say allow, block, or ask a human. A human approving money out is the rule our gate escalates to, and no answer in 90 seconds is a block.
+
+**Do not say:**
+
+- That any named bank *found* agents in its accounts, *lost* money, or *was attacked*. Only Axios's anonymous sources say banks are finding agents, and none of the five has put a number or an incident on the record.
+- That Morgan Stanley is blocking agents as a fact (anonymous sources), or that it has seen some (it says it has not).
+- That Wells Fargo has a position on this.
+- That any of them uses, wants, endorses or has heard of Red Ledger. No logos, no quotation marks around anything longer than a few words.
+- Anything about their customers' accounts being "hacked": the reporter says the agents were using the customer's own credentials, not breaking in.
+
+### Where the old synthetic company went
+
+The demo's company is still seeded by the backend (`battlefield/seed/`), which this folder does not own. In `frontend/` it is now "the company" or "the synthetic company" everywhere (arena copy, the report, the pitch, the storyboard, the docs, the stand-in battlefield). A test (`frontend/lib/arena/lenders.test.ts`) keeps the old name out of `frontend/`. If the lenders become the demo's setting rather than its context, that is a seed and prompt change for Ad, Al and M.
+
+## 9. Sources
+
+The real cases and statistics behind STORY.md and PITCH.md, researched 2026-10-25. Confidence: **V** means the figure was read in the primary source; **S** means secondary only, so attribute it or soften it. DOJ pages were read through Wayback Machine copies.
+
+### Statistics
+
+| Figure | Source | Conf. |
+|---|---|---|
+| BEC losses in **2025: $3,046,598,558** from 24,768 complaints. 2024: $2,770,151,146 (21,442). 2023: $2,946,830,270 (21,489). **2023–25 total ≈ $8.76B** (my sum) | FBI IC3 *2025 Internet Crime Report*, https://www.ic3.gov/AnnualReport/Reports/2025_IC3Report.pdf | V |
+| All IC3 losses in 2025: **$20.877B** from 1,008,597 complaints, up 26% on 2024. BEC is the #2 loss category after investment fraud | same | V |
+| "In 2025, businesses reported losses **over $30 million** to BEC scams involving AI" | same, AI section | V |
+| Occupational fraud costs organizations about **5% of revenue** a year. Median loss **$104,000** per case, average $1,457,000. Study covers 2,402 cases in 143 countries, more than $3.4B in total losses | ACFE *Occupational Fraud 2026: A Report to the Nations*, https://www.acfe.com/-/media/files/acfe/pdfs/rttn/2026/2026-report-to-the-nations.pdf | V |
+| **Billing schemes: 21% of cases, median loss $90,000, median 14 months** before detection. Payroll: 10% / $63,000 / 13 mo. Expense reimbursement: 13% / $36,000 / 18 mo | same (Fig. 8 and scheme table) | V |
+| A typical fraud runs **12 months** before detection. Detected by **tip 43%**, internal audit 15%, management review 13%, account reconciliation 5%, **automated transaction/data monitoring 3%** | same (Fig. 13) | V |
+| Main control weakness: **no internal controls 33%**, override of existing controls 19%, no management review 18%. Together **70%** of frauds | same (Fig. 37) | V |
+| **76%** of US organizations saw attempted or actual payments fraud in 2025, **74%** were hit by BEC, and only **17%** use AI against payments fraud (n=465). Released 2026-04-14 | AFP 2026 Payments Fraud and Control Survey, https://www.financialprofessionals.org/about/learn-more/press-releases/Details/over-75-percent-of-us-firms-experienced-payments-fraud-in-2025-while-ai-adoption-for-fraud-mitigation-lags | V (press release) |
+
+Not used: secondary sources give the 2026 billing figure as "22% / $100,000", but the 2026 PDF says 21% / $90,000. The 22% / $100,000 figures look like they come from the 2024 edition.
+
+### Real cases, by scheme
+
+| Scheme | Case | Year | Amount | Mechanism | How caught | Source | Conf. |
+|---|---|---|---|---|---|---|---|
+| bank_swap | Evaldas Rimasauskas, impersonating a "Company-1" that the press identified as Quanta Computer | 2013–15; sentenced 2019-12-19 | **over $120M** wired by two US companies. 60 months in prison; forfeiture $49.7M | He registered a Latvian company with the same name as a real Asian hardware supplier, then sent spoofed emails telling AP to pay that supplier's real invoices into his Latvian and Cypriot accounts | DOJ: arrested in Lithuania in 2017. Google said it "detected this fraud against our vendor management team" | https://www.justice.gov/usao-sdny/pr/lithuanian-man-sentenced-5-years-prison-theft-over-120-million-fraudulent-business ; victims named Google/Facebook by Fortune via https://www.cnbc.com/2017/04/27/facebook-and-google-were-victims-of-a-100-million-dollar-phishing-scam-fortune.html | V (DOJ); S (victim names and Google quote) |
+| bank_swap | Toyota Boshoku European subsidiary | incident 2019-08-14 | about **¥4bn maximum** (press: ~$37M) | "Fraudulent payment directions from a malicious third party." The company did not publish the method; the press called it BEC | Became aware "shortly after the leakage" | https://www.toyota-boshoku.com/global/content/wp-content/uploads/190906e.pdf | V |
+| bank_swap | Ubiquiti Networks, Hong Kong subsidiary | discovered 2015-06-05 | **$46.7M**, of which $8.1M recovered and $6.8M under injunction at filing | "Employee impersonation and fraudulent requests from an outside entity targeting the Company's finance department." Ubiquiti also reported a material weakness in its controls | Not stated | SEC 8-K, 2015-08-06, https://www.sec.gov/Archives/edgar/data/0001511737/000157104915006288/t1501817_8k.htm | V |
+| bank_swap (AI) | Arup, Hong Kong office | Jan 2024; confirmed 2024-05-16 | **HK$200M ≈ US$25.6M** in 15 transfers | Email asking for a "secret transaction," then a video call in which the CFO and colleagues were deepfakes | Arup told police in Jan 2024. How the fraud was discovered is not stated in the CNN article | https://edition.cnn.com/2024/05/16/tech/arup-deepfake-scam-loss-hong-kong-intl-hnk | V (CNN) |
+| ghost_vendor | Dolores Espino, Garland ISD (TX) | 2006–07; sentenced 2008 | **$84K+** embezzled; restitution $92,112.50 | Registered a fictitious vendor "A.Z." for translation services, billed fake invoices, and approved them with her supervisor's signature stamp | Not stated (Dept. of Education OIG and FBI) | https://www.justice.gov/archive/usao/txn/PressRel08/espino_garland_isd_embezzle_sen_pr.html | V |
+| ghost_vendor + amount_drift (analog) | Rita Crundwell, comptroller of Dixon, IL | 1990–2012; sentenced 2013-02-14 | **$53.7M**; 235 months in prison | A secret "RSCDA" city account backed by **159 fictitious State of Illinois invoices** shown to auditors. Theft grew from **$181K in 1991 to $5.8M in 2008** (about $2.5M a year on average) | While she took 12 weeks of unpaid leave, her replacement requested all bank statements and found the account | https://www.justice.gov/usao/iln/pr/rockford/2013/pr0214_01.html | V |
+| duplicate_invoice | Rosemarie Collazo, Abbey National Treasury Services (Stamford, CT) | 2010–16; sentenced 2017-05-12 | **$772,242** | About **150 duplicate invoice packages** for bills already paid. Her supervisor signed each check, and she deposited them | Not stated | https://www.justice.gov/usao-ct/pr/new-york-woman-sentenced-2-years-federal-prison-stealing-more-700k-employer | V |
+| threshold_split | Milton Callan, Lockheed Federal Credit Union | sentenced 2010-02-08 | restitution **$831,763.91** | Every purchase order he raised stayed **under his pre-authorized spending limit**, so each one was approved without documentation or his supervisor's sign-off | Found by the credit union and referred to the FBI | https://www.justice.gov/archive/usao/cac/Pressroom/pr2010/028.html | V |
+| threshold_split (control failure, not fraud) | VA St. Louis Health Care System | 2014–15; report 2018-07-17 | **178 split purchases ≈ $425K**; $564K in improper payments overall | Purchases split to stay under the **$2,000** micro-purchase threshold | A complaint, then the VA OIG review | VA OIG 16-02863-199, https://www.oversight.gov/sites/default/files/oig-reports/VAOIG-16-02863-199.pdf | V |
+| ghost_employee | Gilberto Meléndez-Colón, Puerto Rico construction company | 2012–17; sentenced 2023-05-19 | **$1,223,654.21** diverted | Set up **two fictitious employees** in the payroll system paid into his own bank accounts, and inflated real employees' hours. Management approved the payroll | Not stated (SSA-OIG and HSI) | https://www.justice.gov/usao-pr/pr/individual-sentenced-27-months-prison-12-million-dollar-fraud-scheme-involving-creation | V |
+| ghost_employee | Wayne Soniat, New Orleans food producer | 2009–14; sentenced 2018-07-11 | **$437,346** in about 200 wires | Signed time sheets for temporary "ghost employees" and received the pay on debit cards | Not stated | https://www.justice.gov/usao-edla/pr/new-orleans-man-sentenced-15-months-prison-and-ordered-repay-over-481000-after-pleading | V |
+| expense_inflation | Paul and Sandra Dunham, PACE Worldwide (MD) | 2002–09; sentenced 2015 | **$1M** forfeiture and restitution; he got 4 years | Personal costs filed as business expenses (e.g. $3,007 of "meals" was luxury bedding), plus duplicate reimbursements | Not stated | https://www.justice.gov/usao-md/pr/former-executives-sentenced-prison-defrauding-employer-1-million-through-fraudulent | V |
+| po_mismatch (analog) | Leonard Francis ("Fat Leonard") and GDMA, contractor to the US Navy | sentenced 2024-11-05 | forfeiture **$35M**; 180 months; GDMA fined $36M | "Routinely overbilling for goods and services provided, including fuel, tugboats, and sewage disposal." This is billing above the agreed price, not a documented PO-matching failure | Long-running NCIS investigation; he also bribed Navy officers | https://www.justice.gov/usao-sdca/pr/leonard-glenn-francis-sentenced-15-years-prison-massive-bribery-fraud-and | V |
+
+Gaps: I found no case that is purely amount_drift (Crundwell's growth is the closest analog). I found no prosecution that is specifically about an invoice exceeding its PO.
+
+### The agent era
+
+- **AI agents now handle AP payments.** Ramp launched "Agents for AP" on 2025-10-07. Ramp says the agents "code line items, check for fraud, recommend approvals, and complete card payments," while humans keep final approval ("You stay in control"). Source: https://ramp.com/blog/ramp-ap-agents-announcement. **V** (these are the vendor's own claims).
+- **Card networks are building payments by agents.** Mastercard announced Agent Pay on 2025-04-29 and Visa announced Intelligent Commerce on 2025-04-30. Source: https://techcrunch.com/2025/04/30/visa-and-mastercard-unveil-ai-powered-shopping. **S** (Mastercard's own page returned 403).
+- **An AI agent running a real business was talked out of money.** In Anthropic's Project Vend (2025-06-27), Claudius "was cajoled via Slack messages into providing numerous discount codes," gave items away free, and "for a time instructed customers to remit payment to an account that it hallucinated." Source: https://www.anthropic.com/research/project-vend-1. **V**
+- **Attacks on agents that move money.** Princeton's CrAIBench paper (arXiv 2503.16248, March 2025) found that injected prompts or memories "can trigger unauthorized asset transfers" in ElizaOS Web3 agents, and that models are "significantly more vulnerable to memory injection compared to prompt injection." Source: https://arxiv.org/abs/2503.16248. **V** (abstract)
+- **The FBI ties AI to BEC losses:** more than $30M in 2025 (IC3, above). **V**
+- **Not verified, do not use:** a "2026 competition: all 13 frontier models vulnerable to indirect prompt injection" claim, and vendor-blog scenarios of invoice-borne prompt injection that rewrites bank details.

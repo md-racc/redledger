@@ -1,4 +1,4 @@
-"""DB: the evolution report and lineage timeline (docs/EVOLUTION-DESIGN.md §7, /api/fe/lineages/*).
+"""DB: the evolution report and lineage timeline (ARCHITECTURE.md, Evolution: Export and report; /api/fe/lineages/*).
 
 Builds one deterministic lineage directly in the DB (fixed ids) and compares both documents to the
 golden fixtures R develops against: battlefield/fixtures/lineages/sample-{report,timeline}.json.

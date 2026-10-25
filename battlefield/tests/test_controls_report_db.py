@@ -20,7 +20,7 @@ from app.scoring import score
 from tests import factories as f
 
 GROUND_TRUTH_KEYS = {"origin", "entity_origin", "origin_of_source"}
-RECORDING = Path(__file__).resolve().parents[2] / "docs" / "recordings" / "demo-enforce-redblue-live.jsonl"
+RECORDING = Path(__file__).resolve().parents[2] / "recordings" / "demo-enforce-redblue-live.jsonl"
 
 
 def _client() -> httpx.AsyncClient:

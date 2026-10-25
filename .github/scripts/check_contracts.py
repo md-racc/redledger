@@ -1,4 +1,4 @@
-"""Check NUL-delimited git diff paths against the README §16 / GIT §2 carve-outs.
+"""Check NUL-delimited git diff paths against the README.md (Ledger API overview, extensions) / GIT §2 carve-outs.
 
 Ownership is enforced separately: only the four documented team extension trees are exempt
 from the core contracts changelog requirement, not contracts/ext/ as a whole.

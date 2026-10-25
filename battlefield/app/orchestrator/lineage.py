@@ -1,6 +1,6 @@
 """Lineage runner: generations of episodes with reflection between them. Owner: Dev Ad.
 
-docs/EVOLUTION-DESIGN.md §2, contracts (ledger-api `/lineages*`, events.md, agent-service.md
+ARCHITECTURE.md (Evolution: Lineage lifecycle), contracts (ledger-api `/lineages*`, events.md, agent-service.md
 `/reflect`). One asyncio task per running lineage, at most one running lineage per battlefield (agent
 services serve one turn at a time). Generation g:
 
