@@ -34,7 +34,7 @@ LN_DAYS = $(if $(filter command line,$(origin DAYS)),$(DAYS),6)
         local-stack local-stack-status local-stack-stop \
         evolve lineage-status lineage-pause lineage-resume evolution-report lineage-export fixtures \
         prod-health prod-ps prod-logs prod-episode prod-step prod-pause prod-resume prod-toggle prod-attack prod-escalations \
-        prod-resolve prod-score prod-wait prod-record prod-credits prod-fixtures \
+        prod-resolve prod-score prod-wait prod-record prod-credits prod-fixtures prod-crs-episode \
         prod-evolve prod-lineage-status prod-lineage-pause prod-lineage-resume prod-lineage-wait prod-lineage-export prod-evolution-report \
         install lint fmt test test-agentkit test-battlefield test-red test-green test-blue test-frontend schema-dump devlog devlog-show
 
@@ -167,6 +167,8 @@ prod-attack: ## prod: force a scheme on next red turn: EP=... SCHEME=... [PARAMS
 	@$(PROD) attack "$$PRODARG_EP" "$$PRODARG_SCHEME" "$$PRODARG_PARAMS"
 prod-fixtures: ## prod: seed operator fixtures (legit employees/expenses) into EP from a local JSON FILE
 	@$(PROD) fixtures "$$PRODARG_EP" "$$PRODARG_FILE"
+prod-crs-episode: ## prod: blue's CRS identity scenario, stepped, live audit: SEED=42 [DAYS=2]; prints a summary + PASS/FAIL
+	@$(PROD) crs-episode "$$PRODARG_SEED" "$$PRODARG_DAYS"
 prod-escalations: ## prod: open escalations [EP=...]
 	@$(PROD) escalations "$$PRODARG_EP"
 prod-resolve: ## prod: resolve an escalation: ESC=... DECISION=approve|block

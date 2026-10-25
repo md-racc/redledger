@@ -103,12 +103,15 @@ jobs:
           script: |
             set -eu
             cd /opt/redledger
+            CADDY_BEFORE=$(sha256sum deploy/Caddyfile 2>/dev/null || true)
             git fetch --quiet origin main && git reset --hard origin/main
             sh deploy/render-env.sh .env
             export IMAGE_TAG=${{ github.sha }}
             DC="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
             $DC pull --quiet
             $DC up -d --remove-orphans
+            # up -d doesn't recreate caddy for a config-only change, and git reset swaps the file under its single-file bind mount; restart so it re-reads it
+            if [ "$(sha256sum deploy/Caddyfile)" != "$CADDY_BEFORE" ]; then $DC restart caddy; fi
             docker image prune -f >/dev/null
             # battlefield publishes no host port in prod, so probe it from inside its container.
             for i in 1 2 3 4 5 6 7 8 9 10; do $DC exec -T battlefield python -c 'import urllib.request; urllib.request.urlopen("http://localhost:8000/", timeout=3)' && break; [ "$i" -lt 10 ] || { echo "battlefield did not come up" >&2; exit 1; }; sleep 3; done

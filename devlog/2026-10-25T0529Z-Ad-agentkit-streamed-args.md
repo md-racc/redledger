@@ -1,0 +1,1 @@
+- 2026-10-25T05:29Z · Ad · agentkit: streamed tool arguments complete before identity binding (gpt-5.4-mini sends {} first), so blue's live raise_flag stops being refused as unverified; permission args are the bound ones; next: CRS re-run; blocked: none
