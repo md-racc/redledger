@@ -17,7 +17,7 @@ Prize checkboxes to tick on Devpost: Hyphenate (Autonomous Systems for Finance),
 Technically Advanced, Microsoft (Built for the Real World; Customer Impact), Armadin (Best Security Hack), CRS (Best Identity / Fraud
 Innovation and Best Financial AI Agent; not Best Overall, see crs.md §0), MLH Best Use of Tiger Data, MLH Best Use of Vultr.
 
-Elevator pitch (≤200 chars, 169): **A live fraud agent attacks an AI accounts-payable clerk while a controller gates every payment at the ledger. You get the dollars it stole, the dollars it cost, and why.**
+Elevator pitch (≤200 chars, 169): **A live fraud agent attacks an AI accounts-payable clerk while a controller gates every payment at the ledger. You get the dollars it lost, the dollars it cost, and why.**
 
 --- PASTE ---
 
@@ -37,7 +37,7 @@ Red Ledger runs a seeded synthetic company, Coastal Supply Co. (60 vendors, 40 e
 
 The ledger is the enforcement point. Green can't move a dollar without the ledger asking blue first, and the ledger, not the agent, enforces the answer. An escalation waits up to 90 seconds for a person; if nobody answers, it's blocked. Every call is in an audit log, and every verdict traces from a rule ID to a written reason to an audit row.
 
-The scoreboard is in dollars on both sides: what red extracted, what blue blocked, how long detection took, and what false positives cost (2% of every wrongly blocked amount plus $50 per wrongly blocked or escalated item). Blocking everything loses.
+The scoreboard is in dollars on both sides: what the company lost to fraud (and how much of it reached accounts the attacker controls), what blue blocked, how long detection took, and what false positives cost (2% of every wrongly blocked amount plus $50 per wrongly blocked or escalated item). Blocking everything loses.
 
 Agents also **evolve**. A lineage runs one episode per generation; after each, every agent gets a debrief on what was caught and writes the next version of its playbook. Every version is stored with its parent and the reason it changed.
 
@@ -45,8 +45,8 @@ A judge can attack live: type or say a fraud scheme in your own words, in any la
 
 ### Results (production, app.redledger.us)
 
-- **Red live, choosing its own schemes** (2026-10-24, seed 42, 10 days): controller off, **$10,285** stolen; controller on, **$1,824** stolen, at $100 of false-positive cost.
-- **Red and blue's audit live, a fixed plan of six different schemes** (2026-10-25, seed 42, 6 days): controller off, **$23,681** stolen, 0 of 6 caught; controller on, **$20,350** stolen, 2 of 6 caught, $1,480 blocked, $50 false-positive cost. One split invoice was $13,800 of that. This is the harder test, and today's controls lose most of it. That's the point: the lab tells you which controls you'd be trusting and which ones aren't there.
+- **Red live, choosing its own schemes** (2026-10-24, seed 42, 10 days): controller off, **$10,285** lost, all of it diverted to the attacker's account by one bank-detail swap; controller on, **$0** reached the attacker: the swap was escalated and blocked, though one $1,824 fake invoice was still paid, to the vendor's real account. $100 of false-positive cost.
+- **Red and blue's audit live, a fixed plan of six different schemes** (2026-10-25, seed 42, 6 days): controller off, **$23,681** lost, 0 of 6 caught; controller on, **$20,350** lost ($18,180 to accounts the attacker controlled), 2 of 6 caught, $1,480 blocked, $50 false-positive cost. One split invoice was $13,800 of that. This is the harder test, and today's controls lose most of it. That's the point: the lab tells you which controls you'd be trusting and which ones aren't there.
 - **Evolution:** in a 5-generation live-red lineage (2026-10-24, 8 days per generation), red found that invoices split under the approval threshold get paid and moved to them: 1 of 7 attacks in generation 1, 7 of 8 in generation 5, extraction from $19k to $98k, and no control caught it. ⟦GEN-RERUN: after the invoice split control ⟦FIX-SPLIT⟧, a ⟦GEN-N⟧-generation re-run on current main: red's tactic mix ⟦GEN-MIX⟧, extraction ⟦GEN-G1⟧ → ⟦GEN-GN⟧, blue's catches ⟦GEN-CAUGHT⟧, false-positive cost ⟦GEN-FP⟧ (lineage ⟦GEN-ID⟧).⟧
 - **Identity fraud with CRS** (2026-10-25, a recorded two-day production run): blue's live audit agent checked three fictional new hires against TransUnion identity verification through the CRS sandbox, flagged the one whose identity didn't match, and the gate blocked that person's next expense while the two clean hires were paid. ⟦CRS-LIVE⟧
 
@@ -105,6 +105,8 @@ python, fastapi, pydantic, httpx, asyncpg, postgresql, timescaledb, factory-droi
 ## Sources for every number (check before pasting)
 
 - $10,285 / $1,824 / $100: `docs/recordings/README.md` (#136; `ep_7f473df2a138`, `ep_540353ebf616`)
+- $10,285 all via the approved bank swap, $1,824 paid to the real vendor after the swap was blocked: `docs/devpost/README.md` (P2 bullet)
+- $18,180 to attacker accounts = ghost vendor $4,380 + the $13,800 split, both billed by red's own new vendor (`turn.ended` summaries on days 0 and 2); the bank swap's $1,824 and inflated expense's $346 went to a real vendor and employee. Re-check against `/report/ep_d9b561111d60` once the controls report is deployed
 - $23,681 / $20,350 / 2 of 6 / $1,480 / $50, and the $13,800 split: `docs/recordings/README.md` (#193; `ep_89d1df6b012a`, `ep_d9b561111d60`)
 - Lineage 1/7 → 7/8, $19k → $98k: `ln_f52a3df83c8d`, `docs/devpost/hyphenate.md` §4.10
 - CRS: prod `ep_9cbc3362d44e` (#197, recording in `docs/recordings/`), local `ep_0181eda1c921` with 19 checks `billable:false`; `docs/devpost/crs.md` §0
