@@ -1,7 +1,8 @@
 // GET /api/sync/stream: the relay as Server-Sent Events. One `snapshot` event on connect (state plus what is kept), then a `msg` or
 // `traffic` event per item as it happens. Owner: Dev R.
-// Public, so the number of open streams is capped (lib/ratelimit.ts MAX_SYNC_STREAMS): beyond it, 503 and the client falls back to
+// Admins only (the laptops), like GET /api/sync. The number of open streams is still capped (lib/ratelimit.ts MAX_SYNC_STREAMS): beyond it, 503 and the client falls back to
 // polling GET /api/sync (lib/sync/client.ts).
+import { requestRole } from "@/lib/admin";
 import { syncStreamSlots } from "@/lib/ratelimit";
 import { hub } from "@/lib/sync/hub";
 
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request): Promise<Response> {
+  if (requestRole(req.headers) !== "admin") return Response.json({ error: "viewer" }, { status: 403, headers: { "cache-control": "no-store" } });
   const release = syncStreamSlots().acquire();
   if (!release) {
     return Response.json({ error: "too many streams" }, { status: 503, headers: { "cache-control": "no-store", "retry-after": "10" } });

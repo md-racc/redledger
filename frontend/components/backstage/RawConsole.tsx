@@ -195,7 +195,7 @@ function BlueState({ bs, selected }: { bs: BS; selected: string | null }) {
   const admin = useRole() === "admin";
   return (
     <Sec title="BLUE STATE">
-      <pre>{`verdicts ${counts.total}  allow ${counts.allow}  block ${counts.block}  review ${counts.escalate}   flags ${s.flags.length}   frozen ${Object.keys(s.frozenVendors).length}   gate latency ${lat == null ? "-" : `${Math.round(lat)}ms`}\nconfusion ${cm ? `true-block ${cm.trueBlock}  false-block ${cm.falseBlock}  missed ${cm.missed}  true-allow ${cm.trueAllow}` : "- (needs /fe/verdicts/confusion)"}`}</pre>
+      <pre>{`verdicts ${counts.total}  allow ${counts.allow}  block ${counts.block}  review ${counts.escalate}   flags ${s.flags.length}   frozen ${Object.keys(s.frozenVendors).length}   gate latency ${lat == null ? "-" : `${Math.round(lat)}ms`}\nconfusion ${cm ? `true-block ${cm.trueBlock}  false-block ${cm.falseBlock}  missed ${cm.missed}  true-allow ${cm.trueAllow}` : (admin ? "- (needs /fe/verdicts/confusion)" : "- (admins only: it needs the ground truth)")}`}</pre>
       {open.map((e) => (
         <div key={e.escalation_id} className="warn">
           {`OPEN ESCALATION ${e.escalation_id}: ${e.action} ${usd(e.amount)}  ${e.reason}  `}

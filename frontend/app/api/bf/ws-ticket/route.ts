@@ -24,6 +24,8 @@ export async function GET(req: Request): Promise<Response> {
   if (!target) return jsonError(502, "battlefield proxy is misconfigured");
 
   const episodeId = new URL(req.url).searchParams.get("episode_id") || null;
+  // a ticket without an episode is good for every episode's stream; only the laptops need that
+  if (!admin && !episodeId) return jsonError(400, "episode_id required");
 
   const t0 = performance.now();
   let upstream: Response;

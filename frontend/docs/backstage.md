@@ -44,6 +44,8 @@ The laptops are separate browsers, so the frontend server is the meeting point (
 - `lib/sync/hub.ts` is an in-memory `Hub` on `globalThis`: the folded state (selected, panel, stage, show, controller, last
   act, clients seen), the last 300 messages and the last 300 proxied calls, on one sequence counter. Everything is sanitised:
   flat primitives only, strings clipped, unknown kinds dropped.
+- The relay is for the laptops: publishing and reading are admin-only (a viewer gets 403 and its LIVE CHECKS line says "admins only").
+  The confusion matrix needs the ground truth, so it shows for admins only too.
 - The backstage subscribes to `GET /api/sync/stream` (server-sent events, `x-accel-buffering: no`). If the stream cannot be
   held it polls `GET /api/sync?after=` every second, and the LIVE CHECKS line says which of the two it is on.
 - The proxy (`app/api/bf/[...path]/route.ts`) records each forwarded call into the hub after it returns.

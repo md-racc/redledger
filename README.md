@@ -49,6 +49,9 @@ the work is done).
 - **Run it with no keys.** `make local-stack AGENTS=mock` (no Docker) or `make mock-agents`, then
   `make episode MODE=enforce SEED=42 DAYS=4` or `make evolve GENS=3 DAYS=5` (§12, §15). Frontend
   alone: `cd frontend && NEXT_PUBLIC_MOCK=true npm run dev`.
+- **Controls report.** After a run, `/report/<episode>` on the site is a printable controls assessment: which control fired on
+  which scheme, what got through and why, false-positive cost, and how much of the loss reached attacker-controlled accounts
+  vs real vendors (`GET /fe/episodes/{id}/controls`).
 - **License:** MIT (`LICENSE`).
 
 Repo owner: start with `deploy/OWNER-CHECKLIST.md`. Everyone else: your directory's `AGENTS.md`.
@@ -234,7 +237,7 @@ Agent requests also carry `X-Agent`, `X-Episode`, `X-Day`, and on writes `X-Tool
 | Control plane | `POST /episodes`, `GET /episodes[/{id}]`, `/episodes/{id}/start\|pause\|resume\|step`, `GET /episodes/{id}/score`, `PATCH /episodes/{id}/controller`, `POST /episodes/{id}/attack`, `GET /schemes`, `GET /escalations`, `POST /escalations/{id}/resolve`, `GET /replays`, `POST /replays/{id}/play`, `GET /health` | operator / frontend server |
 | Playbooks (lineage episodes) | `GET /playbook`, `GET /playbook/history`, `PUT /playbook {content, rationale, base_version}` (own playbook only; active turn only) | red, green, blue |
 | Lineages | `POST /lineages`, `GET /lineages[/{id}]`, `/lineages/{id}/start\|pause\|resume`, `GET /lineages/{id}/export`, `POST /episodes {…, lineage_id}` (demo generation) | operator / frontend server |
-| Frontend read API | `GET /fe/episodes/{ep}/snapshot \| timeline \| ap_aging \| entities/{type}/{id} \| vendors \| attacks \| attacks/leaderboard \| verdicts \| verdicts/rules \| verdicts/confusion \| agents/activity \| agents/{agent}/thinking \| feed \| search \| reports \| escalations`, `GET /fe/compare?a=&b=`, `GET /fe/lineages/{id}/timeline \| report` | operator / frontend server (browser via `/api/bf/*`); see `frontend/FRONTEND-API.md` |
+| Frontend read API | `GET /fe/episodes/{ep}/snapshot \| timeline \| ap_aging \| entities/{type}/{id} \| vendors \| attacks \| attacks/leaderboard \| verdicts \| verdicts/rules \| verdicts/confusion \| agents/activity \| agents/{agent}/thinking \| feed \| search \| reports \| escalations \| controls`, `GET /fe/compare?a=&b=`, `GET /fe/lineages/{id}/timeline \| report` | operator / frontend server (browser via `/api/bf/*`); see `frontend/FRONTEND-API.md` |
 
 Gated routes return `403 {verdict:"block", reason, verdict_id}` on block, or hold for the
 escalation then return 200 or 403. In `shadow` they succeed and record the verdict anyway.

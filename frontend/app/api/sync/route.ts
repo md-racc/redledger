@@ -1,6 +1,7 @@
 // POST /api/sync        publish what a visitor did (the arena) or announce a laptop (hello); GET /api/sync?after=<seq> read it back.
 // The relay between the four laptops: see lib/sync/hub.ts. Owner: Dev R.
-// Publishing is for admins (the laptops; lib/admin.ts): a public visitor must not drive the backstage consoles. Reading stays public.
+// Admins only (the laptops; lib/admin.ts), both ways: a public visitor must not drive the backstage consoles, and the relay carries
+// the laptops' API traffic and selections, which are not for the public either.
 import { requestRole } from "@/lib/admin";
 import { isCrossSiteMutation } from "@/lib/proxy";
 import { hub } from "@/lib/sync/hub";
@@ -22,6 +23,7 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 export async function GET(req: Request): Promise<Response> {
+  if (requestRole(req.headers) !== "admin") return Response.json({ error: "viewer" }, { status: 403, headers: noStore });
   const after = Number(new URL(req.url).searchParams.get("after") ?? 0);
   return Response.json(hub().snapshot(Number.isFinite(after) ? after : 0), { headers: noStore });
 }

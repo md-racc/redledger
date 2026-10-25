@@ -3,7 +3,7 @@
 import pytest
 
 from gate import engine
-from gate.rules import RuleHit, evaluate, threshold_split
+from gate.rules import RuleHit, duplicate_near_match, evaluate, threshold_split, unverified_vendor_exposure
 
 from .conftest import paid_invoice
 
@@ -37,7 +37,10 @@ async def test_weak_hints_are_mode_independent_notes(gate_request, mode):
 @pytest.mark.parametrize(
     "amount,age,paid,po,verdict",
     [
-        (4749.99, 0, False, False, "allow"),
+        (1000, 0, False, False, "allow"),
+        (1000.01, 0, False, False, "block"),
+        (4380, 0, False, False, "block"),
+        (4749.99, 0, False, False, "block"),
         (4750, 0, False, False, "block"),
         (4920, 6, False, False, "block"),
         (4920, 7, False, False, "allow"),
@@ -50,7 +53,7 @@ async def test_exposure_boundaries(gate_request, amount, age, paid, po, verdict)
     req = gate_request(amount=amount)
     req.context["vendor"]["created_day"] = req.day - age
     if paid:
-        req.context["vendor_paid_invoices"] = [paid_invoice()]
+        req.context["vendor_paid_invoices"] = [paid_invoice(status_day=req.day - 2)]  # established: paid two days ago
     if po:
         req.context["invoice"]["po_id"] = "po"
         req.context["po"] = {"id": "po", "vendor_id": "v", "amount": amount, "status": "open"}
@@ -367,3 +370,130 @@ async def test_retired_baseline_rules_do_not_fire_but_the_rest_stand(gate_reques
     # The note rules drop out; the block rule is not retireable and still holds the payment.
     assert retired.rules_fired == ["unverified_vendor_exposure"]
     assert retired.verdict == "block"
+
+
+# --- unverified_vendor_exposure below the near-threshold band; duplicate_near_match ---
+
+
+async def test_ghost_vendor_under_band_is_blocked(gate_request):
+    # Measured red ghost_vendor: brand-new vendor, no PO, no paid history, $4,380 (under 0.95 x T).
+    req = gate_request(amount=4380)
+    req.context["vendor"]["created_day"] = req.day
+    res = await engine.decide(req)
+    assert res.verdict == "block"
+    assert "unverified_vendor_exposure" in res.rules_fired
+    assert "$1,000" in res.reason
+
+
+@pytest.mark.parametrize("action", ["invoices.approve", "invoices.pay"])
+async def test_onboarding_po_new_vendor_is_not_unverified(gate_request, action):
+    # Legit traffic: vendor onboarded today with a PO, first invoice against it within 3% of the PO.
+    req = gate_request(action=action, amount=4380)
+    req.context["vendor"]["created_day"] = req.day - 1
+    req.context["invoice"]["po_id"] = "po"
+    req.context["po"] = {"id": "po", "vendor_id": "v", "amount": 4300, "status": "open"}
+    assert unverified_vendor_exposure(req) is None
+    res = await engine.decide(req)
+    assert res.verdict == "allow"
+    assert res.rules_fired == ["vendor_age_lt_7d"]
+
+
+def _near_req(gate_request, amount, *, number="INV-54324", po=None, day=5, paid=None):
+    req = gate_request(amount=amount, day=day)
+    req.context["invoice"].update(invoice_number=number, po_id=po)
+    if po:
+        req.context["po"] = {"id": po, "vendor_id": "v", "amount": 6000, "status": "fulfilled"}
+    req.context["vendor_paid_invoices"] = paid if paid is not None else [paid_invoice(amount=4380, invoice_number="INV-54321", status_day=3, received_day=2)]
+    return req
+
+
+async def test_near_duplicate_rebilling_is_reviewed(gate_request):
+    # Measured red duplicate_invoice: number +3, amount +1.8% ($4,380 -> $4,458.84), two days later.
+    req = _near_req(gate_request, 4458.84)
+    hit = duplicate_near_match(req)
+    assert hit is not None and hit.effect == "review"
+    assert "INV-54321" in hit.detail and "$4,458.84" in hit.detail
+    res = await engine.decide(req)
+    assert res.verdict == "escalate"
+    assert "duplicate_invoice" not in res.rules_fired
+
+
+def test_near_duplicate_same_po_hits(gate_request):
+    paid = [paid_invoice(amount=3000, invoice_number="INV-100", po_id="po", status_day=0, received_day=-4)]
+    assert duplicate_near_match(_near_req(gate_request, 2950, number="INV-103", po="po", paid=paid)) is not None
+
+
+@pytest.mark.parametrize(
+    "amount,number,po,paid_po,paid_day",
+    [
+        (4475.00, "INV-54324", None, None, 3),  # 2.17% drift: outside tolerance
+        (4458.84, "INV-54321", None, None, 3),  # exact number: duplicate_invoice's job
+        (2448.00, "INV-54324", "po", None, 3),  # PO on one side only, prior not above $2,500 (legit no-PO range)
+        (4458.84, "INV-54324", "po", "other", 3),  # different POs
+        (4458.84, "INV-54324", None, None, -11),  # paid 16 days ago: outside window
+    ],
+)
+def test_near_duplicate_near_misses(gate_request, amount, number, po, paid_po, paid_day):
+    prior = 2400 if amount < 2500 else 4380
+    paid = [paid_invoice(amount=prior, invoice_number="INV-54321", po_id=paid_po, status_day=paid_day, received_day=paid_day - 1)]
+    assert duplicate_near_match(_near_req(gate_request, amount, number=number, po=po, paid=paid)) is None
+
+
+def test_near_duplicate_window_edge_and_small_amounts(gate_request):
+    edge = [paid_invoice(amount=4380, invoice_number="INV-54321", status_day=-10, received_day=-12)]
+    assert duplicate_near_match(_near_req(gate_request, 4458.84, paid=edge)) is not None  # paid exactly 15 days ago
+    small = [paid_invoice(amount=990, invoice_number="INV-1", status_day=4, received_day=3)]
+    assert duplicate_near_match(_near_req(gate_request, 1000, paid=small)) is None  # not above $1,000
+    undated = [paid_invoice(amount=4380, invoice_number="INV-54321")]
+    assert duplicate_near_match(_near_req(gate_request, 4458.84, paid=undated)) is None
+
+
+async def test_recurring_monthly_vendor_is_not_a_near_duplicate(gate_request):
+    # Seed recurring vendor: monthly invoice within +-10% of its typical amount, each against its own
+    # PO, paid 2-12 days after receipt. The prior month's payment is >= 18 days old.
+    paid = [
+        paid_invoice(id="m1", amount=2510.00, invoice_number="INV-40001", po_id="po1", received_day=-35, status_day=-23),
+        paid_invoice(id="m2", amount=2500.00, invoice_number="INV-40002", po_id="po2", received_day=-5, status_day=-3),
+    ]
+    req = _near_req(gate_request, 2505.00, number="INV-40003", po="po3", day=25, paid=paid)
+    req.context["invoice"]["received_day"] = 25
+    assert duplicate_near_match(req) is None
+    # Same cadence, even with no POs at all: last month's payment is outside the window.
+    no_po = [paid_invoice(id="m2", amount=2500.00, invoice_number="INV-40002", received_day=-5, status_day=7)]
+    assert duplicate_near_match(_near_req(gate_request, 2505.00, number="INV-40003", day=25, paid=no_po)) is None
+    assert (await engine.decide(req)).verdict == "allow"
+
+
+@pytest.mark.parametrize("paid_po,current_po", [("po", None), (None, "po")])
+def test_near_duplicate_one_sided_po_above_legit_no_po_range_hits(gate_request, paid_po, current_po):
+    # red duplicate_invoice with reuse_po=False drops the source invoice's PO.
+    paid = [paid_invoice(amount=4380, invoice_number="INV-54321", po_id=paid_po, status_day=3, received_day=2)]
+    hit = duplicate_near_match(_near_req(gate_request, 4458.84, po=current_po, paid=paid))
+    assert hit is not None and "only one of the two invoices" in hit.detail
+    small = [paid_invoice(amount=2500, invoice_number="INV-54321", po_id=paid_po, status_day=3, received_day=2)]
+    assert duplicate_near_match(_near_req(gate_request, 2510, po=current_po, paid=small)) is None
+
+
+def test_near_duplicate_ignores_future_paid_day(gate_request):
+    # Seed paid status_day can run up to day 11, ahead of the episode day.
+    future = [paid_invoice(amount=4380, invoice_number="INV-54321", status_day=9, received_day=-2)]
+    assert duplicate_near_match(_near_req(gate_request, 4458.84, paid=future)) is None
+
+
+@pytest.mark.parametrize(
+    "paid,verdict",
+    [
+        ({"amount": 900, "status_day": 5}, "block"),  # same-day small primer payment
+        ({"amount": 900, "status_day": 4}, "block"),  # paid one day ago
+        ({"amount": 900}, "block"),  # undated: not established
+        ({"amount": 900, "status_day": 3}, "allow"),  # paid two days ago
+        ({"amount": 900, "status_day": 5, "po_id": "po0"}, "allow"),  # PO-backed paid history
+    ],
+)
+async def test_small_primer_payment_does_not_establish_new_vendor(gate_request, paid, verdict):
+    req = gate_request(amount=4380)
+    req.context["vendor"]["created_day"] = req.day
+    req.context["vendor_paid_invoices"] = [paid_invoice(invoice_number="GV-1", **paid)]
+    res = await engine.decide(req)
+    assert res.verdict == verdict
+    assert ("unverified_vendor_exposure" in res.rules_fired) == (verdict == "block")

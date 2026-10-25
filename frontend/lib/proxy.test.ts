@@ -5,6 +5,7 @@ import {
   downstreamResponseHeaders,
   isCrossSiteMutation,
   isOperatorOnlyPath,
+  stripGroundTruth,
   runtimeEnv,
   timeoutFor,
   upstreamConfig,
@@ -126,6 +127,22 @@ describe("operator-only reads", () => {
     for (const p of ["/api/bf/lineages", "/api/bf/lineages/ln_1", "/api/bf/lineages/ln_1/start", "/api/bf/fe/lineages/ln_1/report", "/api/bf/lineages/ln_1/export/x", "/api/bf/x/lineages/ln_1/export"]) {
       expect(isOperatorOnlyPath(p), p).toBe(false);
     }
+  });
+
+  it("matches the reads that say which rows are red's, and not the ones the screens use", () => {
+    for (const p of ["/api/bf/attacks", "/api/bf/attacks/all", "/api/bf/ATTACKS/all/", "/api/bf/audit_log", "/api/bf/state/k", "/api/bf/fe/compare", "/api/bf/fe/episodes/ep_1/attacks", "/api/bf/fe/episodes/ep_1/entities/invoice/i_1", "/api/bf/fe/episodes/ep_1/state/red", "/api/bf/fe/episodes/ep_1/verdicts/confusion", "/api/bf/fe/episodes/ep_1/verdicts/%72ules"]) {
+      expect(isOperatorOnlyPath(p), p).toBe(true);
+    }
+    for (const p of ["/api/bf/fe/episodes/ep_1/attacks/leaderboard", "/api/bf/fe/episodes/ep_1/verdicts", "/api/bf/fe/episodes/ep_1/vendors", "/api/bf/fe/episodes/ep_1/snapshot", "/api/bf/episodes", "/api/bf/schemes"]) {
+      expect(isOperatorOnlyPath(p), p).toBe(false);
+    }
+  });
+});
+
+describe("stripGroundTruth", () => {
+  it("removes origin keys at any depth and keeps everything else", () => {
+    expect(stripGroundTruth({ a: 1, origin: "red", xs: [{ entity_origin: "sim", b: null }], n: { origin_of_source: "red", ok: true } })).toEqual({ a: 1, xs: [{ b: null }], n: { ok: true } });
+    expect(stripGroundTruth([1, "origin", null])).toEqual([1, "origin", null]);
   });
 });
 

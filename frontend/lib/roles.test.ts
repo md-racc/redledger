@@ -123,6 +123,11 @@ describe("the WS ticket", () => {
     expect((await res.json()).ticket).toBe("t1");
   });
 
+  it("is scoped to one episode for a viewer (an all-episodes ticket is for the laptops)", async () => {
+    expect((await ticketRoute.GET(req("GET", "/api/bf/ws-ticket"))).status).toBe(400);
+    expect((await ticketRoute.GET(req("GET", "/api/bf/ws-ticket", { admin: true }))).status).toBe(200);
+  });
+
   it("is rate limited for viewers", async () => {
     const ip = freshIp();
     const codes: number[] = [];
@@ -142,9 +147,12 @@ describe("the sync relay", () => {
     expect(admin.status).toBe(202);
   });
 
-  it("reads back to anyone", async () => {
-    const res = await syncRoute.GET(req("GET", "/api/sync?after=0"));
-    expect(res.status).toBe(200);
+  it("reads back only to an admin (it carries the laptops' traffic and selections)", async () => {
+    const viewer = await syncRoute.GET(req("GET", "/api/sync?after=0"));
+    expect(viewer.status).toBe(403);
+    expect(await viewer.json()).toEqual({ error: "viewer" });
+    expect((await syncRoute.GET(req("GET", "/api/sync?after=0", { admin: true }))).status).toBe(200);
+    expect((await streamRoute.GET(req("GET", "/api/sync/stream"))).status).toBe(403);
   });
 });
 
@@ -228,6 +236,89 @@ describe("the lineage export (operator only: ground truth)", () => {
   });
 });
 
+describe("ground truth (which rows are red's) is not for viewers", () => {
+  it("refuses the operator-only reads to a viewer without contacting battlefield, and forwards them for an admin", async () => {
+    const paths = [
+      "/api/bf/attacks/all?episode_id=ep_1",
+      "/api/bf/attacks",
+      "/api/bf/audit_log?episode_id=ep_1",
+      "/api/bf/fe/compare?a=ep_1&b=ep_2",
+      "/api/bf/fe/episodes/ep_1/attacks",
+      "/api/bf/fe/episodes/ep_1/entities/invoice/inv_1",
+      "/api/bf/fe/episodes/ep_1/state/red",
+      "/api/bf/fe/episodes/ep_1/verdicts/confusion",
+      "/api/bf/fe/episodes/ep_1/verdicts/rules",
+    ];
+    for (const p of paths) {
+      const res = await proxyRoute.GET(req("GET", p));
+      expect(res.status, p).toBe(403);
+    }
+    expect(upstream).not.toHaveBeenCalled();
+    for (const p of paths) expect((await proxyRoute.GET(req("GET", p, { admin: true }))).status, p).toBe(200);
+  });
+
+  it("strips origin keys from what a viewer reads, at any depth, and leaves an admin's answer whole", async () => {
+    const body = [{ id: "v_1", name: "Acme", origin: "red", verdicts: [{ verdict: "allow", entity_origin: "red" }], pay: { origin_of_source: "red", amount: 5 } }];
+    upstream.mockImplementation(async () => Response.json(body));
+    const viewer = await proxyRoute.GET(req("GET", "/api/bf/fe/episodes/ep_1/vendors?sort=spend"));
+    expect(viewer.status).toBe(200);
+    expect(await viewer.json()).toEqual([{ id: "v_1", name: "Acme", verdicts: [{ verdict: "allow" }], pay: { amount: 5 } }]);
+    const admin = await proxyRoute.GET(req("GET", "/api/bf/fe/episodes/ep_1/vendors?sort=spend", { admin: true }));
+    expect(await admin.json()).toEqual(body);
+  });
+
+  it("still serves the reads the viewer screens use", async () => {
+    for (const p of ["snapshot", "timeline", "ap_aging", "vendors?sort=spend", "verdicts", "reports", "escalations", "agents/activity", "attacks/leaderboard"]) {
+      expect((await proxyRoute.GET(req("GET", `/api/bf/fe/episodes/ep_1/${p}`))).status, p).toBe(200);
+    }
+  });
+});
+
+describe("the controls report (ground truth, public once the run ends)", () => {
+  const path = "/api/bf/fe/episodes/ep_1/controls";
+  const report = (final: boolean) => ({ final, episode: { id: "ep_1", status: final ? "finished" : "running" }, gaps: [{ scheme_id: "ghost_vendor", why: "note only" }] });
+
+  it("refuses a viewer while the run is going, after asking battlefield, with a reason the page can show", async () => {
+    upstream.mockImplementation(async () => Response.json(report(false)));
+    for (const p of [path, "/api/bf/fe/episodes/ep_1/CONTROLS", "/api/bf/fe/episodes/ep_1/%63ontrols"]) {
+      const res = await proxyRoute.GET(req("GET", p));
+      expect(res.status, p).toBe(403);
+      expect(await res.json()).toEqual({ error: "viewer", detail: "available when the run ends" });
+    }
+  });
+
+  it("serves a viewer the finished run's report, and an admin the report at any time", async () => {
+    upstream.mockImplementation(async () => Response.json(report(true)));
+    const viewer = await proxyRoute.GET(req("GET", path));
+    expect(viewer.status).toBe(200);
+    expect((await viewer.json()).final).toBe(true);
+    upstream.mockImplementation(async () => Response.json(report(false)));
+    const admin = await proxyRoute.GET(req("GET", path, { admin: true }));
+    expect(admin.status).toBe(200);
+    expect(await admin.json()).toEqual(report(false));
+  });
+
+  it("only takes final exactly true, refuses a viewer's HEAD and an answer it can't read, and passes battlefield's errors through", async () => {
+    for (const body of [{ final: "true" }, { final: 1 }, [{ final: true }], {}]) {
+      upstream.mockImplementation(async () => Response.json(body));
+      expect((await proxyRoute.GET(req("GET", path))).status, JSON.stringify(body)).toBe(403);
+    }
+    upstream.mockImplementation(async () => new Response("final: true", { headers: { "content-type": "text/plain" } }));
+    expect((await proxyRoute.GET(req("GET", path))).status).toBe(403);
+    upstream.mockClear();
+    expect((await proxyRoute.GET(req("HEAD", path))).status).toBe(403); // Next answers HEAD with the GET handler
+    expect(upstream).not.toHaveBeenCalled();
+    upstream.mockImplementation(async () => Response.json({ detail: "episode not found" }, { status: 404 }));
+    const missing = await proxyRoute.GET(req("GET", path));
+    expect(missing.status).toBe(404);
+  });
+
+  it("leaves the other episode reads alone", async () => {
+    upstream.mockImplementation(async () => Response.json({ final: false }));
+    for (const p of ["snapshot", "controls/extra", "reports"]) expect((await proxyRoute.GET(req("GET", `/api/bf/fe/episodes/ep_1/${p}`))).status, p).toBe(200);
+  });
+});
+
 describe("production hardening", () => {
   const prod = () => vi.stubEnv("NODE_ENV", "production");
   const whoami = async (cookie?: string) => (await (await whoamiRoute.GET(new Request(`${BASE}/api/whoami`, { headers: cookie ? { cookie } : {} }))).json()).role;
@@ -293,11 +384,11 @@ describe("production hardening", () => {
     const held: (() => void)[] = [];
     try {
       while (slots.used < MAX_SYNC_STREAMS) held.push(slots.acquire()!);
-      const full = await streamRoute.GET(new Request(`${BASE}/api/sync/stream`));
+      const full = await streamRoute.GET(new Request(`${BASE}/api/sync/stream`, { headers: { cookie: adminCookie() } }));
       expect(full.status).toBe(503);
       held.pop()!();
       const ctl = new AbortController();
-      const ok = await streamRoute.GET(new Request(`${BASE}/api/sync/stream`, { signal: ctl.signal }));
+      const ok = await streamRoute.GET(new Request(`${BASE}/api/sync/stream`, { headers: { cookie: adminCookie() }, signal: ctl.signal }));
       expect(ok.status).toBe(200);
       expect(slots.used).toBe(MAX_SYNC_STREAMS);
       ctl.abort(); // the client goes away: its slot is free again
