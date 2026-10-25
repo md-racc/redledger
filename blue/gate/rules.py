@@ -216,18 +216,28 @@ def near_threshold(req: GateRequest) -> RuleHit | None:
 
 # Every legitimate vendor onboarded mid-episode bills its first invoice against its onboarding PO,
 # so a new vendor with no PO and no paid history is unverified at any material amount. The old
-# 0.95 x threshold floor let a $4,380 ghost-vendor invoice through on a note alone.
+# 0.95 x threshold floor let a $4,380 ghost-vendor invoice through on a note alone. Shared with
+# the audit's unverified_vendor_exposure finding so gate and audit agree.
 UNVERIFIED_EXPOSURE_FLOOR = Decimal("1000")
+
+
+def _established(req: GateRequest) -> bool:
+    """Paid history counts only if PO-backed, or paid more than one day ago (not a same-day primer)."""
+    for paid in _paid(req):
+        day = _paid_day(paid)
+        if paid.get("po_id") or (day is not None and req.day - day > 1):
+            return True
+    return False
 
 
 def unverified_vendor_exposure(req: GateRequest) -> RuleHit | None:
     if req.action not in INVOICE_ACTIONS:
         return None
-    if 0 <= _vendor_age(req) < 7 and _paid(req) == [] and not _invoice(req).get("po_id") and money(req.amount) > UNVERIFIED_EXPOSURE_FLOOR:
+    if 0 <= _vendor_age(req) < 7 and not _invoice(req).get("po_id") and money(req.amount) > UNVERIFIED_EXPOSURE_FLOOR and not _established(req):
         return RuleHit(
             "unverified_vendor_exposure",
             3,
-            "Invoice of more than $1,000 from a vendor onboarded under seven days ago, with neither paid history nor an associated PO; "
+            "Invoice of more than $1,000 from a vendor onboarded under seven days ago, with neither established paid history nor an associated PO; "
             "verify onboarding before approval or payment.",
             "block",
             "authorization",
@@ -267,6 +277,8 @@ def duplicate_invoice(req: GateRequest) -> RuleHit | None:
 NEAR_DUPLICATE_WINDOW_DAYS = 15
 NEAR_DUPLICATE_TOLERANCE = Decimal(".02")
 NEAR_DUPLICATE_FLOOR = Decimal("1000")
+# Legit no-PO invoices never exceed $2,500, so a PO on only one side of the pair is suspicious above it.
+NEAR_DUPLICATE_ONE_SIDED_PO_FLOOR = Decimal("2500")
 
 
 def _paid_day(row: dict[str, Any]) -> int | None:
@@ -289,23 +301,24 @@ def duplicate_near_match(req: GateRequest) -> RuleHit | None:
     for paid in _paid(req):
         if paid.get("id") == current.get("id") or paid.get("vendor_id") != current.get("vendor_id"):
             continue
-        if (paid.get("po_id") or None) != (current.get("po_id") or None):
+        prior = money(paid.get("amount"))
+        paid_po, current_po = paid.get("po_id") or None, current.get("po_id") or None
+        if paid_po != current_po and (paid_po and current_po or prior <= NEAR_DUPLICATE_ONE_SIDED_PO_FLOOR):
             continue
         # Exact and one-letter-suffix identities belong to duplicate_invoice.
         if str(paid.get("invoice_number", "")).strip().casefold() == number or duplicate_pair(current, paid):
             continue
-        prior = money(paid.get("amount"))
         if prior <= 0 or abs(amount - prior) > prior * NEAR_DUPLICATE_TOLERANCE:
             continue
         day = _paid_day(paid)
-        if day is None or req.day - day > NEAR_DUPLICATE_WINDOW_DAYS:
+        if day is None or not 0 <= req.day - day <= NEAR_DUPLICATE_WINDOW_DAYS:
             continue
-        basis = "the same PO" if current.get("po_id") else "no PO"
+        basis = "the same PO" if current_po and paid_po else "no PO" if not paid_po and not current_po else "a PO on only one of the two invoices"
         return RuleHit(
             "duplicate_near_match",
             2,
             f"Invoice {current.get('invoice_number')} for ${amount:,.2f} is within two percent of paid invoice {paid.get('invoice_number')} "
-            f"(${prior:,.2f}) from this vendor, paid {max(req.day - day, 0)} days ago against {basis}; confirm it is not a re-billing.",
+            f"(${prior:,.2f}) from this vendor, paid {req.day - day} days ago against {basis}; confirm it is not a re-billing.",
             "review",
             "integrity",
         )
