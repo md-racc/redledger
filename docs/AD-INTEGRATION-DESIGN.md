@@ -460,4 +460,4 @@ Parallelism: 1, then 2a ∥ 3, then 2b ∥ 4, then 6 ∥ 7. Nothing in parallel 
 | D12 | Defer accounting with a durable follow-up; no automatic green GL until a `POST /gl/journals` contract (proposed: accrual, Dr expense / Cr 2000 at approve, Dr 2000 / Cr 1000 at pay, one balanced journal unique on `(episode, ref_type, ref_id, kind)`, settlement needs a confirmed payment) | Accepted |
 | D13 | Prepare returns 200 for a block, with a required `effective` field | Accepted |
 | D14 | DRY_RUN turns also run on the per-turn TurnLoop | Accepted |
-| D15 | Live SDK probe (B-8, PR 5, live half of PR 8) | **Hold** — no live deployment; prod stays `DRY_RUN` until Ad lifts it |
+| D15 | Live SDK probe (B-8, PR 5, live half of PR 8) | **Partly lifted** (2026-10-24/25): red runs live on prod (Droid `gpt-5.4-mini`); blue's live audit is merged (#157) but prod keeps `DRY_RUN_BLUE=true` until Ad flips it; green's live probe (B-8) is still on hold |
