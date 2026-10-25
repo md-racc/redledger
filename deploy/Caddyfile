@@ -1,8 +1,6 @@
-# TLS at the edge. Three public hostnames, all the same site: app.$DOMAIN (the arena) and red.$DOMAIN /
-# blue.$DOMAIN (the teams' technical dashboards for the side laptops; frontend/middleware.ts rewrites
-# their `/` to /backstage/red|blue). Cloudflare DNS, proxied with SSL "Full (strict)"; each name needs a
-# proxied record before Caddy can get its certificate. One frontend process serves all three, so the
-# laptop relay (lib/sync) still sees every laptop. Internal traffic stays plain HTTP on the compose networks.
+# TLS at the edge. Public hostnames: app.$DOMAIN, plus red.$DOMAIN and blue.$DOMAIN, the hidden backstage
+# doors (frontend/lib/backstage/alias.ts; admin-only, everyone else gets a 404). Cloudflare DNS, proxied with SSL "Full
+# (strict)". Internal traffic stays plain HTTP on the compose networks.
 #
 # Access mode is chosen by deploy/render-env.sh (README §11, §13): either Cloudflare Access in front
 # with the origin verifying its JWT (both CF_ACCESS_* set), or public read-only mode (both blank)
@@ -26,10 +24,18 @@
 	respond @not_cloudflare "forbidden" 403
 }
 
-app.{$DOMAIN}, red.{$DOMAIN}, blue.{$DOMAIN} {
+app.{$DOMAIN} {
 	import cloudflare_only
 	encode gzip
 	@ws path /api/ws /api/ws/*
 	reverse_proxy @ws battlefield:8000
+	reverse_proxy frontend:3000
+}
+
+# The hidden doors: the frontend rewrites / to /backstage/<team> on these hosts and serves it only to admins
+# (frontend/lib/backstage/gate.ts). WebSockets still go to app.$DOMAIN (NEXT_PUBLIC_WS_URL).
+red.{$DOMAIN}, blue.{$DOMAIN} {
+	import cloudflare_only
+	encode gzip
 	reverse_proxy frontend:3000
 }

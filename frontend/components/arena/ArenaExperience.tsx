@@ -15,6 +15,7 @@ import { useArena } from "@/lib/arena/store";
 import { tallyDays } from "@/lib/arena/ledgerStats";
 import { useFeed } from "@/lib/arena/useFeed";
 import Scene from "./Scene";
+import { isAdmin } from "@/lib/role";
 import { publish, setClientRole } from "@/lib/sync/client";
 import { ROSTER_BY_ID } from "@/lib/arena/roster";
 import { useShow } from "./useShow";
@@ -138,12 +139,12 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
     return () => { clearInterval(hb); off(); };
   }, []);
 
-  // backstage: the consoles for the other laptops. Not linked anywhere; B opens the hub in a new tab.
+  // backstage: the consoles for the other laptops. Not linked anywhere; for an admin, B opens the hub in a new tab.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      if ((e.key === "b" || e.key === "B") && !e.metaKey && !e.ctrlKey && !e.altKey) window.open("/backstage", "_blank", "noopener");
+      if ((e.key === "b" || e.key === "B") && !e.metaKey && !e.ctrlKey && !e.altKey && isAdmin()) window.open("/backstage", "_blank", "noopener"); // admins only: nobody else is told it exists
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

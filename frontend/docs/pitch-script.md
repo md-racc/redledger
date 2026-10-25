@@ -1,151 +1,66 @@
-# Pitch script: four voices, four laptops, about five minutes
+# Pitch: four voices, two pages
 
-The spoken pitch for the live demo. R opens and closes, then Green, Blue and Red each take a minute on their own laptop. Plain text is spoken. *[Italics in brackets]* are things to click. Laptop 1 is the arena, 2 is red, 3 is green, 4 is blue (the backstage consoles, see [backstage.md](backstage.md)). The show beats follow [show-mode.md](show-mode.md).
+About five minutes, spoken. Plain text is said aloud; *[italics in brackets]* are clicks; **bold** is a sponsor's name: say it clearly. Laptop 1 is the arena, 2 red, 3 green, 4 blue ([backstage.md](backstage.md)). Claims follow the ledger ([`hyphenate.md`](../../docs/devpost/hyphenate.md) §8); check R's status lines against what is live that day. Proof for every sponsor line: [sponsors.md](sponsors.md).
 
-Every claim here follows the claims ledger in [`docs/devpost/hyphenate.md`](../../docs/devpost/hyphenate.md) §8 and the numbers sheet in §10. In particular: the real blue **escalates** a bank swap (a human or the timeout does the blocking), it switches on pre-written learned controls rather than writing rules, the 90-second show is a recording with the mock agents, and the evolution card shows the newest finished backend lineage (the live-red one on prod). **Eight schemes:** `red/schemes` on `main` has all eight (#166), and the claims ledger now says so (`hyphenate.md` §4, #181), so this script says all eight are built. The live five-generation run was on the first five, and the red section says that. The arena's captions (`lib/arena/timeline.ts`, `lib/arena/roster.ts`) say the same as this script. Before presenting, check the status lines in R's close against what is live that day. The spoken-scheme moment at the end needs the speech key on the server (see [voice.md](voice.md)): press **Speak a scheme** once before you go on, and if the console says voice is not set up, use the Try chips or type, which the script covers.
+## R: open
 
-## R
+It's Friday, 4:55 p.m. An email lands: "We've changed banks. Please update our account." A tired clerk might pay it. An AI would pay it faster. *[Beat.]*
 
-Let me start with a question.
+Everyone is building the agent that pays your bills. Nobody is testing it against someone trying to steal. Before a car goes on the road, you crash it. Before an AI touches your money, you just hope. We didn't want to hope. So we built the crash-test lab. This is Red Ledger.
 
-Would you let an AI pay your company's bills?
+Meet Coastal Supply Co.: sixty vendors, ninety days of history, one ledger, three AI agents. Green pays the bills. Blue guards the money. Red wants it. All three are built on **Factory's Droid SDK**, and you'll see which are live.
 
-*[Beat.]*
+*[Press S: ninety seconds, a recording with our test agents.]*
 
-Now, would you still say yes if someone was actively trying to trick it?
-
-That's the part nobody tests. Before a car goes on the road, you crash it. Before an AI touches your money, you just hope. We didn't want to hope. So we built the crash-test lab. This is Red Ledger.
-
-A small company, Coastal Supply Co. Three AI agents inside it, one shared ledger. Green pays the bills. Blue guards the money. Red tries to steal it.
-
-Ninety seconds. This part is a recording with our test agents, so it plays the same every time. Watch.
-
-*[Press S on laptop 1. R talks only at these moments.]*
-
-*[0:06, the tour]*
-
-Ten guards, twelve clients, and red's fraudsters. Eight on the wall, all eight built.
-
-*[0:27, controller off]*
-
-Round one: no guard. Watch the red number climb. That's what happens today when an agent has the checkbook and nobody's watching.
-
-*[0:43, rewind, controller on]*
-
-Rewind. Same company, same crime, guard on. Now the blue number climbs instead. That's money stopped.
-
-*[About 0:55, the Your decision card appears. Click Block.]*
-
-And when blue isn't sure, it does what a good employee does. It asks a person. If nobody answers, it blocks.
-
-*[1:05, compare]*
-
-Same crime. Different ending. In this recording, anyway. The real run is a minute away.
-
-*[1:15, evolution]*
-
-Then we run it again and again, live, and watch what red learns. Red will tell you.
-
-*[1:28, click any client on laptop 1]*
-
-That's the site. Everything I click here shows up on these three screens. That's the real backend, one per team.
+No guard: watch the red number climb. *[Controller on.]* Same crime, guard on: the blue number climbs. That's money stopped. *[Your decision card: click Block.]* When blue isn't sure, it does what a good employee does: it asks a person. That's **Hyphenate's** test, knowing when to ask. Nobody answers? Blocked.
 
 Green, you're up.
 
-## GREEN
+## GREEN: laptop 3
 
-*[Walk up to laptop 3.]*
+I'm the one you'd trust with your checkbook. That's the problem. I match invoices to purchase orders, pay bills, reimburse expenses, and I'm gullible on purpose: if the paperwork looks right, I pay, like any busy clerk on a Friday.
 
-Hi. I'm the one you'd trust with your checkbook. That's the problem.
+So nobody made me paranoid. They made me ask first. Before I move a dollar, the ledger asks blue: allow, block, or get a human. Block means the payment dies before the money moves. *[Point at the gated payments.]* Every line is a payment I tried, and blue's answer. I run keyless, on the same harness as the live agents.
 
-Green is the finance clerk. It matches invoices to purchase orders, pays bills, reimburses expenses. Those are the company's real books, live.
+Let's see how gullible I am. *[R: Launch attack, Bank Account Swap.]* Blue?
 
-*[Point at AP open, overdue, cash.]*
+## BLUE: laptop 4
 
-And it's gullible on purpose. It never checks how old a vendor is, or whether their bank account just changed. If the paperwork looks right, it pays, like any busy clerk on a Friday. That's exactly what a fraudster counts on.
+"Gullible on purpose." Thanks, green. I don't use a mystery score. I use rules any auditor would recognize. Is the vendor a week old? Did their bank account just change? Is the amount just under the limit? *[R clicks a guard: it lights up here.]* Same system.
 
-So we didn't make green paranoid. We made it ask first. Before green moves a dollar, the ledger asks blue: allow, block, or get a human. Block means the payment dies before the money moves.
+That bank swap? I didn't block it. I flagged it and asked a human. *[R clicks Block.]* Every verdict I give is a row in an append-only log, built as **Tiger Data** TimescaleDB hypertables and tested on the real thing in CI, so we can rewind any day and watch it again. And once a day I audit the books live on Droid, at autonomy "off," where every tool call I make is a permission request.
 
-*[Point at the list of gated payments.]*
+I'm graded both ways: dollars blocked, and the cost of blocking someone innocent. Block everything and I lose. Red, you've been quiet.
 
-Every line here is a payment green tried to make, and blue's answer.
+---
 
-Let's see how gullible I am.
+## RED: laptop 2
 
-*[R opens Launch attack on laptop 1 and clicks Bank Account Swap.]*
+I've been taking notes. If the attacker's weak, the defense proves nothing. So I'm a real agent, live on **Factory's Droid SDK**, at autonomy "high": nobody asks me permission. *[Point at the thinking lines.]* Watch my reasoning stream in. Every day I read the books like a fraudster and pick one of eight schemes: ghost vendors, bank swaps, duplicate invoices, splits under the limit, ghost employees, padded expenses, inflated purchase orders, creeping prices.
 
-Blue?
+But I can't cheat. That's what makes this a range for **Armadin**, not a demo. I can't see which rows are fraud, grade myself, or pose as blue. I can't pay, approve, freeze, or read the audit log. Reviewers found fourteen ways the sandbox could leak or be gamed; we closed them before merging. That bank swap blue just sent to a human? Mine. *[Point at the tape.]*
 
-## BLUE
+Then we let me learn: five generations, live, with my first five schemes. I found the hole nothing flagged, invoices split just under the limit, and leaned on it every round: about nineteen thousand dollars in round one, about ninety-seven thousand in round five. *[R opens Evolution.]* None of blue's rules fired. That's what a lab is for. R.
 
-*[Walk up to laptop 4.]*
+## R: close
 
-"Gullible on purpose." Thanks, green. That's why I exist.
+Back to that Friday email. Would I hire an AI to pay it? Not today. Not without proof. Here's a real run. *[Compare, then Real run.]* Red live, ten days, same seed: about ten thousand dollars gone with no controller, about eighteen hundred with one. Not zero, and we'll say so.
 
-I don't start with a mysterious AI score. I start with plain rules any auditor would recognize. Some block outright. Some ask a human. Some just leave a note on the payment. Is this vendor under a week old? Did their bank account just change? Is the amount sitting just under the approval limit?
+Where we are: red and blue's audit are live. Green is keyless on the same harness. The show was a recording, and the learning card is a recorded live run. *[Say the version that's true on the day.]*
 
-*[R clicks the Bank Swap Trap guard on laptop 1.]*
+Under the glass: one **Vultr** VM behind Cloudflare, an approval-gated deploy, and compare-and-set commits, so parallel calls can't pay an invoice twice. The browser never holds a key.
 
-Each rule is a guard in the arena. Watch my screen when R clicks one. There. It lights up here. Same system.
+Your turn. *[Turn laptop 1 to the judge.]* Pick an attack, or say one in your own words, in any language. *[Only if the pre-check worked: **ElevenLabs'** speech-to-text hears it and names the language.]* Red reads your sentence and runs the closest of its eight schemes. Go on: try to steal from Coastal Supply. Watch the other three screens.
 
-*[Point at the new line.]*
+## Sponsors: the feature we showcase
 
-And the bank swap we just launched? I didn't block it. I flagged the bank change and asked a human.
-
-*[R clicks Block on the Your decision card on laptop 1.]*
-
-There. A person decides. Read my reason: plain English, like an auditor's note. And if nobody answers in ninety seconds, it blocks anyway.
-
-*[If the line says BLOCK instead, say: blocked.]*
-
-Once a day I audit the books, live on Droid, and write a report. I can flag and freeze suspicious vendors. And I'm graded both ways: dollars blocked, and the cost of blocking someone innocent. Block everything and I lose.
-
-Red, you've been quiet.
-
-## RED
-
-*[Walk up to laptop 2.]*
-
-I've been taking notes.
-
-Red is the reason this means anything. If the attacker's weak, the defense proves nothing. So red is a real agent, live on Factory's Droid SDK. Every day it reads the company's books like a fraudster and picks a scheme that blends in: a ghost vendor, a bank swap, a duplicate invoice, an invoice split into pieces, a made-up employee, padded expenses, an invoice over its purchase order, a price that creeps up every month.
-
-But it's boxed in. It can submit invoices. It can't pay, approve, freeze, or read the audit log. It only sees what a real insider could see.
-
-*[Point at the tape.]*
-
-That bank swap blue just sent to a human? Mine. Decent plan.
-
-But here's the part that surprised us. We let red run five generations against our controls, live, with its first five schemes. After every round it gets a debrief: which controls caught it. It found the one scheme nothing flagged, invoices split just under the approval limit, and leaned on it harder every round. Round one, it took about nineteen thousand dollars. Round five, about ninety-seven thousand.
-
-Blue switched on its learned controls. None of them fired on a split.
-
-*[R opens the Evolution card on laptop 1.]*
-
-That's what the lab is for. It found a hole before anyone hired an agent.
-
-R.
-
-## R, to close
-
-Would I hire an AI to run accounts payable? Not today. Not without proof. But now you can get proof: put an agent in a company, hand it a real attacker, and measure what the controls catch and what they cost.
-
-*[Open Compare on laptop 1 and click Real run. Numbers on screen: $10,285 and $1,824.]*
-
-Here's a real run. Red live, ten days, same seed. No controller: about ten thousand dollars lost. Controller on: about eighteen hundred. Not zero.
-
-And to be straight about where we are: red and blue are live agents. Green runs its full logic keyless on the same harness. The show was a recording, and that learning card is a recorded live run.
-
-*[Say the version that's true on the day.]*
-
-Now the fun part.
-
-*[Turn laptop 1 toward the judge. Open Launch attack.]*
-
-Pick an attack. Or make one up. Press Speak a scheme and say it in your own words, in whatever language you like. Then just pause. It stops listening when you do.
-
-*[They speak. The words appear in the box, with the language it heard. Click Launch it. No microphone, or voice is off that day: click a Try chip, or have them type it.]*
-
-ElevenLabs turned your voice into text, and there's your sentence on the red screen. Red reads it as you said it, and uses it to set the amount and details. The scheme it runs is the closest of its eight. Now watch the other three screens.
-
-*[If it lands on Bank Account Swap, blue asks a human: say so and click Block. If it lands on Ghost Vendor, it gets through with a note. Say: that's the documented gap, a small new vendor gets a note, not a block. A plain button pick behaves the same way.]*
+| Sponsor, prize | Feature we use | Where you see it | Straight status |
+|---|---|---|---|
+| **Factory**, Droid SDK | autonomy levels, streamed thinking, tool-call IDs as idempotency keys | red's reasoning; blue's audit | red, blue's audit live; green keyless |
+| **Hyphenate**, finance | gate, audit log, human escalation, evolution | Your decision; Evolution | in the demo |
+| **Tiger Data**, MLH | TimescaleDB hypertables, continuous aggregate | blue's verdict log | CI on TimescaleDB; production Postgres 16 |
+| **Vultr**, MLH | the VM | the whole site | live |
+| **Microsoft**, **Most Technically Advanced** | approval-gated deploy, compare-and-set, Cloudflare Access | the close | live |
+| **Armadin**, Best Security Hack | boxed-in AI attacker, hidden ground truth | red's minute | live |
+| **ElevenLabs** | speech-to-text, language detection | the judge's turn | check one real recording first |
+| **CRS** | identity sandbox | a separate table demo | proven locally |

@@ -368,6 +368,97 @@ def threshold_split(req: GateRequest) -> RuleHit | None:
     return None
 
 
+# Blocked parts count: once earlier parts are blocked, the next part must still be judged with them,
+# or the last part of a split slips through alone. Rejected parts are a closed decision and do not.
+SPLIT_SIBLING_STATUSES = {"pending", "matched", "approved", "paid", "blocked"}
+SPLIT_WINDOW_DAYS = 1
+
+
+def _split_siblings(req: GateRequest, current: dict[str, Any], threshold: Decimal) -> list[dict[str, Any]]:
+    """Same-vendor, near-same-day, sub-threshold invoices from the open and paid lists.
+
+    Sibling evidence is advisory: validate() does not vouch for vendor_open_invoices, so a row
+    that is malformed (any per-row parse error), out of scope, rejected, or the judged invoice
+    itself is skipped rather than raised. Rows are deduplicated by id across both lists.
+    """
+    vendor_id = _id(current, "vendor_id")
+    received = _day(current.get("received_day", req.day))
+    seen = {_id(current)}
+    out: list[dict[str, Any]] = []
+    for key in ("vendor_open_invoices", "vendor_paid_invoices"):
+        rows = req.context.get(key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows[:2000]:
+            try:
+                if not isinstance(row, dict):
+                    continue
+                _scope(req, row)
+                row_id = _id(row)
+                if row_id in seen or _id(row, "vendor_id") != vendor_id or row.get("status") not in SPLIT_SIBLING_STATUSES:
+                    continue
+                if abs(_day(row.get("received_day")) - received) > SPLIT_WINDOW_DAYS:
+                    continue
+                amount = money(row.get("amount"))
+                po_id = row.get("po_id")
+                if not 0 < amount < threshold or (po_id is not None and not isinstance(po_id, str)):
+                    continue
+            except (ValueError, TypeError, KeyError, AttributeError):
+                continue
+            seen.add(row_id)
+            out.append({"amount": amount, "po_id": po_id or None})
+    return out
+
+
+def invoice_threshold_split(req: GateRequest) -> RuleHit | None:
+    """One vendor bill split into near-same-day invoices that each stay under the approval threshold.
+
+    Parts are the judged invoice plus same-vendor invoices received within a day of it that are
+    open (pending, matched, approved), already paid, or already blocked. An invoice billed against its own PO (no
+    other involved invoice shares it) is a separately authorized engagement and does not count:
+    legit traffic bills each PO once, so it routinely lands several PO-backed invoices for one
+    vendor on the same day, while a split bill shares one PO or has none.
+    """
+    if req.action not in INVOICE_ACTIONS:
+        return None
+    threshold = approval_threshold()
+    amount = money(req.amount)
+    if amount >= threshold:
+        return None
+    current = _invoice(req)
+    current_po = current.get("po_id") or None
+    parts = [{"amount": amount, "po_id": current_po}, *_split_siblings(req, current, threshold)]
+    po_uses: dict[str, int] = {}
+    for part in parts:
+        if part["po_id"]:
+            po_uses[part["po_id"]] = po_uses.get(part["po_id"], 0) + 1
+    if current_po and po_uses[current_po] < 2:
+        return None
+    parts = [p for p in parts if not p["po_id"] or po_uses[p["po_id"]] >= 2]
+    involved = len(parts)
+    if involved < 2:
+        return None
+    total = sum((p["amount"] for p in parts), Decimal(0))
+    if total >= threshold:
+        return RuleHit(
+            "invoice_threshold_split",
+            3,
+            f"{involved} invoices from this vendor received within a day of each other total {total} against an approval threshold of {threshold}; "
+            "each part stays below it.",
+            "block",
+            "amount",
+        )
+    if involved >= 3 and total >= threshold * Decimal(".95"):
+        return RuleHit(
+            "invoice_threshold_split",
+            2,
+            f"{involved} invoices from this vendor received within a day of each other total {total}, within five percent below the approval threshold of {threshold}.",
+            "review",
+            "amount",
+        )
+    return None
+
+
 def employee_bank_matches_vendor(req: GateRequest) -> RuleHit | None:
     if req.action in EXPENSE_ACTIONS and _rows(req, "vendors_sharing_bank_account"):
         return RuleHit("employee_bank_matches_vendor", 2, "Employee and vendor share a payment account; verify ownership.", "review", "identity")
@@ -405,6 +496,7 @@ RULES: list[Rule] = [
     vendor_age_lt_7d,
     near_threshold,
     threshold_split,
+    invoice_threshold_split,
     duplicate_invoice,
     recent_bank_change,
     bank_change_with_open_invoices,

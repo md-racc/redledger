@@ -1,0 +1,1 @@
+- 2026-10-25T06:11Z · Ad · battlefield: Caddy serves red.$DOMAIN and blue.$DOMAIN (R's hidden backstage doors, #200) and the roll restarts caddy when the Caddyfile changes; next: Ad adds the two Cloudflare DNS records; blocked: DNS
