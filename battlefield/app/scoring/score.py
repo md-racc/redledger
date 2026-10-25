@@ -58,7 +58,13 @@ async def _misdirected(episode_id: str, attack_id: str, chs: list[dict[str, Any]
     if not bank:
         return {}
     vendors = sorted({ch["vendor_id"] for ch in bank})
-    red_accounts = sorted({ch["new_value"] for ch in bank if ch["status"] == "approved"})
+    # Every account red ever got approved in this episode, not only this attack's: a decoy paid into
+    # another attack's swapped account still reached red.
+    approved = await db.fetch(
+        "SELECT new_value FROM vendor_changes WHERE episode_id=$1 AND origin='red' AND field='bank_account' AND status='approved'",
+        episode_id,
+    )
+    red_accounts = sorted({ch["new_value"] for ch in bank if ch["status"] == "approved"} | {r["new_value"] for r in approved})
     rows = await db.fetch(_MISDIRECTED_SQL, episode_id, attack_id, vendors, red_accounts)
     return {r["id"]: (r["invoice_id"], float(r["amount"])) for r in rows}
 
