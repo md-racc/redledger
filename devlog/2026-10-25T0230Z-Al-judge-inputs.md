@@ -1,0 +1,1 @@
+- 2026-10-25T02:30Z · Al · red: judge-console words now reach red's prompt as quoted data (options.inputs kind custom_fraud_scheme): unforced turns pick the best-matching catalog scheme, forced turns use them only for params; catalog stays the only thing red can run; 5 tests; next: Ad wires ELEVENLABS key for #154; blocked: none
