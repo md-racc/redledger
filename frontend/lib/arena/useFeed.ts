@@ -245,7 +245,8 @@ export function useFeed(): Feed {
       const list = Object.values(agents);
       const keyless = list.length > 0 && list.every((a) => a?.ok !== false && a?.dry_run === true);
       setBackend({ state: "live", agents, keyless });
-      setNote((n) => (n.startsWith("checking") || n.startsWith("backend unreachable") ? `backend live${keyless ? " · keyless agents" : ""}` : n));
+      // a backend that answers again: drop every "offline"/"unreachable" note (a stale "backend offline" stayed up for good before)
+      setNote((n) => (n.startsWith("checking") || n.startsWith("backend unreachable") || n.startsWith("backend offline") ? `backend live${keyless ? " · keyless agents" : ""}` : n));
     } catch (e) {
       if (!isUnreachable(e)) return; // the backend answered (a 429, say): it is there, ask again later
       setBackend(OFFLINE);

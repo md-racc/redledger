@@ -40,7 +40,7 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
   const replay = typeof window !== "undefined" && /[?&]replay(=1|=true)?(&|$)/.test(window.location.search);
   const bs = useBackstage(WANT[team], { forceRecorded: replay, ...(team === "red" || team === "blue" ? { recording: RECORDING } : {}) });
   const sync = useSync(`backstage${team}`);
-  useRole(); // asks the server once; a viewer's console only watches (the operator controls below are for admins)
+  const viewer = useRole() !== "admin"; // asks the server once; a viewer's console only watches (the operator controls below are for admins)
   const { state, events, episode, agg, now } = bs;
   const selected = sync.state.selected?.id ?? null;
 
@@ -59,8 +59,8 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
   }, [router]);
 
   const checks = useMemo(
-    () => liveChecks({ mode: bs.mode, healthMs: bs.healthMs, agents: bs.health?.agents ?? null, replaying: bs.recording, answer: bs.answer, eventsInLastMinute: bs.rate, lastEventAt: bs.lastEventAt, feed: bs.feed, episodeStatus: episode?.status ?? null, eventsHeld: events.length, verdicts: state.verdicts.length, now, sync: { link: sync.link, quietMs: sync.quietMs, state: sync.state }, trafficCount: sync.traffic.length }),
-    [bs.mode, bs.healthMs, bs.health, bs.recording, bs.answer, bs.rate, bs.lastEventAt, bs.feed, episode?.status, events.length, state.verdicts.length, now, sync.link, sync.quietMs, sync.state, sync.traffic.length],
+    () => liveChecks({ mode: bs.mode, healthMs: bs.healthMs, agents: bs.health?.agents ?? null, replaying: bs.recording, answer: bs.answer, eventsInLastMinute: bs.rate, lastEventAt: bs.lastEventAt, feed: bs.feed, episodeStatus: episode?.status ?? null, eventsHeld: events.length, verdicts: state.verdicts.length, now, sync: { link: sync.link, quietMs: sync.quietMs, state: sync.state }, trafficCount: sync.traffic.length, viewer }),
+    [viewer, bs.mode, bs.healthMs, bs.health, bs.recording, bs.answer, bs.rate, bs.lastEventAt, bs.feed, episode?.status, events.length, state.verdicts.length, now, sync.link, sync.quietMs, sync.state, sync.traffic.length],
   );
   const clients = liveClients(sync.state, now);
   const shown = team === "hub" ? [] : teamEvents(team, events).slice(-24).reverse();
@@ -93,7 +93,9 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
       <Sec title="LIVE CHECKS">
         {checks.map((c) => (
           <Line key={c.label}>
-            <span className={c.ok === true ? "ok" : c.ok === false ? "bad" : "dim"}>[{c.ok === true ? " OK " : c.ok === false ? "FAIL" : " -- "}]</span> {c.label.padEnd(50, ".")} <span className="dim">{c.detail}</span>
+            {c.adminOnly
+              ? <span className="dim">{`[ -- ] ${c.label.padEnd(50, ".")} — ${c.detail}`}</span>
+              : <><span className={c.ok === true ? "ok" : c.ok === false ? "bad" : "dim"}>[{c.ok === true ? " OK " : c.ok === false ? "FAIL" : " -- "}]</span> {c.label.padEnd(50, ".")} <span className="dim">{c.detail}</span></>}
           </Line>
         ))}
       </Sec>
