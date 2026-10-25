@@ -7,6 +7,7 @@ import { money } from "@/lib/arena/headlines";
 import { evolvedIn, learnedIn, loadLineageReport, notesAfter, retiredIn, type EvoAgent, type GenReport, type LineageReport } from "@/lib/arena/lineage";
 import { subscribeShowClock } from "@/lib/arena/showClock";
 import { useArena } from "@/lib/arena/store";
+import { Raw } from "./Raw";
 
 const pretty = (s: string) => s.replace(/^learned:/, "").replace(/^evolved:/, "").replace(/_/g, " ");
 const TONE: Record<EvoAgent, "red" | "blue" | "green"> = { red: "red", blue: "blue", green: "green" };
@@ -68,7 +69,7 @@ export function EvolutionCard({ open, driven, preferLive, onClose }: { open: boo
           {gens.map((g, i) => <Generation key={g.generation} g={g} report={report} k={reveal(i)} max={maxMoney(gens)} />)}
         </div>
       )}
-      {open && report && <footer>Between generations each agent gets a debrief and updates its playbook: red re-weights what paid, blue switches on the controls it has pre-written. Nobody sees another agent&apos;s playbook, only its behaviour.</footer>}
+      {open && report && <footer>Between generations each agent gets a debrief and updates its playbook: red re-weights what paid, blue switches on the controls it has pre-written. Nobody sees another agent&apos;s playbook, only its behaviour.<Raw data={{ source: loaded?.source, lineage: report.lineage, generations: gens.map((g) => ({ generation: g.generation, episode_id: g.episode_id, status: g.status, score: g.score })) }} /></footer>}
     </section>
   );
 }

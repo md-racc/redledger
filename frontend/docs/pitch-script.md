@@ -2,7 +2,7 @@
 
 The spoken pitch for the live demo. R opens and closes, then Green, Blue and Red each take a minute on their own laptop. Plain text is spoken. *[Italics in brackets]* are things to click. Laptop 1 is the arena, 2 is red, 3 is green, 4 is blue (the backstage consoles, see [backstage.md](backstage.md)). The show beats follow [show-mode.md](show-mode.md).
 
-Every claim here follows the claims ledger in [`docs/devpost/hyphenate.md`](../../docs/devpost/hyphenate.md) §8 and the numbers sheet in §10. In particular: the real blue **escalates** a bank swap (a human or the timeout does the blocking), it switches on pre-written learned controls rather than writing rules, the 90-second show is a recording with the mock agents, and the evolution card shows the newest finished backend lineage (the live-red one on prod). Before presenting, check the status lines in R's close against what is live that day.
+Every claim here follows the claims ledger in [`docs/devpost/hyphenate.md`](../../docs/devpost/hyphenate.md) §8 and the numbers sheet in §10. In particular: the real blue **escalates** a bank swap (a human or the timeout does the blocking), it switches on pre-written learned controls rather than writing rules, the 90-second show is a recording with the mock agents, and the evolution card shows the newest finished backend lineage (the live-red one on prod). **Eight schemes:** `red/schemes` on `main` has all eight (#166), and the claims ledger now says so (`hyphenate.md` §4, #181), so this script says all eight are built. The live five-generation run was on the first five, and the red section says that. The arena's captions (`lib/arena/timeline.ts`, `lib/arena/roster.ts`) say the same as this script. Before presenting, check the status lines in R's close against what is live that day. The spoken-scheme moment at the end needs the speech key on the server (see [voice.md](voice.md)): press **Speak a scheme** once before you go on, and if the console says voice is not set up, use the Try chips or type, which the script covers.
 
 ## R
 
@@ -24,7 +24,7 @@ Ninety seconds. This part is a recording with our test agents, so it plays the s
 
 *[0:06, the tour]*
 
-Ten guards, twelve clients, and red's fraudsters. Eight on the wall, five built so far.
+Ten guards, twelve clients, and red's fraudsters. Eight on the wall, all eight built.
 
 *[0:27, controller off]*
 
@@ -40,7 +40,7 @@ And when blue isn't sure, it does what a good employee does. It asks a person. I
 
 *[1:05, compare]*
 
-Same crime. Different ending. In this recording, anyway. I'll tell you what the live numbers look like.
+Same crime. Different ending. In this recording, anyway. The real run is a minute away.
 
 *[1:15, evolution]*
 
@@ -98,7 +98,7 @@ There. A person decides. Read my reason: plain English, like an auditor's note. 
 
 *[If the line says BLOCK instead, say: blocked.]*
 
-Once a day I also audit the books and freeze suspicious vendors. And I'm graded both ways: dollars blocked, and the cost of blocking someone innocent. Block everything and I lose.
+Once a day I audit the books, live on Droid, and freeze suspicious vendors. And I'm graded both ways: dollars blocked, and the cost of blocking someone innocent. Block everything and I lose.
 
 Red, you've been quiet.
 
@@ -108,7 +108,7 @@ Red, you've been quiet.
 
 I've been taking notes.
 
-Red is the reason this means anything. If the attacker's weak, the defense proves nothing. So red is a real agent, live on Factory's Droid SDK. Every day it reads the company's books like a fraudster and picks a scheme that blends in: a ghost vendor, a bank swap, a duplicate invoice, an invoice split into pieces, a made-up employee.
+Red is the reason this means anything. If the attacker's weak, the defense proves nothing. So red is a real agent, live on Factory's Droid SDK. Every day it reads the company's books like a fraudster and picks a scheme that blends in: a ghost vendor, a bank swap, a duplicate invoice, an invoice split into pieces, a made-up employee, padded expenses, an invoice over its purchase order, a price that creeps up every month.
 
 But it's boxed in. It can submit invoices. It can't pay, approve, freeze, or read the audit log. It only sees what a real insider could see.
 
@@ -116,7 +116,7 @@ But it's boxed in. It can submit invoices. It can't pay, approve, freeze, or rea
 
 That bank swap blue just sent to a human? Mine. Decent plan.
 
-But here's the part that surprised us. We let red run five generations against our controls, live. After every round it gets a debrief: which controls caught it. It found the one scheme nothing flagged, invoices split just under the approval limit, and leaned on it harder every round. Round one, it took about nineteen thousand dollars. Round five, about ninety-seven thousand.
+But here's the part that surprised us. We let red run five generations against our controls, live, with its first five schemes. After every round it gets a debrief: which controls caught it. It found the one scheme nothing flagged, invoices split just under the approval limit, and leaned on it harder every round. Round one, it took about nineteen thousand dollars. Round five, about ninety-seven thousand.
 
 Blue switched on its learned controls. None of them fired on a split.
 
@@ -130,7 +130,9 @@ R.
 
 Would I hire an AI to run accounts payable? Not today. Not without proof. But now you can get proof: put an agent in a company, hand it a real attacker, and measure what the controls catch and what they cost.
 
-Here's what live looks like. Real agents, ten days, same seed. No controller: about ten thousand dollars lost. Controller on: about eighteen hundred. Not zero.
+*[Open Compare on laptop 1 and click Real run. Numbers on screen: $10,285 and $1,824.]*
+
+Here's a real run. Red live, ten days, same seed. No controller: about ten thousand dollars lost. Controller on: about eighteen hundred. Not zero.
 
 And to be straight about where we are: red and blue are live agents. Green runs its full logic keyless on the same harness. The show was a recording, and that learning card is a recorded live run.
 
@@ -138,8 +140,12 @@ And to be straight about where we are: red and blue are live agents. Green runs 
 
 Now the fun part.
 
-*[Turn laptop 1 toward the judge.]*
+*[Turn laptop 1 toward the judge. Open Launch attack.]*
 
-Pick an attack. Any one. Watch the other three screens.
+Pick an attack. Or make one up. Press Speak a scheme and say it in your own words, in whatever language you like. Then just pause. It stops listening when you do.
 
-*[If they pick Bank Account Swap, blue asks a human: say so and click Block. If they pick Ghost Vendor, it gets through with a note. Say: that's the documented gap, a small new vendor gets a note, not a block.]*
+*[They speak. The words appear in the box, with the language it heard. Click Launch it. No microphone, or voice is off that day: click a Try chip, or have them type it.]*
+
+ElevenLabs turned your voice into text, and there's your sentence on the red screen. Red reads it as you said it, and uses it to set the amount and details. The scheme it runs is the closest of its eight. Now watch the other three screens.
+
+*[If it lands on Bank Account Swap, blue asks a human: say so and click Block. If it lands on Ghost Vendor, it gets through with a note. Say: that's the documented gap, a small new vendor gets a note, not a block. A plain button pick behaves the same way.]*

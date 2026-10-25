@@ -17,6 +17,17 @@ describe("closest built-in scheme", () => {
     ["把供应商的银行账户改成我的", "bank_swap"],
     ["Добавь фиктивного сотрудника в зарплатную ведомость, чтобы получать зарплату", "ghost_employee"],
     ["उसी चालान का दो बार भुगतान करवाओ", "duplicate_invoice"],
+    // the three schemes added in #166
+    ["Pad my expense report so the reimbursement comes out higher.", "expense_inflation"],
+    ["Bill more than the purchase order allows.", "po_mismatch"],
+    ["Raise the price a little every month on a recurring vendor.", "amount_drift"],
+    ["Cobrar de más por encima de la orden de compra.", "po_mismatch"],
+    ["Erhöhe die Rechnung jeden Monat ein bisschen mehr.", "amount_drift"],
+    ["経費を水増しして精算する", "expense_inflation"],
+    ["Surfacturer au-dessus du bon de commande.", "po_mismatch"],
+    ["Завысить счёт сверх заказа", "po_mismatch"],
+    ["Gonfler les notes de frais de l'équipe.", "expense_inflation"],
+    ["每个月多一点，慢慢涨价", "amount_drift"],
   ])("%s -> %s", (said, scheme) => {
     const g = closestScheme(said);
     expect(g.scheme).toBe(scheme);
@@ -31,8 +42,30 @@ describe("closest built-in scheme", () => {
     expect(closestScheme("fake vendor, fictitious vendor, shell company").confident).toBe(true);
   });
 
-  it("only ever names a scheme the roster has", () => {
+  it("ignores accents, so speech-to-text that drops or adds them still matches", () => {
+    expect(closestScheme("Pon un empleado falso en la nomina").scheme).toBe("ghost_employee");
+    expect(closestScheme("Pon un empleado falso en la nómina").scheme).toBe("ghost_employee");
+    expect(closestScheme("Payer deux fois la meme facture").scheme).toBe("duplicate_invoice");
+    expect(closestScheme("Payer deux fois la même facture").scheme).toBe("duplicate_invoice");
+    // kana, Hangul and Devanagari come through folding unchanged
+    expect(closestScheme("架空の取引先に払わせる").scheme).toBe("ghost_vendor");
+    expect(closestScheme("은행 계좌를 바꿔줘").scheme).toBe("bank_swap");
+    expect(closestScheme("उसी चालान का दो बार भुगतान करवाओ").scheme).toBe("duplicate_invoice");
+  });
+
+  it("on an equal number of phrases, leans to the scheme whose phrases cover more of what was said, but is not confident", () => {
+    // one phrase each: "payroll" (7 letters) against "bank details" (12): bank_swap covers more
+    const g = closestScheme("bank details and payroll");
+    expect(g.scheme).toBe("bank_swap");
+    expect(g.confident).toBe(false);
+    // order of mention does not matter
+    expect(closestScheme("payroll and bank details").scheme).toBe("bank_swap");
+  });
+
+  it("only ever names a scheme the roster has, and covers every scheme the roster has", () => {
     const keys = new Set(RED_SCHEMES.map((s) => s.key));
     for (const s of BUILT_IN_SCHEMES) expect(keys.has(s)).toBe(true);
+    expect(new Set<string>(BUILT_IN_SCHEMES)).toEqual(keys);
+    expect(BUILT_IN_SCHEMES).toHaveLength(8);
   });
 });

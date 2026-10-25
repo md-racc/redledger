@@ -6,6 +6,7 @@ import { SCHEME_PROFILE } from "@/lib/arena/localAttack";
 import { money } from "@/lib/arena/headlines";
 import { BLUE_RULES, RED_SCHEMES } from "@/lib/arena/roster";
 import type { Spoken } from "@/lib/arena/useFeed";
+import { EXAMPLES } from "@/lib/voice/examples";
 import { BUILT_IN_SCHEMES, closestScheme, type BuiltInScheme } from "@/lib/voice/intent";
 import { useRole } from "@/lib/role";
 import type { ControllerMode } from "@/lib/types";
@@ -37,7 +38,7 @@ export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean
   useEffect(() => { if (!open && voice.phase === "listening") voice.reset(); }, [open, voice]);
   const busy = voice.phase === "listening" || voice.phase === "transcribing";
   const launchSpoken = () => {
-    if (!admin) return;
+    if (!admin || busy || sent || !voice.text.trim()) return;
     setErr(null);
     setSent(true);
     onLaunch(scheme, { text: voice.text, language: voice.language }).catch((e: unknown) => { setSent(false); setErr(String(e instanceof Error ? e.message : e).slice(0, 120)); });
@@ -82,6 +83,7 @@ export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean
             {voice.phase === "listening" ? <><i className="dot" />Stop · {clock(voice.seconds)}</> : voice.phase === "transcribing" ? "Listening to what you said…" : "Speak a scheme"}
           </button>
           {voice.phase === "listening" && <span className="speak-level" aria-hidden><i style={{ width: `${Math.min(100, voice.level * 160)}%` }} /></span>}
+          {voice.phase === "listening" && <span className="speak-lang">Speak, then pause. It stops by itself.</span>}
           {voice.language && voice.phase === "ready" && <span className="speak-lang">Heard: {languageName(voice.language)}{voice.probability != null ? ` · ${Math.round(voice.probability * 100)}%` : ""}</span>}
         </div>
         {!admin && <p className="speak-note">Only the admin laptops can speak or launch a scheme.</p>}
@@ -96,11 +98,20 @@ export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean
           maxLength={500}
           placeholder="Describe a fraud: “change a vendor's bank details right before a big payment”… in any language"
           onChange={(e) => voice.type(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); launchSpoken(); } }}
           aria-label="Describe a fraud scheme"
         />
+        {!voice.text.trim() && !busy && (
+          <p className="speak-try">
+            Try:{" "}
+            {EXAMPLES.map((x) => (
+              <button key={x.label} type="button" tabIndex={open ? 0 : -1} title={x.text} onClick={() => voice.type(x.text)}>{x.label}</button>
+            ))}
+          </p>
+        )}
         {voice.text.trim() && (
           <p className="speak-match">
-            Red gets your exact words. Today it also runs the closest built-in scheme:{" "}
+            Red reads your exact words to set the amount and details. The scheme that runs is the closest of its eight:{" "}
             <select value={scheme} onChange={(e) => setPick(e.target.value as BuiltInScheme)} tabIndex={open ? 0 : -1} aria-label="Closest built-in scheme">
               {BUILT_IN_SCHEMES.map((k) => <option key={k} value={k}>{schemeName(k)}</option>)}
             </select>

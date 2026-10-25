@@ -43,6 +43,13 @@ and it races the MCP HTTP call; if it loses, the execution gets a UUID4 (logged
 (same action, same verdict), so oldest-first between them is safe. There is no "last seen id"
 anywhere, and every registered id gets exactly one event pair (see InvocationRegistry).
 
+Streamed arguments (CLI 0.249.0 with gpt-5.x): the CLI reports a tool call as soon as it is detected
+("tool-call-start", with the arguments known so far, often `{}`) and again with the full arguments
+("tool-call-progress"), both as a stream ToolCallDelta under the same id, before the permission request.
+So a stream sighting is not the call's final word: until the CLI asks permission for an id, the latest
+sighting with valid arguments re-keys its pending entry, and the permission request's arguments, once
+seen, are the ones it is approved and claimed under (see InvocationRegistry._resight).
+
 Ledger write keys inside one invocation: the first write uses the tool_use_id exactly; the n-th
 (n >= 2) uses `f"{tool_use_id}:{n}"`. `put_state` / `post_input` count as writes. A caller-supplied
 `tool_use_id=` is used verbatim and never handed out again; passing one this invocation already
@@ -61,7 +68,7 @@ import threading
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, get_type_hints
 
 import structlog
@@ -256,6 +263,7 @@ class ToolUse:
 _PENDING, _RUNNING, _DONE, _CLOSED = "pending", "running", "done", "closed"
 # permission state of an entry
 _PERM_NONE, _PERM_ASKED, _PERM_APPROVED, _PERM_DENIED = "none", "asked", "approved", "denied"
+_TOOL_MISMATCH = "\x00tool-mismatch"  # a conflict marker no canonical JSON can equal
 
 
 @dataclass
@@ -264,6 +272,8 @@ class _Entry:
     canon: str | None
     state: str
     perm: str = _PERM_NONE
+    # the SDK reported other valid arguments for this id after its permission request: never claimable
+    conflicts: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -291,7 +301,11 @@ class InvocationRegistry:
     `require_permission` (the agent runs at Autonomy.OFF, where the CLI asks before every MCP call):
     only entries whose permission request was approved can be claimed by an execution. Otherwise an
     approved entry is still preferred over one never asked about, and an entry that was asked but not
-    (yet) approved, or denied, is never claimed."""
+    (yet) approved, or denied, is never claimed.
+
+    An entry is claimed by argument correlation only under valid canonical arguments: one whose
+    arguments do not validate (a streamed `{}` for a tool with a required argument) is registered
+    tentatively, outside the pending index, until a later sighting completes them (`_resight`)."""
 
     def __init__(self, server_name: str, tools: Iterable[tuple[str, Callable[..., Any]]], emitter: Any | None = None, *, require_permission: bool = False):
         tools = list(tools)
@@ -330,19 +344,61 @@ class InvocationRegistry:
         tool = self.tool_name(raw_name)
         if tool is None or not tool_use_id:
             return None
-        if tool_use_id in self._entries:  # seen already (permission request, then the stream)
-            return self._entries[tool_use_id].use
         plain = thaw(args or {})
-        use = ToolUse(tool_use_id=tool_use_id, tool=tool, args=plain, source=source)
         canon = self.canonical(tool, plain)
+        entry = self._entries.get(tool_use_id)
+        if entry is not None:  # seen already (streamed arguments, permission request, complete ToolCall)
+            return self._resight(entry, tool, plain, canon, source)
+        use = ToolUse(tool_use_id=tool_use_id, tool=tool, args=plain, source=source)
         entry = _Entry(use, canon, _PENDING)
         self._entries[tool_use_id] = entry
         # A permission request means the call has not run yet; only a stream sighting can be late.
         if source != SOURCE_PERMISSION and self._link_unlinked(entry):
             log.warning("tool_use_id_late", tool=tool, tool_use_id=tool_use_id, source=source)
             return use
-        self._pending.setdefault((tool, canon), deque()).append(tool_use_id)
+        self._file(entry)
         return use
+
+    def _resight(self, entry: _Entry, tool: str, plain: dict[str, Any], canon: str | None, source: str) -> ToolUse:
+        """A later sighting of a registered id. Rule (streamed arguments, see the module docstring):
+        - pending and never asked about: the arguments may still be streaming, so a permission request,
+          or a stream sighting with valid arguments, replaces them and re-files the entry (a sighting
+          that fails validation never replaces valid ones);
+        - pending and asked about: the permission request's arguments are bound (they are what the
+          handler decided on); other valid arguments for the id mark it conflicting, never claimable;
+        - claimed, executed or closed: never re-keyed (logged)."""
+        if tool != entry.use.tool:
+            log.error("tool_use_id_tool_mismatch", tool=entry.use.tool, seen_as=tool, tool_use_id=entry.use.tool_use_id, source=source)
+            if entry.state == _PENDING:
+                entry.conflicts.add(_TOOL_MISMATCH)
+            return entry.use
+        if canon is not None and canon == entry.canon:
+            return entry.use  # the same action again
+        if entry.state != _PENDING:
+            if canon is not None:
+                log.warning("tool_use_args_changed_after_claim", tool=tool, tool_use_id=entry.use.tool_use_id, state=entry.state, source=source)
+            return entry.use
+        if entry.perm == _PERM_NONE:
+            if source == SOURCE_PERMISSION or canon is not None or entry.canon is None:
+                self._unfile(entry)
+                entry.use = ToolUse(tool_use_id=entry.use.tool_use_id, tool=tool, args=plain, source=source)
+                entry.canon = canon
+                if source != SOURCE_PERMISSION and self._link_unlinked(entry):
+                    log.warning("tool_use_id_late", tool=tool, tool_use_id=entry.use.tool_use_id, source=source)
+                else:
+                    self._file(entry)
+            return entry.use
+        if canon is not None:
+            entry.conflicts.add(canon)
+            log.warning(
+                "tool_use_args_conflict",
+                tool=tool,
+                tool_use_id=entry.use.tool_use_id,
+                perm=entry.perm,
+                source=source,
+                detail="arguments differ from the permission request's; the call is refused",
+            )
+        return entry.use
 
     def observe_permission(self, request: Any) -> list[ToolUse]:
         """Register every MCP action of ours in a droid_sdk PermissionRequest (duck-typed so tests and
@@ -378,7 +434,7 @@ class InvocationRegistry:
 
     # ---------- execution ----------
     def _claimable(self, entry: _Entry, approved_only: bool) -> bool:
-        if entry.state != _PENDING:
+        if entry.state != _PENDING or entry.canon is None or entry.conflicts:
             return False
         if entry.perm == _PERM_APPROVED:
             return True
@@ -393,7 +449,8 @@ class InvocationRegistry:
             entry = self._entries.get(hint)
             if entry is not None and entry.use.tool == tool and self._claimable(entry, self.require_permission):
                 return self._take(entry, ToolUse(entry.use.tool_use_id, tool, entry.use.args, SOURCE_MCP_META))
-        q = self._pending.get((tool, self.canonical(tool, kwargs)))
+        canon = self.canonical(tool, kwargs)
+        q = self._pending.get((tool, canon)) if canon is not None else None
         if not q:
             return None
         for approved_only in (True, False) if not self.require_permission else (True,):
@@ -426,10 +483,14 @@ class InvocationRegistry:
             tiers.append(lambda e: e.perm == _PERM_NONE)
         for tier in tiers:
             cands = [self._entries[t] for t in q if self._entries[t].state == _PENDING and tier(self._entries[t])]
+            if any(c.conflicts for c in cands):
+                return None, REFUSE_CONFLICTING
             if len(cands) > 1:
                 return None, REFUSE_AMBIGUOUS
             if cands:
                 return self._take(cands[0], cands[0].use), None
+        if any(e.state == _PENDING and e.use.tool == tool and canon in e.conflicts for e in self._entries.values()):
+            return None, REFUSE_CONFLICTING
         return None, REFUSE_UNVERIFIED
 
     def _take(self, entry: _Entry, use: ToolUse) -> ToolUse:
@@ -496,7 +557,9 @@ class InvocationRegistry:
 
     # ---------- internals ----------
     def _link_unlinked(self, entry: _Entry) -> bool:
-        """Pair `entry` with the oldest unlinked execution of the exact same tool + arguments."""
+        """Pair `entry` with the oldest unlinked execution of the exact same tool + valid arguments."""
+        if entry.canon is None or entry.conflicts:
+            return False
         runs = self._unlinked.get((entry.use.tool, entry.canon))
         if not runs:
             return False
@@ -518,11 +581,19 @@ class InvocationRegistry:
 
         return redacted_args(self._redact.get(use.tool), use.args)
 
-    def _drop_pending(self, entry: _Entry, state: str) -> None:
-        entry.state = state
+    def _file(self, entry: _Entry) -> None:
+        """Index a pending entry for argument correlation; a tentative one (invalid arguments) stays out."""
+        if entry.canon is not None:
+            self._pending.setdefault((entry.use.tool, entry.canon), deque()).append(entry.use.tool_use_id)
+
+    def _unfile(self, entry: _Entry) -> None:
         q = self._pending.get((entry.use.tool, entry.canon))
         if q is not None and entry.use.tool_use_id in q:
             q.remove(entry.use.tool_use_id)
+
+    def _drop_pending(self, entry: _Entry, state: str) -> None:
+        entry.state = state
+        self._unfile(entry)
 
     def _close_unrun(self, entry: _Entry, body: dict[str, Any]) -> None:
         self._drop_pending(entry, _CLOSED)

@@ -5,10 +5,12 @@
 import { useEffect, useRef, useState } from "react";
 import { explainEscalation } from "@/lib/arena/escalation";
 import { rosterOf, TEAM_META, TEAMS } from "@/lib/arena/roster";
+import { provenance } from "@/lib/arena/provenance";
 import { useArena } from "@/lib/arena/store";
 import type { Feed } from "@/lib/arena/useFeed";
 import type { ControllerMode } from "@/lib/types";
 import type { ShowController } from "../useShow";
+import { Raw } from "./Raw";
 import { ThreatConsole } from "./ThreatConsole";
 import { useRole } from "@/lib/role";
 
@@ -47,7 +49,7 @@ export function Hud({ feed, show }: { feed: Feed; show: ShowController }) {
 
   const { backend } = feed;
   const apiLabel = backend.state === "live" ? (backend.keyless ? "open · agents keyless" : "open") : backend.state === "offline" ? "closed" : "calling";
-  const feedLabel = `${inShow ? "show · " : ""}${source === "live" ? "live" : source === "mock" ? "recorded" : "idle"}`;
+  const prov = provenance({ backend, source, inShow, episodeId: state.episodeId });
 
   return (
     <div className={`hud ${stage === "arena" ? "is-on" : ""} ${inShow ? "in-show" : ""}`} aria-hidden={stage !== "arena"}>
@@ -55,7 +57,8 @@ export function Hud({ feed, show }: { feed: Feed; show: ShowController }) {
         <div className="hud-brand">
           <span className="brand" onClick={brandClick}><b>red</b>ledger</span>
           <span className="stat" title="The battlefield behind the /api/bf proxy"><i className={`led led-${backend.state}`} />Ledger <b>{apiLabel}</b></span>
-          <span className="stat" title="Where the events on screen come from">Source <b>{feedLabel}</b></span>
+          <span className={`stat badge-${prov.badge.toLowerCase()}`} title={prov.meaning}>Source <b>{prov.badge}</b></span>
+          <span className="stat stat-agents" title={`Each agent's own /health. live = a real model is running it, keyless = canned turns. ${prov.agentsLine}${prov.episode ? ` · ${prov.episode}` : ""}`}>Agents <b>{prov.agentsLine}</b></span>
           {state.episodeId && <span className="stat">Day <b>{state.currentDay}/{state.days}</b></span>}
           <span className={`stat mode-${state.controllerMode}`}>Controller <b>{state.controllerMode}</b></span>
         </div>
@@ -100,6 +103,7 @@ export function Hud({ feed, show }: { feed: Feed; show: ShowController }) {
         <button className={`btn ${threat ? "armed" : ""}`} onClick={() => setThreat((v) => !v)} aria-expanded={threat} disabled={!admin}>Launch attack</button>
         <button className="btn" onClick={() => setPanel(panel === "compare" ? null : "compare")}>Compare</button>
         <button className="btn" onClick={() => setPanel(panel === "evolve" ? null : "evolve")}>Evolution</button>
+        <button className="btn" onClick={() => setPanel(panel === "report" ? null : "report")}>Report</button>
         <button className="btn" onClick={() => (arenaFormed ? actions.disperse() : actions.converge())}>
           {arenaFormed ? "Send them back" : "Send agents in"}
         </button>
@@ -158,6 +162,7 @@ function EscalationBar({ feed }: { feed: Feed }) {
         <button className="esc-btn block" disabled={!admin} onClick={() => void feed.resolveEscalation(e.escalation_id, "block").catch(() => {})}><b>{x.block.label}</b><span>{x.block.result}</span></button>
       </div>
       <p className="escalation-foot">If nobody decides before the clock runs out, it is blocked.</p>
+      <Raw data={{ escalation: e, verdict: feed.state.verdicts.find((v) => v.verdict_id === e.verdict_id) ?? null }} />
     </div>
   );
 }

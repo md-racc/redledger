@@ -12,7 +12,7 @@ export type Stage = "loading" | "intro" | "scroll" | "arena";
 export type FeedSource = "idle" | "live" | "mock";
 
 /** A card over the arena: the off-vs-on comparison, or the evolution report. */
-export type Panel = "compare" | "evolve" | null;
+export type Panel = "compare" | "evolve" | "report" | null;
 
 export interface ShowState { status: ShowStatus; beat: BeatId | null; caption: string | null; sub: string | null; }
 
