@@ -1,11 +1,13 @@
 # CRS employee identity integration
 
 This replaces B2's unsupported EIN/vendor lookup with approved fictional employee checks.
-It is **not a completed live demo**. Blue's live audit still refuses to stream or write until
-its owner-loop safety and authenticated invocation binding are verified. That safeguard is
-unchanged. DRY_RUN never calls CRS, even with credentials present, with one explicit exception:
+It is **not a completed live demo**. Blue's live audit guard was lifted on merged evidence
+(#157), and the audit runs on Droid on prod since 2026-10-25 (`DRY_RUN_BLUE=false`), so a live
+audit can call the provider under the binding, name and seven-day rules below. No CRS call from
+the live audit is recorded yet, and no prod episode is recorded with persona-bound employees.
+DRY_RUN never calls CRS, even with credentials present, with one explicit exception:
 exporting `CRS_LIVE=true` in the shell (acceptance-only, default off, never committed anywhere)
-lets the keyless audit call the sandbox provider. The live SDK audit guard is unchanged.
+lets the keyless audit call the sandbox provider.
 
 ## Data flow and safety
 
@@ -48,8 +50,8 @@ even in the sandbox, so arbitrary names, EINs, SSNs, addresses, and modified req
 - Apply the normal additive extension schema, `contracts/ext/blue/01_crs_profiles.sql`.
   Create synthetic employees with the exact sponsor names (P01 MARGARET OKAFOR,
   P12 VICTOR ANAND, P16 SAMUEL OYELARAN) and bind them explicitly. Do not change core columns.
-- Resolve Blue's existing live-audit readiness blockers separately. Adding a new tool means
-  the verified tool-ID list must include `crs_identity_check`; do not guess its SDK-qualified ID.
+- Blue's live-audit readiness blockers are resolved (#157). The verified tool-ID list includes
+  `blue-ledger___crs_identity_check`; any new tool must be added from an observed listing, not guessed.
 - With sponsor-confirmed credentials and ROLE_TU_TV, perform the live demo only after readiness
   is proven. The fixed base is `https://api-sandbox.stitchcredit.com/api`; login is
   `POST /users/login`, then `POST /transunion/identity-manager-verification/basic`.

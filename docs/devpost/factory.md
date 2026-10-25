@@ -2,6 +2,14 @@
 
 Status as of 2026-10-24 ~23:00Z, main @ 0de4fe8; prod runs 4c6bdd9 (#131).
 
+**Update 2026-10-25 ~03:05Z:** blue's daily audit now runs live on Droid on prod (`DRY_RUN_BLUE=false`,
+`DROID_MODEL_BLUE=gpt-5.4-mini`). #157 lifted the guard; #169 makes blue's image fail the build without the
+Droid CLI or SDK. Smoke `ep_f9c695b3144f` (2-day enforce): a live audit both days, 3,806 and 4,109 Factory
+credits (blue's `turn_usage` log). Blue's `/gate` stays rules plus learned controls (no gate LLM). Green stays
+keyless for the hackathon (#160 stays a draft). Before #176, blue's `/health` always showed `droid_ok: false` and
+battlefield recorded blue's audit as 0 credits; from the deploy containing 6640354, `/audit` returns `usage` (#174)
+so blue's credits count toward the caps and `make prod-credits`, and `droid_ok` is truthful.
+
 Paths are relative to the repo root (github.com/md-racc/redledger). "Finding" means a dated line under
 `## Findings` in `contracts/CHANGELOG.md`. Status legend: `LIVE` (on prod, app.redledger.us, with a real
 model today), `ON MAIN` (merged and tested, runs keyless, not exercised live on prod), `PLANNED`, `NOT DOING`.
@@ -16,7 +24,7 @@ model today), `ON MAIN` (merged and tested, runs keyless, not exercised live on 
 | Value | $2,000 + Factory credits + swag (team research; **confirm on Devpost**) |
 | Published criteria | None found (Devpost could not be fetched). **Confirm on Devpost.** |
 | What we assume the judges look for | People who know the SDK well, so we expect them to look at depth and correctness: Droid used for non-coding work, the SDK's control surface (autonomy, permission handler, `restrict_tools`, `disable_builtin_skills`, string `system_prompt`), in-process MCP tools, streaming, usage/credits, failure handling, and what we learned empirically. This is our reading, not a published rubric. |
-| Team's own note | `INTEGRATIONS.md` §5 row A2 (refreshed in #135): "Point judges at `README.md` §6 'Where Droid runs'; lead with a live episode, not a feature tour; don't claim green/blue run live until #78 clears". README §6 "Where Droid runs" (#135) is the one-table summary of every Session, autonomy, handler and tool ID in this doc |
+| Team's own note | `INTEGRATIONS.md` §5 row A2: "Point judges at `README.md` §6 'Where Droid runs'; lead with a live episode, not a feature tour; say red and blue's audit are live, green runs keyless". README §6 "Where Droid runs" (#135) is the one-table summary of every Session, autonomy, handler and tool ID in this doc |
 
 ---
 
@@ -25,7 +33,7 @@ model today), `ON MAIN` (merged and tested, runs keyless, not exercised live on 
 **One sentence.** Red Ledger runs three non-coding Droid agents (an attacker, a finance clerk and a
 controller) against one synthetic company's books. Their only tools are in-process MCP tools, and the
 Droid `tool_use_id` is carried through every permission request, event and ledger write, so each action
-is idempotent, auditable and gateable. The red attacker runs live on prod today.
+is idempotent, auditable and gateable. The red attacker and the controller's daily audit run live on prod today.
 
 **30-second version (for Factory judges).**
 > We used Droid as a general agent runtime, not a coding assistant. Each agent gets a string
@@ -37,7 +45,8 @@ is idempotent, auditable and gateable. The red attacker runs live on prod today.
 > agentkit reads it from the permission request and the stream and binds it to the execution. That ID
 > becomes the ledger's idempotency key (`X-Tool-Use-Id`, `<id>:<n>` for later writes). A strict mode
 > refuses to run any call it can't match to an SDK-reported ID. Red runs live on `gpt-5.4-mini`:
-> about 11 s and about 2.6k credits per turn. We wrote down what we learned as dated Findings: the tool
+> about 11 s and about 2.6k credits per turn. Blue's daily audit runs live on `gpt-5.4-mini` too, under
+> that strict mode, at about 4k credits per audit. We wrote down what we learned as dated Findings: the tool
 > ID format, awaiting tools stalling 0.5.0, the permission rule, and a model stall.
 
 ---
@@ -48,18 +57,18 @@ No published criteria, so the rows are the SDK surfaces this track is about.
 
 | Criterion / interest | What we have | Status | Evidence |
 |---|---|---|---|
-| Droid for non-coding work | Attacker / AP clerk / controller agents; string `system_prompt` per agent (no `append` preset) | red `LIVE`; green, blue `ON MAIN` | `agentkit/agentkit/droid_agent.py:624-633`; `red/prompts/system.md`, `green/prompts/system.md`, `blue/prompts/audit.md`; AGENTS.md §5 |
-| Built-ins off | `disable_builtin_skills=True` on every Session | `LIVE` (red) | `droid_agent.py:626` |
-| In-process MCP tools | `droid_sdk.mcp.create_sdk_mcp_server(name="<agent>-ledger")`, one `tool()` per `@ledger_tool` function | `LIVE` (red) | `droid_agent.py:399-403`; `agentkit/agentkit/tools.py` |
-| `restrict_tools` with exact IDs | red 8 IDs (derived, then checked exactly against `list_tools`); green 9 and blue 7 pinned constants observed with a real `Session.list_tools()` | red `LIVE`; green, blue `ON MAIN` | `droid_agent.py:632, 680-707`; `green/agent.py:21-31`; `blue/audit/agent.py:28-36`; Findings (Al, M ×2) |
-| Autonomy + permission handler as a control surface | red `HIGH` + default `PROCEED_ONCE`; green `OFF` + handler that prepares through battlefield and returns `PROCEED_ONCE`/`CANCEL`; blue `OFF` + `PROCEED_ONCE`; never `PROCEED_ALWAYS*` | red `LIVE`; green/blue handlers `ON MAIN`, behind hard guards | `red/agent.py:22`; `green/agent.py:47, 85-113`; `blue/audit/agent.py:41, 65-68`; `contracts/agent-service.md` §Green |
-| tool_use_id → idempotency key | Permission request / stream IDs bound to executions; `X-Tool-Use-Id` = id, then `<id>:<n>`; battlefield 409 on reuse for a different action | `LIVE` for red (best-effort); strict path proven on a real Ledger for blue (#119) | `agentkit/agentkit/invocation.py`; `ledger_client.py:115-131`; #33, #34, #84 |
-| Strict identity | `identity="strict"` refuses unverified/ambiguous/conflicting/explicit IDs before running or writing | `ON MAIN` (green, blue); proven for blue in an authorized local real-Ledger run | `droid_agent.py:471-483`; `invocation.py` `claim_checked`; #84; `blue/SDK-READINESS.md` |
-| Streaming → UI events | `include_partial_messages=True`; `ThinkingDelta`/`TextDelta` → `agent.thinking`; `ToolCallDelta`/`ToolCall`/`ToolResult` used for ID binding; tool events emitted by the tool wrapper | `LIVE` (red) | `droid_agent.py:651-664`; `agentkit/agentkit/events.py`; `/backstage/red` (`frontend/docs/backstage.md`) |
+| Droid for non-coding work | Attacker / AP clerk / controller agents; string `system_prompt` per agent (no `append` preset) | red, blue (audit) `LIVE`; green `ON MAIN` | `agentkit/agentkit/droid_agent.py:624-633`; `red/prompts/system.md`, `green/prompts/system.md`, `blue/prompts/audit.md`; AGENTS.md §5 |
+| Built-ins off | `disable_builtin_skills=True` on every Session | `LIVE` (red, blue audit) | `droid_agent.py:626` |
+| In-process MCP tools | `droid_sdk.mcp.create_sdk_mcp_server(name="<agent>-ledger")`, one `tool()` per `@ledger_tool` function | `LIVE` (red, blue audit) | `droid_agent.py:399-403`; `agentkit/agentkit/tools.py` |
+| `restrict_tools` with exact IDs | red 8 IDs (derived, then checked exactly against `list_tools`); green 9 and blue 7 pinned constants observed with a real `Session.list_tools()` | red, blue (audit) `LIVE`; green `ON MAIN` | `droid_agent.py:632, 680-707`; `green/agent.py:21-31`; `blue/audit/agent.py:28-36`; Findings (Al, M ×2) |
+| Autonomy + permission handler as a control surface | red `HIGH` + default `PROCEED_ONCE`; green `OFF` + handler that prepares through battlefield and returns `PROCEED_ONCE`/`CANCEL`; blue `OFF` + `PROCEED_ONCE`; never `PROCEED_ALWAYS*` | red, blue (audit) `LIVE`; green's handler `ON MAIN`, behind a hard guard | `red/agent.py:22`; `green/agent.py:47, 85-113`; `blue/audit/agent.py:41, 65-68`; `contracts/agent-service.md` §Green |
+| tool_use_id → idempotency key | Permission request / stream IDs bound to executions; `X-Tool-Use-Id` = id, then `<id>:<n>`; battlefield 409 on reuse for a different action | `LIVE` for red (best-effort) and blue's audit (strict; on prod since 2026-10-25, first proven on a real local Ledger in #119) | `agentkit/agentkit/invocation.py`; `ledger_client.py:115-131`; #33, #34, #84 |
+| Strict identity | `identity="strict"` refuses unverified/ambiguous/conflicting/explicit IDs before running or writing | `LIVE` (blue audit, on prod); `ON MAIN` (green); first proven for blue in an authorized local real-Ledger run | `droid_agent.py:471-483`; `invocation.py` `claim_checked`; #84; `blue/SDK-READINESS.md` |
+| Streaming → UI events | `include_partial_messages=True`; `ThinkingDelta`/`TextDelta` → `agent.thinking`; `ToolCallDelta`/`ToolCall`/`ToolResult` used for ID binding; tool events emitted by the tool wrapper | `LIVE` (red, blue audit) | `droid_agent.py:651-664`; `agentkit/agentkit/events.py`; `/backstage/red` (`frontend/docs/backstage.md`) |
 | Timeouts | stream `TURN_TIMEOUT_SEC-10`, per-tool cap `TURN_TIMEOUT_SEC-20` plus a turn-wide deadline, turn-loop ceiling, bounded flush/teardown | `LIVE` | `droid_agent.py:311-327, 434-469, 651`; `agentkit/agentkit/sync.py`; #20, #79, #81 |
-| Usage / credits | `result.usage.factory_credits` logged per turn, returned in `/turn`, put on `turn.ended`, summed by a per-episode and per-lineage credit guard | `LIVE` (red) | `droid_agent.py:668-675`; `battlefield/app/orchestrator/runner.py:280-345`; `.../lineage.py`; `make prod-credits` |
-| Model pinning | `DROID_MODEL_RED/GREEN/BLUE`, `DROID_REASONING_*` validated at startup | `LIVE` (red: `gpt-5.4-mini`, low) | `agentkit/agentkit/config.py`; `docker-compose.yml:97-131`; Finding (#118) |
-| DRY_RUN | Every agent runs keyless with no SDK import; per-agent `DRY_RUN_RED/GREEN/BLUE` | `LIVE` (green, blue keyless on prod) | `droid_agent.py:340-342`; `.env.example:50-55` |
+| Usage / credits | `result.usage.factory_credits` logged per turn, returned in `/turn`, put on `turn.ended`, summed by a per-episode and per-lineage credit guard | `LIVE` (red; blue's audit from the deploy containing 6640354, which returns `usage` on `/audit`, #174/#176). Smoke `ep_f9c695b3144f` predates it: `turn_usage` 3,806 / 4,109, recorded as 0 by battlefield | `droid_agent.py:668-675`; `battlefield/app/orchestrator/runner.py:280-345`; `.../lineage.py`; `make prod-credits` |
+| Model pinning | `DROID_MODEL_RED/GREEN/BLUE`, `DROID_REASONING_*` validated at startup | `LIVE` (red: `gpt-5.4-mini`, low; blue: `gpt-5.4-mini`) | `agentkit/agentkit/config.py`; `docker-compose.yml:97-131`; Finding (#118) |
+| DRY_RUN | Every agent runs keyless with no SDK import; per-agent `DRY_RUN_RED/GREEN/BLUE` | `LIVE` (green keyless on prod) | `droid_agent.py:340-342`; `.env.example:50-55` |
 | Empirical findings | 10 dated Droid-related Findings + 2 open questions | n/a | `contracts/CHANGELOG.md` §Findings (all listed in §4.9) |
 | Droid packaged in containers | CLI via `curl -fsSL https://app.factory.ai/cli \| sh` in `python:3.11-slim`; `droid-sdk[mcp]` via `agentkit[droid]` | `LIVE` | `red/Dockerfile`; Finding 2026-10-23 |
 
@@ -67,7 +76,7 @@ No published criteria, so the rows are the SDK surfaces this track is about.
 
 ## 4. What we have, in detail
 
-### 4.1 One shared base class: `agentkit.DroidAgent`. `LIVE` (red), `ON MAIN` (green, blue)
+### 4.1 One shared base class: `agentkit.DroidAgent`. `LIVE` (red, blue audit), `ON MAIN` (green)
 
 Every agent subclasses `DroidAgent` (`agentkit/agentkit/droid_agent.py`) and supplies: `name`,
 `autonomy`, `system_prompt`, `tools()`, `build_prompt(req)`, `dry_run_turn(req)`, and optionally
@@ -101,8 +110,8 @@ so DRY_RUN and tests run without it.
 | Permission handler | base default: always `PROCEED_ONCE` (`droid_agent.py:256-264`). At HIGH the CLI never asks (Finding, permission rule) | `on_permission` (`green/agent.py:85-113`), see §4.5 | always `PROCEED_ONCE` (`blue/audit/agent.py:65-68`) |
 | `restrict_tools` | `red-ledger___add_employee`, `red-ledger___create_vendor`, `red-ledger___inspect_books`, `red-ledger___list_schemes`, `red-ledger___request_vendor_bank_change`, `red-ledger___run_scheme`, `red-ledger___submit_expense`, `red-ledger___submit_invoice`. Derived as `f"{name}-ledger___{tool}"` from `red/tools.py`, then replaced by the exact matches from `list_tools()` | pinned `AP_TOOL_IDS` (`green/agent.py:21-31`): `green-ledger___ap_queue`, `…___approve_expense`, `…___approve_invoice`, `…___approve_vendor_change`, `…___match_invoice`, `…___pay_expense`, `…___pay_invoice`, `…___reject_invoice`, `…___reject_vendor_change`. Set before the first Session | pinned `AUDIT_TOOL_IDS` (`blue/audit/agent.py:28-36`): `blue-ledger___benford_check`, `…___crs_identity_check`, `…___day_activity`, `…___freeze_vendor`, `…___post_report`, `…___raise_flag`, `…___vendor_dedupe`. Set before the first Session |
 | Model env | `DROID_MODEL_RED`, `DROID_REASONING_RED` | `DROID_MODEL_GREEN`, `DROID_REASONING_GREEN` | `DROID_MODEL_BLUE`, `DROID_REASONING_BLUE` |
-| Prod today | **`LIVE`**: `dry_run=false`, `gpt-5.4-mini`, reasoning `low` (prod `/health`; Finding #118; README §6 "Where Droid runs") | `dry_run=true` (keyless) | `dry_run=true` (keyless) |
-| Live guard | none | `_droid_turn` raises `PREREQUISITE` unconditionally (`green/agent.py:81-83`) | `_droid_turn` raises unconditionally (`blue/audit/agent.py:150-163`); `live_readiness().ready` is hard-typed `False` |
+| Prod today | **`LIVE`**: `dry_run=false`, `gpt-5.4-mini`, reasoning `low` (prod `/health`; Finding #118; README §6 "Where Droid runs") | `dry_run=true` (keyless; by decision for the hackathon) | **`LIVE`** since 2026-10-25: `dry_run=false`, `gpt-5.4-mini` (prod vars `DRY_RUN_BLUE`, `DROID_MODEL_BLUE`); smoke `ep_f9c695b3144f` |
+| Live guard | none | `_droid_turn` raises `PREREQUISITE` unconditionally (`green/agent.py:94-96`) | none since #157 (lifted on merged evidence, `blue/audit/agent.py:150-155`); the image fails its build without the SDK (#169). `/health` `droid_ok` always read `false` before #176; from the deploy containing 6640354 it reports `live_readiness(sdk_available=sdk_installed())`, a metadata check |
 | Prompt | 11-line attacker prompt; per-turn prompt inlines the scheme catalog and says "inspect_books once, run_scheme once, one sentence, stop" (`red/agent.py:63-72`) | AP-clerk procedure (`green/prompts/system.md`) | controller prompt plus a JSON snapshot of service-derived facts (`blue/audit/agent.py:141-148`) |
 
 **Wording note.** AGENTS.md §5 says "verify the exact tool IDs once and hardcode them". Green and blue
@@ -253,6 +262,10 @@ tell the model "failed" while battlefield might still pay it (#20, #34). agentki
 - Prod runs `MAX_CREDITS_PER_EPISODE=375000`, the value `deploy/PROD-OPS.md` recommends. At the measured
   ~2.6k credits per red turn, a 10-day episode (10 red turns) spends ~25k (the #136 recordings: 26,230 and 24,449),
   so the guard is a runaway stop, not a budget that bites in normal play.
+- Blue's live audit (since 2026-10-25) logs its own `turn_usage` (3,806 and 4,109 credits in
+  `ep_f9c695b3144f`). Before #176 battlefield recorded those audits as 0, so `make prod-credits` and the
+  guard missed them. From the deploy containing 6640354, `/audit` returns `usage` (#174) and blue's ~4k
+  per day counts toward the episode and lineage caps.
 - Reflection between generations is deterministic code for all three agents (`red/evolution.py` fold,
   `green/playbook.py`, `blue/gate/learned.py`). It makes no Droid call and spends no credits.
 
@@ -278,7 +291,7 @@ At ~15–40 s per tool round-trip, 1 of 5 non-stalled audits finished in budget.
 widely (9,834 for a 6-call audit; 5,825 and 3,308 for one-word probes), which suggests a large fixed
 per-session overhead in metering.
 
-### 4.10 Blue: real-Ledger Droid acceptance. `ON MAIN` (local, authorized runs only; not on prod)
+### 4.10 Blue: real-Ledger Droid acceptance. `ON MAIN` (local, authorized runs; the evidence #157 lifted the guard on, and blue's audit is now live on prod)
 
 `blue/tests/sdk_real_ledger_acceptance.py` (#119, not collected by pytest, needs `--allow-model-call`)
 serves the real `AuditAgent` through a test-only `_droid_turn` subclass against a local battlefield,
@@ -295,7 +308,7 @@ with Postgres and mock red/green, for a 1-day enforce episode. The checks use op
   (`blue/gate/engine.py`, `blue/gate/llm.py`, 2.4 s deadline) and has an 8 s budget. Droid is used for
   the agentic audit, not the synchronous hot path.
 
-### 4.11 Why green and blue are not live yet (readiness guards). `ON MAIN`, `PLANNED` P4
+### 4.11 Readiness guards: green's stays on, blue's is lifted. Green `ON MAIN` (keyless by decision); blue `LIVE`
 
 - **Green:** `GreenAgent._droid_turn` raises `PREREQUISITE` ("SDK permission, restriction, identity and
   cancellation acceptance are required before Droid execution") before any SDK import, MCP server or
@@ -307,17 +320,17 @@ with Postgres and mock red/green, for a 1-day enforce episode. The checks use op
   Stage B rows (off allow, shadow, enforce block, enforce escalation timeout). Proposed ceiling:
   16 sessions, 50,000 credits. **Not authorized or run.** The harnesses exist and refuse before any
   SDK access (`green/tests/sdk_acceptance_harness.py`, `sdk_stage_b_harness.py`).
-- **Blue:** `AuditAgent._droid_turn` raises unconditionally ("no stream or write attempted") and
-  records a gap. `blue/audit/readiness.py` `live_readiness()` returns `ready=False` (typed
-  `Literal[False]`) with reason codes `blue_session_ids_unverified`, `sdk_invocation_binding_unverified`,
-  `blue_owner_loop_safety_unverified`, `blue_narration_ownership_unverified`,
-  `nonblocking_bridge_unverified`, `live_audit_disabled` (+ `sdk_unavailable`). `/health.droid_ok`
-  echoes that (always false). The offline diagnostic (`python -m audit.readiness`) never opens a
-  Session. Several of those codes are now covered by #119's authorized evidence, but the guard has
-  not been lifted. M's stated next steps are CRS acceptance and the three-day all-real shadow run (#78).
+- **Blue:** the guard was lifted on merged evidence in #157 (`blue/SDK-READINESS.md`, "Live audit
+  readiness lift"): `AuditAgent._droid_turn` now prepares the snapshot and runs the base Session
+  (`blue/audit/agent.py:150-155`), with strict identity, pinned tool IDs, `TurnLock`, receipt-first
+  writes and the bounded budget unchanged. `live_readiness()` now gates only on SDK availability, and #169
+  makes the image fail its build without the Droid CLI or SDK. Live on prod since 2026-10-25
+  (`gpt-5.4-mini`; smoke `ep_f9c695b3144f`). Before #176 `/health.droid_ok` always read false
+  (`live_readiness()` was called without `sdk_available`); from the deploy containing 6640354 it reports
+  whether the SDK is installed, via a metadata lookup that never imports or probes it.
 - **Prod switch:** compose resolves `DRY_RUN: ${DRY_RUN_<AGENT>:-${DRY_RUN:-false}}`
   (`docker-compose.yml:97, 113, 129`). Prod runs `DRY_RUN=false`, `DRY_RUN_GREEN=true`,
-  `DRY_RUN_BLUE=true` (`deploy/ENVIRONMENT.md:91`).
+  `DRY_RUN_BLUE=false`.
 
 ### 4.12 Red on Droid in practice. `LIVE`
 
@@ -338,7 +351,7 @@ with Postgres and mock red/green, for a 1-day enforce episode. The checks use op
 Every agent's `dry_run_turn` calls its own tool functions directly, makes real Ledger calls and emits
 the same events, with no SDK import (`droid_agent.py:340-342`). Red, green (#92) and blue (#79 test
 fixture) also run keyless turns on the shared turn loop, so keyless suites exercise the threading.
-Keyless runs are how four of five people develop (AGENTS.md §3.8), and how green and blue run on prod today.
+Keyless runs are how four of five people develop (AGENTS.md §3.8), and how green runs on prod today.
 
 ---
 
@@ -348,7 +361,7 @@ Keyless runs are how four of five people develop (AGENTS.md §3.8), and how gree
 |---|---|---|---|
 | **P1** Live-red lineage on prod. **Done:** `ln_f52a3df83c8d`, 5 generations × 8 days, enforce, `gpt-5.4-mini` | Ad | — | Done. Red spent 20,402 / 20,744 / 22,831 / 22,974 / 22,313 credits per generation (~109k for 40 red turns, ~2.7k per turn); reflection spent nothing (§4.8). Red re-weighted toward `threshold_split` and extraction rose from $19,076 to $97,734; blue's learned controls never fired on a split (hyphenate.md §4.10) |
 | **P2** Recorded controller-off vs. controller-on episodes with live red, same seed. **Done:** `docs/recordings/` (#136), seed 42, 10 days | Ad | — | Done: off $10,284.61 extracted, enforce $1,824.22; 26,230 and 24,449 red credits. Not yet wired into the show, whose controller-off act is still a projection of the mock fixture (`frontend/docs/show-mode.md`) |
-| **P4** Green and/or blue live on Droid on prod | M (#78) | Green: authorized acceptance matrix + guard-lift PR. Blue: CRS acceptance, guard-lift PR, three-day shadow | "Red is live; green and blue run their full logic keyless on the same harness." Blue's strict path has been proven on a real Ledger locally (#119) |
+| **P4** Green and/or blue live on Droid on prod. **Blue's audit: done** (#157, #169; live on prod since 2026-10-25, smoke `ep_f9c695b3144f`). **Green: stays keyless** for the hackathon (#160 stays a draft) | M (#78) | — | "Red and blue are live agents; green runs its full logic keyless on the same harness." |
 | Settle the two open Findings (OFF prompting for every MCP call; CANCEL comment delivery) | M / Ad | Green acceptance rows A-targeted + cancellation | Cite #119 for blue's tools; say CANCEL-comment delivery is untested |
 | Retry `gemini-3.8-flash` for red | Ad | Time | Prod red stays on `gpt-5.4-mini` (Finding #118) |
 | `NOT DOING` | | | Droid inside `/gate` (8 s synchronous budget; rules + bounded advisory instead); `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*` (AGENTS.md §5); `model="auto"` |
@@ -359,16 +372,16 @@ Keyless runs are how four of five people develop (AGENTS.md §3.8), and how gree
 
 Mapped to `frontend/docs/pitch-script.md` and `frontend/docs/show-mode.md`.
 
-**Key fact for the stage.** With red live, the 90-second show defaults to the **recorded** feed.
-`wantLive` needs every agent keyless (`frontend/components/arena/useShow.ts:15-20`), and red is not.
+**Key fact for the stage.** With red and blue live, the 90-second show defaults to the **recorded** feed.
+`wantLive` needs every agent keyless (`frontend/components/arena/useShow.ts:15-20`), and red and blue are not.
 The live Droid evidence is the **Launch attack** console and `/backstage/red`, not the show itself.
 
 | When | Screen | What Factory judges should see |
 |---|---|---|
 | 0:00–1:28, R's show | Laptop 1 | Recorded run (say so if asked). No Droid claim here beyond "red is a Droid agent" |
 | Red's minute ("red is a real agent on Factory's Droid SDK…") | Laptop 2, `/backstage/red` | Red's `agent.thinking` text and `agent.tool_call`/`tool_result` lines, each with a `tool_use_id`; tool names `inspect_books` → `run_scheme` |
-| "Pick an attack. Any one." (R's close) | Laptop 1 Launch attack → laptop 2 | A live red Droid turn: the forced-scheme prompt, `inspect_books`, `run_scheme`, then `turn.ended` with `factory_credits` (~2.6k) after ~11 s. On laptop 4, blue's verdict on green's attempt (keyless gate) |
-| Q&A, if a Factory judge asks | Laptop 2 / backstage battlefield | Same `tool_use_id` on the tool event and on the ledger write (`X-Tool-Use-Id`, `:2`, `:3`); `/health` shows `red dry_run=false model=gpt-5.4-mini`, green/blue `dry_run=true` |
+| "Pick an attack. Any one." (R's close) | Laptop 1 Launch attack → laptop 2 | A live red Droid turn: the forced-scheme prompt, `inspect_books`, `run_scheme`, then `turn.ended` with `factory_credits` (~2.6k) after ~11 s. On laptop 4, blue's verdict on green's attempt (rules gate, no LLM) |
+| Q&A, if a Factory judge asks | Laptop 2 / backstage battlefield | Same `tool_use_id` on the tool event and on the ledger write (`X-Tool-Use-Id`, `:2`, `:3`); `/health` shows red and blue `dry_run=false model=gpt-5.4-mini`, green `dry_run=true` (blue's `droid_ok` is truthful from the deploy containing 6640354; before #176 it always read false) |
 | Evolution beat | EvolutionCard | On prod with the backend up, the card loads the newest finished lineage, now the live-red `ln_f52a3df83c8d` (`frontend/lib/arena/lineage.ts:47-57`). Factory angle: 40 live Droid turns across 5 generations, ~109k credits, red's playbook folded between generations with no model call. Offline it is the synthetic golden fixture, not a recording; R's close line "that learning card was a recording" needs the version true on the day |
 
 **Fallbacks.** If a red turn stalls, it fails cleanly with `turn.ended ok:false` within
@@ -413,7 +426,8 @@ changed; switching only the pinned model to `gpt-5.4-mini` fixed it (11 s, ~2.6k
 We recorded each of these as a dated Finding in the repo.
 
 **Accomplishments we're proud of.** The red attacker runs live on Droid on prod and completes full
-attacks. The controller's strict-identity path ran against a real local Ledger in authorized runs:
+attacks, and the controller's daily audit now runs live on prod too, under strict identity. Before we
+switched it on, the controller's strict-identity path ran against a real local Ledger in authorized runs:
 every tool call had a permission request and exactly one event pair. Writes committed under the SDK's
 ID, and a same-key replay was refused. A write killed mid-flight left an honest `unknown` receipt with
 no duplicate. Gate p95 stayed at 8 ms during the live audit. A five-generation lineage ran on prod with the live attacker: 40 Droid
@@ -424,8 +438,8 @@ agents, as long as you can carry the call's identity end to end. Pin models, and
 turn, because fixed session overhead dominates small turns. Write down SDK behaviour you verify and
 don't guess.
 
-**What's next.** Green and blue live on Droid once their acceptance runs pass `[only if P4]` (otherwise:
-"green and blue run their full logic keyless on the same harness"). Settling whether `CANCEL` comments reach the model.
+**What's next.** The clerk live on Droid once its acceptance runs pass (today it runs its full logic
+keyless on the same harness). Settling whether `CANCEL` comments reach the model.
 
 **Built with.** python, fastapi, factory-droid-sdk, droid-cli, mcp, pydantic, httpx, structlog,
 postgresql, docker, caddy, cloudflare, next.js, typescript, three.js, react-three-fiber, tailwindcss.
@@ -434,8 +448,8 @@ postgresql, docker, caddy, cloudflare, next.js, typescript, three.js, react-thre
 We replaced the default prompt, turned off built-in skills, and restricted each session to exactly its
 own MCP ledger tools. Droid's autonomy levels and permission requests are the control layer, and each
 Droid `tool_use_id` is carried into the ledger as its idempotency key, with strict refusal when it
-can't be verified. The attacker runs live on prod today; the clerk and controller run the same harness
-keyless while their live acceptance finishes. Every SDK behaviour we depend on is recorded as a dated,
+can't be verified. The attacker and the controller's daily audit run live on prod today; the clerk runs the
+same harness keyless. Every SDK behaviour we depend on is recorded as a dated,
 reproducible Finding in the repo.
 
 ---
@@ -444,17 +458,19 @@ reproducible Finding in the repo.
 
 **Safe to say**
 - Red runs live on the Factory Droid SDK on prod (`gpt-5.4-mini`, reasoning low): ~11 s and ~2.6k credits per full attack turn (Finding #118).
+- Blue's daily audit runs live on the Droid SDK on prod (`gpt-5.4-mini`, strict identity, `Autonomy.OFF`) since 2026-10-25: a live audit on both days of smoke `ep_f9c695b3144f`, 3,806 and 4,109 credits (`turn_usage`).
 - All three agents share one `DroidAgent` base: string `system_prompt`, `disable_builtin_skills=True`, in-process MCP tools, exact `restrict_tools` IDs.
 - Red `Autonomy.HIGH`; green and blue `Autonomy.OFF` with permission handlers; no handler ever returns `PROCEED_ALWAYS*`.
 - The Droid `tool_use_id` is carried to `agent.tool_call`/`tool_result` and to the ledger's `X-Tool-Use-Id` (`<id>:<n>` for later writes); battlefield refuses a reused key on a different action.
 - Strict identity refuses tool calls and writes not tied to an SDK-reported ID (#84).
 - Credits are logged per turn and feed a credit guard that pauses episodes and lineages.
-- Everything runs keyless under DRY_RUN; green and blue do so on prod.
+- Everything runs keyless under DRY_RUN; green does so on prod.
 - We recorded our SDK findings with dates and commands (§4.9).
 
 **Say with this caveat**
 - "Green's permission handler gates payments through blue" → the handler is on main and tested, but green's live Droid turn is hard-guarded off. On prod, green runs keyless and the ledger gates its writes inline.
-- "Blue's Droid audit is proven on a real Ledger" → in authorized **local** runs (#119), not on prod; blue is keyless on prod.
+- "Blue's Droid audit is proven on a real Ledger" → the detailed checks (6/6 permission requests, same-key replay refused, killed-write receipt) are from authorized **local** runs (#119). On prod the audit now runs live (smoke `ep_f9c695b3144f`), but those specific checks weren't repeated there.
+- Blue's credits → for the smoke episode quote `turn_usage` (3,806 / 4,109); it predates #176, so `make prod-credits` shows blue as 0 there and `droid_ok` read false. From the deploy containing 6640354 both `prod-credits` and `droid_ok` are truthful for blue.
 - "Gate p95 8 ms" → measured on the local stack during a live blue audit (#119); the gate itself is rules, not Droid.
 - "OFF asks for every MCP call" → static binary read (provisional Finding) plus blue's 6/6 observation; not yet confirmed for green's tools.
 - "Red learns between rounds" → red's playbook update is a deterministic fold of its own disclosed outcomes; the Droid model reads it as data. With live red on prod (`ln_f52a3df83c8d`) it re-weighted toward the scheme that paid (`threshold_split`); it invented no new schemes.
@@ -462,13 +478,13 @@ reproducible Finding in the repo.
 - Earlier gemini cost → ~6.7k credits/turn per the PR #9 Finding.
 
 **Do NOT say (and why)**
-- "Three live Droid agents on prod": green and blue are `dry_run=true` (§4.11).
+- "Three live Droid agents on prod": green is `dry_run=true` (§4.11); red and blue's audit are live.
 - "Droid decides allow/block" or "the gate is a Droid agent": `/gate` is rules plus an optional bounded advisory (`blue/gate/`).
 - "The Droid model rewrites its own playbook" / "learns via an LLM reflection": all `/reflect` hooks are deterministic, with no model call.
 - "CANCEL reasons reach the model": untested (open question).
 - "We pinned the Droid CLI version": the installer hardcodes whatever it fetches, `droid-sdk[mcp]>=0.2.0` is a floor, and 0.5.0 is what resolved (Findings).
 - "Hard credit cap": the guard counts after each turn and can overshoot by one turn in flight.
-- Any per-agent credit figure for green or blue on prod: they spend nothing there.
+- Any credit figure for green on prod: it spends nothing there. For blue, don't quote pre-#176 `prod-credits` (it shows 0); use `turn_usage` or post-6640354 episodes.
 
 ---
 
@@ -482,11 +498,11 @@ reproducible Finding in the repo.
 6. **Why not `PROCEED_ALWAYS`?** It would turn off the per-call gate for the rest of the session (AGENTS.md §5). Only `PROCEED_ONCE` or `CANCEL`.
 7. **Your tools are async, but the SDK stalls on await?** Yes, on 0.5.0 (Finding). The handler we give the SDK is sync and runs the coroutine to completion on a worker loop with its own HTTP client. Because that blocks the Session's loop, each turn gets its own thread and loop (#79), so `/health` and `/gate` stay responsive.
 8. **What bounds a hung turn?** Stream 170 s; per-tool 160 s plus a turn-wide window and 2 s grace; turn-loop ceiling 180 s; battlefield waits 185 s and records `ok:false`; the episode continues (§4.7).
-9. **How much does a turn cost?** Red on `gpt-5.4-mini`: ~2,635 credits, 11.2 s (Finding #118). Earlier on `gemini-3.8-flash`: ~6.7k (PR #9). A trivial one-tool turn was ~10k credits, mostly ~31k input tokens of tool/system context. Blue's authorized runs: 9,834 (6-call audit), 2,317 (interrupted run).
+9. **How much does a turn cost?** Red on `gpt-5.4-mini`: ~2,635 credits, 11.2 s (Finding #118). Earlier on `gemini-3.8-flash`: ~6.7k (PR #9). A trivial one-tool turn was ~10k credits, mostly ~31k input tokens of tool/system context. Blue's authorized local runs: 9,834 (6-call audit), 2,317 (interrupted run). Blue's live audit on prod (`gpt-5.4-mini`): 3,806 and 4,109 credits on the two days of `ep_f9c695b3144f`.
 10. **What happened with gemini?** On prod it began stalling with nothing else changed: one `ToolSearch` after 80–140 s, no ledger calls, timeout at 170 s. Changing only the pinned model fixed it. It's recorded as a Finding (#118), and blue's local runs saw the same kind of stall (2 of 7 sessions).
 11. **Is green actually gated by Droid permission today?** Not live. Green's live turn is hard-guarded pending an acceptance matrix (`green/SDK-ACCEPTANCE.md`). On prod green runs keyless, and battlefield gates its writes inline. Battlefield is the enforcement point either way; the handler is a pre-check (AGENTS.md §3.3).
 12. **Can a model fake an idempotency key?** No. The ID comes from the SDK, not from tool arguments. Blue's tools reject extra `_tool_use_id`/`invocation` arguments at SDK validation (`blue/SDK-READINESS.md`). Strict mode refuses explicit IDs, and `LedgerClient` refuses keys that aren't `<id>`/`<id>:<n>` of the current call.
-13. **How do you track spend?** `result.usage.factory_credits` → `turn.ended` → per-episode `MAX_CREDITS_PER_EPISODE` and per-lineage `max_credits` guards, plus `make prod-credits`.
+13. **How do you track spend?** `result.usage.factory_credits` → `turn.ended` → per-episode `MAX_CREDITS_PER_EPISODE` and per-lineage `max_credits` guards, plus `make prod-credits`. Blue's `/audit` returns its `usage` too (#174, #176), so from the deploy containing 6640354 blue's live audit counts toward both caps; before that it was recorded as 0.
 14. **What would you ask Factory for?** The `tool_use_id` in the MCP tool handler (or `_meta`); awaiting in-process tools not stalling; `list_tools()` giving a source for SDK MCP tools; a pinnable installer. These are observations from our Findings, not complaints.
 
 ---
