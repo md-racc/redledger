@@ -1,12 +1,16 @@
 "use client";
 // "Speak a scheme": the state of the microphone button in the attack console. Owner: Dev R.
 //
-//   idle → listening (click again, or 45 s) → transcribing → ready (the words, editable)
+//   idle → listening (stops by itself when they pause; or click again; or 45 s) → transcribing → ready (the words, editable)
 //
+// "Stops by itself" is lib/voice/vad.ts: once someone has talked and then been quiet for a moment, the recording ends and is
+// sent, so a judge can just speak. If nobody talks for a few seconds the recording is dropped and nothing is sent (no credits
+// spent on silence).
 // The audio goes to POST /api/voice/transcribe (the server holds the speech-to-text key); what comes back is the text and the
 // language it was spoken in. Typing in the same box works too, which is also what happens when voice is not set up.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MicError, startRecording, type Recording } from "@/lib/voice/recorder";
+import { createEndpointer } from "@/lib/voice/vad";
 
 export type VoicePhase = "idle" | "listening" | "transcribing" | "ready" | "error";
 
@@ -69,8 +73,22 @@ export function useVoice() {
 
   const start = useCallback(async () => {
     setError(null);
+    const ep = createEndpointer();
     try {
-      rec.current = await startRecording((v) => setLevel(v));
+      rec.current = await startRecording((v) => {
+        setLevel(v);
+        if (!rec.current) return; // already stopping
+        const verdict = ep.feed(v, Date.now());
+        if (verdict === "finished") void stop();
+        else if (verdict === "nobody_spoke") {
+          rec.current.cancel();
+          rec.current = null;
+          clearTimer();
+          setLevel(0);
+          setError("I did not hear anyone. Check the microphone, then try again, or type the scheme instead.");
+          setPhase("error");
+        }
+      });
     } catch (e) {
       setError(e instanceof MicError ? e.message : "Could not start the microphone.");
       setPhase("error");
