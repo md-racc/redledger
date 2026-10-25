@@ -367,3 +367,38 @@ async def test_false_positives_agree_with_the_score_for_a_diverted_invoice_in_sh
     assert round(sum(i["cost"] for i in fp["items"]), 2) == fp["cost"] == sc["false_positive_cost"] > 0
     assert [i["entity_id"] for i in fp["items"]] == [inv] and fp["items"][0]["enforced"] is False
     assert rep["lost"] == 900 and rep["to_attacker_accounts"] == 900 and rep["to_real_parties"] == 0
+
+
+async def test_schemes_use_live_attack_scores_not_stale_stored_columns(episode: str) -> None:
+    """Prod, ep_d9b561111d60 after #207: the bank_swap row still said partial / $1,824.22 (stored before #207) while
+    score.compute scores the blocked swap's decoy, paid to the vendor's real account, as $0. Rows must come from the
+    same live evaluation as the top level, so unattributed is never negative."""
+    gv = await f.attack(episode, day=0, scheme_id="ghost_vendor", target_amount=4380.0, outcome="extracted", amount_extracted=4380.0)
+    ghost = await f.vendor(episode, origin="red", bank_account="ACCT-GHOST")
+    inv = await f.invoice(episode, ghost, amount=4380.0, origin="red", status="paid", attack_id=gv)
+    await f.payment(episode, inv, amount=4380.0, to_account="ACCT-GHOST", day=0, origin_of_source="red")
+
+    # stored before the scoring change: partial, $1,824.22 extracted
+    bs = await f.attack(episode, day=1, scheme_id="bank_swap", target_amount=1824.22, outcome="partial", amount_extracted=1824.22, detected_day=1)
+    real = await f.vendor(episode, bank_account="ACCT-REAL")
+    ch = await f.change(episode, real, day=1, status="blocked", resolved_day=1, new_value="ACCT-RED", attack_id=bs)
+    await _verdict(episode, "vendor_change", ch, "escalate", ["bank_change_with_open_invoices"], day=1)
+    decoy = await f.invoice(episode, real, amount=1824.22, origin="red", status="paid", attack_id=bs, day=1)
+    await f.payment(episode, decoy, amount=1824.22, to_account="ACCT-REAL", day=1, origin_of_source="red")
+    await db.execute("UPDATE episodes SET days=6, current_day=6, status='finished' WHERE id=$1", episode)
+
+    async with _client() as c:
+        rep = (await c.get(f"/api/fe/episodes/{episode}/controls", headers=f.auth())).json()
+    assert rep["score"]["dollars_extracted"] == rep["lost"] == 4380.0
+    schemes = {s["scheme_id"]: s for s in rep["schemes"]}
+    swap = schemes["bank_swap"]
+    assert (swap["lost"], swap["extracted"], swap["to_attacker_accounts"], swap["to_real_parties"]) == (0, 0, 0, 0)
+    assert swap["outcomes"]["blocked"] == 1 and swap["outcomes"]["partial"] == 0
+    assert swap["caught_by"] == ["bank_change_with_open_invoices"] and swap["detection_latency_days"] == 0
+    assert "bank_swap" not in {g["scheme_id"] for g in rep["gaps"]}
+    assert rep["unattributed"] >= 0
+    assert rep["unattributed"] == 0 and round(sum(s["lost"] for s in rep["schemes"]), 2) == rep["lost"]
+    assert (rep["to_attacker_accounts"], rep["to_real_parties"]) == (4380.0, 0)
+    # a read view: the stored columns are left as they were
+    row = await db.fetchrow("SELECT outcome, amount_extracted FROM attacks WHERE id=$1", bs)
+    assert (row["outcome"], float(row["amount_extracted"])) == ("partial", 1824.22)

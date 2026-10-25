@@ -680,9 +680,12 @@ def _rules(x: Any) -> list[str]:
     return [r for r in x if isinstance(r, str) and r] if isinstance(x, list) else []
 
 
-async def _control_facts(episode_id: str) -> dict[str, Any]:
-    """Ledger-table facts for build_controls_report."""
+async def _control_facts(episode_id: str, day: int) -> dict[str, Any]:
+    """Ledger-table facts for build_controls_report. Attack outcomes and amounts are the live evaluation
+    (score.live_attacks), not the stored columns: those are only as fresh as the run's last end_of_day, and a scoring
+    change since (e.g. #207's bank_swap decoys) would leave them disagreeing with score.compute."""
     attack_rows = await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 ORDER BY day_launched, created_at, id", episode_id)
+    live = await score.live_attacks(episode_id, day)
     attacks = [
         {
             "id": a["id"],
@@ -690,9 +693,9 @@ async def _control_facts(episode_id: str) -> dict[str, Any]:
             "display_name": a["display_name"],
             "day_launched": a["day_launched"],
             "target_amount": float(a["target_amount"]),
-            "outcome": a["outcome"],
-            "amount_extracted": float(a["amount_extracted"]),
-            "detected_day": a["detected_day"],
+            "outcome": live[a["id"]]["outcome"],
+            "amount_extracted": float(live[a["id"]]["amount_extracted"]),
+            "detected_day": live[a["id"]]["detected_day"],
         }
         for a in attack_rows
     ]
@@ -796,14 +799,19 @@ async def _control_facts(episode_id: str) -> dict[str, Any]:
             episode_id,
         )
     }
+    # score.compute's own exclusion: a bank_swap decoy paid to the hijacked vendor's real account is not extracted
+    misdirected: set[str] = set()
+    for aid, chs in changes_by_attack.items():
+        misdirected |= set(await score._misdirected(episode_id, aid, chs))
     money = [
         {"amount": float(p["amount"]), "attack_id": p["attack_id"], "to_attacker": p["to_account"] in attacker_accounts}
         for p in await db.fetch(
-            "SELECT p.amount, p.to_account, COALESCE(i.attack_id, e.attack_id) AS attack_id FROM payments p "
+            "SELECT p.id, p.amount, p.to_account, COALESCE(i.attack_id, e.attack_id) AS attack_id FROM payments p "
             "LEFT JOIN invoices i ON i.id=p.invoice_id LEFT JOIN expenses e ON e.id=p.expense_id "
             "WHERE p.episode_id=$1 AND p.origin_of_source='red' ORDER BY p.id",
             episode_id,
         )
+        if p["id"] not in misdirected
     ]
     swap_paid: dict[str, str] = {}  # payment id -> attack, each payment once (score.compute's swap_payments)
     for aid, chs in changes_by_attack.items():
@@ -1032,7 +1040,10 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
         outcomes = dict.fromkeys(_ATTACK_OUTCOMES, 0)
         for a in atks:
             outcomes[a["outcome"]] = outcomes.get(a["outcome"], 0) + 1
-        extracted = _r2(sum(a["amount_extracted"] for a in atks))
+        # lost per scheme: with ledger facts, the scheme's payments on score.compute's basis (so the rows reconcile with
+        # the top-level lost); for a replay, the attacks' recorded amounts
+        ids_here = {a["id"] for a in atks}
+        extracted = _r2(sum(m["amount"] for m in money if m["attack_id"] in ids_here) if money is not None else sum(a["amount_extracted"] for a in atks))
         to_attacker, to_real = parts(extracted, {a["id"] for a in atks})
         frozen_here = sorted(ents & f["frozen"])
         row = {
@@ -1138,9 +1149,9 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
         "lost": lost,
         "to_attacker_accounts": lost_parts[0],
         "to_real_parties": lost_parts[1],
-        # lost money no scheme row accounts for (a red payment with no attack, or a revealed attack's frozen figures),
+        # lost money no scheme row accounts for (a red payment with no attack_id: red paid before declaring an attack),
         # so the scheme table reconciles: sum(schemes[].lost) + unattributed == lost
-        "unattributed": _r2(lost - sum(s["lost"] for s in schemes)),
+        "unattributed": _r2(max(0.0, lost - sum(s["lost"] for s in schemes))),
         "totals": {
             "attempted": _r2(sum(a["target_amount"] for a in attacks)),
             "extracted": _r2(_amount(sc.get("dollars_extracted"))),
@@ -1190,5 +1201,5 @@ async def controls_report(episode_id: str):
         )
         facts = _facts_from_events(episode_id, rows)
     else:
-        facts = await _control_facts(episode_id)
+        facts = await _control_facts(episode_id, ep["current_day"])
     return build_controls_report(ep, await _score(episode_id), facts, fp_rate=settings.fp_penalty_rate, fp_flat=settings.fp_flat_penalty)

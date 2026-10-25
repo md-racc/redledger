@@ -234,6 +234,68 @@ async def attack_parts(episode_id: str, only: set[str] | None = None) -> dict[st
     return out
 
 
+async def _evaluate(episode_id: str, day: int, a: Any, rows: list[Any], chs: list[dict[str, Any]], ids: list[str]) -> dict[str, Any]:
+    """One attack's outcome / amount_extracted / detected_day / resolved_day from ledger state as of `day`, without writing."""
+    aid = a["id"]
+    entities = bool(rows or chs)
+    swap_payments = {pid: amt for ch in chs for pid, amt in ch["payments"].items()}  # each payment once
+    misdirected = {inv for inv, _ in (await _misdirected(episode_id, aid, chs)).values()}  # paid to the real vendor
+    extracted = sum(float(r["amount"]) for r in rows if r["status"] == "paid" and r["id"] not in misdirected) + sum(swap_payments.values())
+    blocked = [r for r in rows if r["status"] in ("blocked", "rejected")] + [ch for ch in chs if ch["state"] == "blocked"]
+    pending = [r for r in rows if r["status"] in ("pending", "matched", "approved")] + [ch for ch in chs if ch["state"] == "pending"]
+
+    # detection: earliest block verdict or flag touching the attack's entities, on or after launch
+    detected_day = None
+    if ids:
+        detected_day = await db.fetchval(
+            "SELECT MIN(d) FROM ("
+            "  SELECT day AS d FROM verdicts WHERE episode_id=$1 AND verdict IN ('block','escalate') AND entity_id = ANY($2::text[]) AND day >= $3 "
+            "  UNION ALL SELECT day FROM flags WHERE episode_id=$1 AND entity_id = ANY($2::text[]) AND day >= $3"
+            ") x",
+            episode_id,
+            ids,
+            a["day_launched"],
+        )
+    frozen = await db.fetchval("SELECT COUNT(*) FROM vendors v JOIN invoices i ON i.vendor_id=v.id WHERE i.attack_id=$1 AND v.status='frozen'", aid)
+
+    resolved = False
+    if entities and not pending:
+        resolved = True
+        if extracted > 0 and (blocked or frozen):
+            outcome = "partial"
+        elif extracted > 0:
+            outcome = "extracted"
+        elif blocked or frozen:
+            outcome = "blocked"
+        else:
+            outcome = "failed"
+    elif extracted > 0:
+        outcome = "partial" if (blocked or frozen or pending) else "extracted"
+    elif detected_day is not None:
+        outcome = "flagged"
+    else:
+        outcome = "pending" if entities else ("failed" if a["day_launched"] < day else "pending")
+    # an approved bank swap still live can divert the next payment: not resolved, so never revealed mid-episode
+    resolved = (resolved or outcome == "failed") and not any(ch["live"] for ch in chs)
+    resolved_day = a["resolved_day"] if a["resolved_day"] is not None else (day if resolved else None)
+    return {"outcome": outcome, "amount_extracted": extracted, "detected_day": detected_day, "resolved_day": resolved_day}
+
+
+async def live_attacks(episode_id: str, day: int) -> dict[str, dict[str, Any]]:
+    """{attack_id: {outcome, amount_extracted, detected_day}} as resolve_attacks would write them now, without writing:
+    unrevealed attacks re-evaluated from ledger state (so a scoring change applies to old episodes too), revealed ones as
+    frozen at their reveal. Read views use this instead of the stored columns, which are only as fresh as the last
+    end_of_day."""
+    out: dict[str, dict[str, Any]] = {}
+    for aid, (a, rows, chs, ids) in (await attack_parts(episode_id)).items():
+        if a["revealed_day"] is not None:
+            out[aid] = {"outcome": a["outcome"], "amount_extracted": float(a["amount_extracted"]), "detected_day": a["detected_day"]}
+        else:
+            ev = await _evaluate(episode_id, day, a, rows, chs, ids)
+            out[aid] = {k: ev[k] for k in ("outcome", "amount_extracted", "detected_day")}
+    return out
+
+
 async def resolve_attacks(episode_id: str, day: int) -> list[dict[str, Any]]:
     """Update attacks.outcome / amount_extracted / detected_day from ledger state. Returns changed attacks.
 
@@ -244,48 +306,8 @@ async def resolve_attacks(episode_id: str, day: int) -> list[dict[str, Any]]:
     changed: list[dict[str, Any]] = []
     unrevealed = {r["id"] for r in await db.fetch("SELECT id FROM attacks WHERE episode_id=$1 AND revealed_day IS NULL", episode_id)}
     for aid, (a, rows, chs, ids) in (await attack_parts(episode_id, unrevealed)).items():
-        entities = bool(rows or chs)
-        swap_payments = {pid: amt for ch in chs for pid, amt in ch["payments"].items()}  # each payment once
-        misdirected = {inv for inv, _ in (await _misdirected(episode_id, aid, chs)).values()}  # paid to the real vendor
-        extracted = sum(float(r["amount"]) for r in rows if r["status"] == "paid" and r["id"] not in misdirected) + sum(swap_payments.values())
-        blocked = [r for r in rows if r["status"] in ("blocked", "rejected")] + [ch for ch in chs if ch["state"] == "blocked"]
-        pending = [r for r in rows if r["status"] in ("pending", "matched", "approved")] + [ch for ch in chs if ch["state"] == "pending"]
-
-        # detection: earliest block verdict or flag touching the attack's entities, on or after launch
-        detected_day = None
-        if ids:
-            detected_day = await db.fetchval(
-                "SELECT MIN(d) FROM ("
-                "  SELECT day AS d FROM verdicts WHERE episode_id=$1 AND verdict IN ('block','escalate') AND entity_id = ANY($2::text[]) AND day >= $3 "
-                "  UNION ALL SELECT day FROM flags WHERE episode_id=$1 AND entity_id = ANY($2::text[]) AND day >= $3"
-                ") x",
-                episode_id,
-                ids,
-                a["day_launched"],
-            )
-        frozen = await db.fetchval("SELECT COUNT(*) FROM vendors v JOIN invoices i ON i.vendor_id=v.id WHERE i.attack_id=$1 AND v.status='frozen'", aid)
-
-        resolved = False
-        if entities and not pending:
-            resolved = True
-            if extracted > 0 and (blocked or frozen):
-                outcome = "partial"
-            elif extracted > 0:
-                outcome = "extracted"
-            elif blocked or frozen:
-                outcome = "blocked"
-            else:
-                outcome = "failed"
-        elif extracted > 0:
-            outcome = "partial" if (blocked or frozen or pending) else "extracted"
-        elif detected_day is not None:
-            outcome = "flagged"
-        else:
-            outcome = "pending" if entities else ("failed" if a["day_launched"] < day else "pending")
-        # an approved bank swap still live can divert the next payment: not resolved, so never revealed mid-episode
-        resolved = (resolved or outcome == "failed") and not any(ch["live"] for ch in chs)
-        resolved_day = a["resolved_day"] if a["resolved_day"] is not None else (day if resolved else None)
-
+        ev = await _evaluate(episode_id, day, a, rows, chs, ids)
+        outcome, extracted, detected_day, resolved_day = ev["outcome"], ev["amount_extracted"], ev["detected_day"], ev["resolved_day"]
         if outcome != a["outcome"] or float(a["amount_extracted"]) != extracted or a["detected_day"] != detected_day or resolved_day != a["resolved_day"]:
             await db.execute(
                 "UPDATE attacks SET outcome=$2, amount_extracted=$3, detected_day=$4, resolved_day=$5 WHERE id=$1",
