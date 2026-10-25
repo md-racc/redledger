@@ -68,9 +68,16 @@ def test_current_invoice_at_or_over_threshold_is_not_a_split(gate_request):
     assert invoice_threshold_split(_req(gate_request, 2500, open_rows=[_open(5000)])) is None
 
 
-@pytest.mark.parametrize("status", ["rejected", "blocked"])
-def test_rejected_or_blocked_siblings_are_ignored(gate_request, status):
-    assert invoice_threshold_split(_req(gate_request, 2500, open_rows=[_open(3000, status=status)])) is None
+def test_rejected_siblings_are_ignored(gate_request):
+    assert invoice_threshold_split(_req(gate_request, 2500, open_rows=[_open(3000, status="rejected")])) is None
+
+
+@pytest.mark.parametrize("action", ["invoices.approve", "invoices.pay"])
+def test_last_part_is_blocked_when_earlier_parts_were_already_blocked(gate_request, action):
+    # Parts 1 and 2 were blocked; part 3 judged alone would be paid. Blocked parts still count.
+    req = _req(gate_request, 1650, action=action, open_rows=[_open(1800, status="blocked"), _open(1700, status="blocked", day=4)])
+    hit = invoice_threshold_split(req)
+    assert hit is not None and hit.effect == "block" and "3 invoices" in hit.detail and "5150" in hit.detail
 
 
 def test_window_is_same_or_adjacent_received_day(gate_request):
@@ -114,6 +121,12 @@ def test_separately_po_backed_invoices_are_not_parts_but_a_shared_po_is(gate_req
         _open(3000) | {"id": ""},
         _open(3000) | {"vendor_id": None},
         _open(3000) | {"po_id": 7},
+        _open(3000) | {"status": ["pending"]},
+        _open(3000) | {"status": {"pending": True}},
+        _open(3000) | {"vendor_id": ["v"]},
+        _open(3000) | {"id": {"x": 1}},
+        _open(3000) | {"received_day": [5]},
+        _open(3000) | {"amount": {"value": 3000}},
     ],
 )
 def test_malformed_sibling_rows_are_ignored_without_raising(gate_request, bad):

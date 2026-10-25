@@ -368,7 +368,9 @@ def threshold_split(req: GateRequest) -> RuleHit | None:
     return None
 
 
-SPLIT_SIBLING_STATUSES = {"pending", "matched", "approved", "paid"}
+# Blocked parts count: once earlier parts are blocked, the next part must still be judged with them,
+# or the last part of a split slips through alone. Rejected parts are a closed decision and do not.
+SPLIT_SIBLING_STATUSES = {"pending", "matched", "approved", "paid", "blocked"}
 SPLIT_WINDOW_DAYS = 1
 
 
@@ -376,8 +378,8 @@ def _split_siblings(req: GateRequest, current: dict[str, Any], threshold: Decima
     """Same-vendor, near-same-day, sub-threshold invoices from the open and paid lists.
 
     Sibling evidence is advisory: validate() does not vouch for vendor_open_invoices, so a row
-    that is malformed, out of scope, rejected/blocked, or the judged invoice itself is skipped
-    rather than raised. Rows are deduplicated by id across both lists.
+    that is malformed (any per-row parse error), out of scope, rejected, or the judged invoice
+    itself is skipped rather than raised. Rows are deduplicated by id across both lists.
     """
     vendor_id = _id(current, "vendor_id")
     received = _day(current.get("received_day", req.day))
@@ -401,7 +403,7 @@ def _split_siblings(req: GateRequest, current: dict[str, Any], threshold: Decima
                 po_id = row.get("po_id")
                 if not 0 < amount < threshold or (po_id is not None and not isinstance(po_id, str)):
                     continue
-            except ValueError:
+            except (ValueError, TypeError, KeyError, AttributeError):
                 continue
             seen.add(row_id)
             out.append({"amount": amount, "po_id": po_id or None})
@@ -412,7 +414,7 @@ def invoice_threshold_split(req: GateRequest) -> RuleHit | None:
     """One vendor bill split into near-same-day invoices that each stay under the approval threshold.
 
     Parts are the judged invoice plus same-vendor invoices received within a day of it that are
-    open (pending, matched, approved) or already paid. An invoice billed against its own PO (no
+    open (pending, matched, approved), already paid, or already blocked. An invoice billed against its own PO (no
     other involved invoice shares it) is a separately authorized engagement and does not count:
     legit traffic bills each PO once, so it routinely lands several PO-backed invoices for one
     vendor on the same day, while a split bill shares one PO or has none.
