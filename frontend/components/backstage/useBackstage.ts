@@ -18,6 +18,7 @@ import { isUnreachable } from "@/lib/arena/activeRun";
 import { loadLineageReport, type LineageReport } from "@/lib/arena/lineage";
 import { ScriptRunner } from "@/lib/arena/script";
 import { buildOnAct } from "@/lib/arena/showScripts";
+import { recordingScript } from "@/lib/backstage/recording";
 
 const MOCK_ONLY = process.env.NEXT_PUBLIC_MOCK === "true";
 const EVENT_CAP = 900;
@@ -58,6 +59,8 @@ export interface Backstage {
   healthMs: number | null;
   /** wall time of the last event that arrived over the socket */
   lastEventAt: number | null;
+  /** the recording being replayed (mode "recorded" only), else null */
+  recording: string | null;
   refresh: () => void;
 }
 
@@ -75,8 +78,17 @@ const FETCH: Record<Want, (ep: string) => Promise<any>> = {
   escalations: (ep) => api.fe.escalations(ep),
 };
 
-export function useBackstage(want: Want[] = []): Backstage {
-  const [mode, setMode] = useState<Mode>(MOCK_ONLY ? "recorded" : "connecting");
+export interface BackstageOptions {
+  /** replay this recording (public/mocks/<name>.jsonl, the real live-red run) instead of the mock loop when there is no backend */
+  recording?: string;
+  /** replay the recording even though a backend answers (`?replay=1`), for showing the messy stream on demand */
+  forceRecorded?: boolean;
+}
+
+export function useBackstage(want: Want[] = [], opts: BackstageOptions = {}): Backstage {
+  const recName = opts.recording ?? null;
+  const forced = !!opts.forceRecorded;
+  const [mode, setMode] = useState<Mode>(MOCK_ONLY || forced ? "recorded" : "connecting");
   const [health, setHealth] = useState<any | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeRow[]>([]);
   const [pinned, setPinned] = useState<string | null>(null);
@@ -119,7 +131,7 @@ export function useBackstage(want: Want[] = []): Backstage {
 
   // the backend: health, and the newest episode, every couple of seconds
   useEffect(() => {
-    if (MOCK_ONLY) return;
+    if (MOCK_ONLY || forced) return;
     let dead = false;
     const look = async () => {
       try {
@@ -141,7 +153,7 @@ export function useBackstage(want: Want[] = []): Backstage {
     void look();
     const t = setInterval(look, 2500);
     return () => { dead = true; clearInterval(t); };
-  }, []);
+  }, [forced]);
 
   const episode = useMemo<EpisodeRow | null>(() => {
     if (mode !== "live") return null;
@@ -169,12 +181,13 @@ export function useBackstage(want: Want[] = []): Backstage {
     let last = performance.now();
     let round = 0;
     const startRound = async () => {
-      const fixture = await loadFixture();
+      const fixture = await loadFixture(recName ?? "sample");
       if (dead) return;
       clear();
       round++;
-      const built = buildOnAct(fixture, 44_000, 5_000, `recorded_${round}`);
-      runner = new ScriptRunner(built.items, (e) => push({ ...e, ts: new Date().toISOString() })); // stamped now, so "4s ago" means something
+      // a named recording is the real live-red run, messy and at its own rhythm; otherwise the mock episode re-cut for the show
+      const items = recName ? recordingScript(fixture, 90_000) : buildOnAct(fixture, 44_000, 5_000, `recorded_${round}`).items;
+      runner = new ScriptRunner(items, (e) => push({ ...e, ts: new Date().toISOString() })); // stamped now, so "4s ago" means something
     };
     void startRound();
     const loop = (t: number) => {
@@ -187,7 +200,7 @@ export function useBackstage(want: Want[] = []): Backstage {
     };
     raf = requestAnimationFrame(loop);
     return () => { dead = true; cancelAnimationFrame(raf); };
-  }, [mode, clear, push]);
+  }, [mode, clear, push, recName]);
 
   // REST reads: what the events do not carry. Refreshed on a timer and shortly after the moments that change the books.
   const refresh = useCallback(() => { bump.current++; setTick((n) => n + 1); }, []);
@@ -237,5 +250,5 @@ export function useBackstage(want: Want[] = []): Backstage {
     [mode, episode, state.episodeId, state.controllerMode, state.days, state.finished, state.currentDay],
   );
 
-  return { mode, health, episodes, episode: shown, pinned, pin, state, events, agg, lineage, lineageSource, rate, now, healthMs, lastEventAt: lastEvent.current, refresh };
+  return { mode, health, episodes, episode: shown, pinned, pin, state, events, agg, lineage, lineageSource, rate, now, healthMs, lastEventAt: lastEvent.current, recording: mode === "recorded" ? recName : null, refresh };
 }

@@ -10,9 +10,10 @@ import { useArena } from "@/lib/arena/store";
 import type { Feed } from "@/lib/arena/useFeed";
 import type { ControllerMode } from "@/lib/types";
 import type { ShowController } from "../useShow";
+import { Doors } from "./Doors";
 import { Raw } from "./Raw";
 import { ThreatConsole } from "./ThreatConsole";
-import { useRole } from "@/lib/role";
+import { isAdmin, useRole } from "@/lib/role";
 
 const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const MODES: ControllerMode[] = ["off", "shadow", "enforce"];
@@ -34,7 +35,7 @@ export function Hud({ feed, show }: { feed: Feed; show: ShowController }) {
   const brandClick = () => {
     const now = performance.now();
     clicks.current = [...clicks.current.filter((t) => now - t < 700), now];
-    if (clicks.current.length >= 3) { clicks.current = []; window.open("/backstage", "_blank", "noopener"); }
+    if (clicks.current.length >= 3) { clicks.current = []; if (isAdmin()) window.open("/backstage", "_blank", "noopener"); }
   };
   const [threat, setThreat] = useState(false);
   const { state, source } = feed;
@@ -116,6 +117,7 @@ export function Hud({ feed, show }: { feed: Feed; show: ShowController }) {
       </section>
 
       <EscalationBar feed={feed} />
+      <Doors show={stage === "arena" && !inShow} />
     </div>
   );
 }
