@@ -1,12 +1,6 @@
 # Technical track: Cal Hacks "Most Technically Advanced" and Microsoft "Built for the Real World"
 
-Status as of 2026-10-24 ~23:00Z, main @ 0de4fe8; prod runs 4c6bdd9 (#131).
-
-**Update 2026-10-25 ~03:05Z:** blue's daily audit now runs live on Droid on prod (`DRY_RUN_BLUE=false`,
-`DROID_MODEL_BLUE=gpt-5.4-mini`; #157 lifted the guard, #169 fails the image build without the SDK; smoke
-`ep_f9c695b3144f`, 2-day enforce, 3,806 and 4,109 credits per audit turn). Blue's `/gate` is unchanged: rules plus
-learned controls, no gate LLM. Green stays keyless for the hackathon. The recorded runs (P1 lineage, P2 recordings)
-predate this and had blue keyless.
+Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6.
 
 One doc, two audiences. (a) **Cal Hacks**: Most Technically Advanced Hack, plus the Technical Complexity and
 Functionality criteria of the Overall prizes. These judges want depth: hard problems, solved and shown.
@@ -20,8 +14,8 @@ under Findings in `contracts/CHANGELOG.md`.
 **Status legend.** `LIVE` = running on prod (app.redledger.us) with a real model today. `ON MAIN` = merged and
 tested, runs keyless, not exercised live on prod. `PLANNED` = not done yet. `NOT DOING` = out of scope.
 Infrastructure has no model in it, so for infrastructure `LIVE` means "deployed and serving app.redledger.us"
-(prod runs 4c6bdd9, #131). This doc was written from the code. Prod facts that can't be seen in the repo (per-agent
-tokens set, the credit cap value, the Cloudflare Access policy) come from the team's prod operations and are stated as such.
+(prod @ fb829e6). This doc was written from the code. Prod facts that can't be seen in the repo (per-agent
+tokens set, the credit cap value, the Cloudflare policy) come from the team's prod operations and are stated as such.
 
 ---
 
@@ -53,15 +47,15 @@ dollars stolen against dollars blocked against the cost of blocking honest work.
 > from the Droid SDK's tool-call ID. The Droid CLI never hands that ID to tool code, so we recover it from permission
 > requests and the event stream. A verdict can be prepared ahead of execution, bound to a state fingerprint, and
 > claimed exactly once. After a crash the system pauses itself, expires held decisions, and never re-runs the
-> attacker's day. The attacker and the controller's daily audit run live on Factory's Droid SDK. The clerk runs keyless on the same harness,
-> backed by 831 Python tests and 123 frontend tests.
+> attacker's day. The attacker and the controller's daily audit run live on Factory's Droid SDK; the clerk runs
+> keyless on the same harness. It's backed by 911 Python test functions and 202 frontend tests.
 
 ### (b) Microsoft, 30 seconds (built for the real world)
 
 > Before a CFO lets an AI pay bills, they need proof. We built the place that produces it, and we run it like a
 > product. Each deploy is approval-gated and renders secrets on the server, refusing bad token sets. The origin only
-> answers Cloudflare, and the frontend re-checks Cloudflare Access's signed token. The browser never holds a
-> credential, and each agent holds only its own. Operators drive prod through a script that keeps the operator token
+> answers Cloudflare. The browser never holds a credential, and each agent holds only its own. The site is public and
+> read-only: anyone can open it and watch, and only an admin, checked on the server, can act. Operators drive prod through a script that keeps the operator token
 > on the VM. A credit guard pauses runaway agent spend. Restarts are recovered automatically and visibly. Every event
 > can be recorded, secret-scanned and replayed.
 
@@ -71,15 +65,15 @@ dollars stolen against dollars blocked against the cost of blocking honest work.
 
 | Track | Criterion / thesis point | What we have | Status | Evidence |
 |---|---|---|---|---|
-| (a) | Technical complexity | Single enforcement point with per-key single flight, CAS state transitions, preparations claimed once under row locks, escalation holds that close exactly once, restart recovery, and tool-call identity recovered from SDK side channels | ON MAIN; the gate is LIVE on prod against live red (verdicts from blue's deterministic rules and learned controls, no LLM) | `battlefield/app/gate/gatekeeper.py`, `battlefield/app/api/green_writes.py`, `agentkit/agentkit/invocation.py`; #33, #39, #52, #84, #87, #89 |
-| (a) | Functionality (smooth live demo) | 90-second show, backstage consoles on three more laptops, judge-picked attacks, approve/block on escalations, replay with recorded fallback | ON MAIN (frontend); prod runs the show from the recording by default (§6) | `frontend/docs/show-mode.md`, `frontend/docs/backstage.md`, `frontend/docs/pitch-script.md` (#132) |
+| (a) | Technical complexity | Single enforcement point with per-key single flight, CAS state transitions, preparations claimed once under row locks, escalation holds that close exactly once, restart recovery, and tool-call identity recovered from SDK side channels | ON MAIN; the gate is LIVE on prod against live red (verdicts from blue's deterministic rules) | `battlefield/app/gate/gatekeeper.py`, `battlefield/app/api/green_writes.py`, `agentkit/agentkit/invocation.py`; #33, #39, #52, #84, #87, #89 |
+| (a) | Functionality (smooth live demo) | 90-second show, backstage consoles on three more laptops that join the active run (#146), judge-picked attacks, judge words typed or spoken that steer the attacker (#154, #165), approve/block on escalations, replay with recorded fallback | ON MAIN (frontend); prod runs the show from the recording by default (§6) | `frontend/docs/show-mode.md`, `frontend/docs/backstage.md`, `frontend/docs/pitch-script.md` (#132) |
 | (a) | Intentionality | Contracts-first design (`contracts/` beats code), enforced by CI; ownership by directory; every non-trivial PR independently verified before merge | ON MAIN | `AGENTS.md` §3 inv. 6, `.github/workflows/ci.yml`, `GIT.md` §4 |
 | (a) | Creativity | Adversarial co-evolution: lineages, debriefs, playbooks, after-action reviews | ON MAIN; recorded on prod with live red (`ln_f52a3df83c8d`, P1 done) | `battlefield/app/orchestrator/lineage.py`, `battlefield/app/evolution/*`; §10 |
-| (a) | Application | A finance controller that gates an autonomous clerk, measured against a live attacker | Red and blue's audit LIVE; green keyless on prod | Finding 2026-10-24 (gpt-5.4-mini); #157 (blue's guard lift); smoke `ep_f9c695b3144f` |
+| (a) | Application | A finance controller that gates an autonomous clerk, measured against a live attacker | Red and blue's daily audit LIVE; green keyless on prod by decision | Finding 2026-10-24 (gpt-5.4-mini); #157; #78 |
 | (b) | Deployment | Image build with no secrets → approval-gated SSH roll → `.env` rendered from a GitHub Environment → compose pull/up → in-container health probe | LIVE (infra) | `.github/workflows/deploy.yml`, `deploy/render-env.sh`, README §17 |
-| (b) | Security | Cloudflare Access + origin JWT verification, origin IP lock, per-agent tokens and a 401 matrix, operator token kept server-side, HMAC single-use WS tickets, compose network isolation, `origin` hidden from agents | LIVE (edge, JWT, IP lock, networks, per-agent tokens) | `deploy/Caddyfile` (#47), `frontend/lib/access.ts` (#50), `battlefield/app/auth.py` (#109), `docker-compose.yml` (#15) |
+| (b) | Security | Public read-only site with a server-enforced viewer/admin split, origin IP lock, per-agent tokens and a 401 matrix, operator token kept server-side, HMAC single-use WS tickets, compose network isolation, `origin` hidden from agents; Cloudflare Access + origin JWT verification built and run until P7 | LIVE (read-only mode since 2026-10-25, IP lock, networks, per-agent tokens); origin JWT check ON MAIN, off on prod since P7 | `deploy/Caddyfile` (#47), `frontend/lib/access.ts` (#50), `battlefield/app/auth.py` (#109), `docker-compose.yml` (#15), #152, #159 |
 | (b) | Operations | `make prod-*` runbook that never moves the operator token; credit guard; one active run at a time; recording with a secret scan | LIVE (tooling used on prod; see #118's evidence) | `deploy/prod.sh`, `deploy/PROD-OPS.md`, #95, #122 |
-| (b) | Reliability | Timeouts on every hop; blue unreachable → escalate (timeout = block); restart recovery; active-turn guard; turn loop isolation | ON MAIN; prod incidents fixed in #81, #118, #122 | `battlefield/app/main.py:44`, `battlefield/app/turns.py`, #79 |
+| (b) | Reliability | Timeouts on every hop; blue unreachable → escalate (timeout = block); restart recovery; active-turn guard; turn loop isolation | ON MAIN; prod incidents fixed in #81, #118, #122, #176 | `battlefield/app/main.py:44`, `battlefield/app/turns.py`, #79 |
 | (b) | Rollback | `git revert` + merge, or re-run an older deploy (that SHA's images); token rollback by deleting secrets | ON MAIN (procedure documented; not rehearsed in a PR we found) | README §17, `deploy/ENVIRONMENT.md` §2 |
 | (b) | Observability | Append-only `events` + `audit_log` for every agent call; structlog JSON; `/health` aggregates agent health; backstage LIVE CHECKS; Timescale hypertables + `score_timeline` | LIVE (events, audit, health); Timescale ON MAIN (CI), PLANNED on prod (P5) | `battlefield/app/events/bus.py`, `battlefield/app/timescale.py`, #100 |
 | (b) | Customer impact | Gives a finance team evidence before it trusts an agent: dollars extracted vs. blocked vs. false-positive cost, with plain-English verdict reasons | Scoring ON MAIN, running on prod | `battlefield/app/scoring/score.py`, README §4 |
@@ -116,7 +110,7 @@ dollars stolen against dollars blocked against the cost of blocking honest work.
   `deploy/` or compose. Merges are pinned with `gh pr merge --squash --match-head-commit <assessed sha>`, so a
   push after assessment voids it.
 
-### 4.2 The single enforcement point — `LIVE` (gate against live red; blue's gate is rules, no LLM) / details `ON MAIN`
+### 4.2 The single enforcement point — `LIVE` (gate against live red; blue's rules decide) / details `ON MAIN`
 
 Every green mutation (`invoices.match|approve|reject|pay`, `vendor_changes.approve|reject`, `expenses.approve|pay`,
 `gl.post`) runs through `gatekeeper.check()` inside battlefield (`battlefield/app/gate/gatekeeper.py:1-25`):
@@ -228,6 +222,9 @@ lazily re-seeded from the episode's `turn.ended` events after a restart. When th
 (`runner.py:298-366`). A trip disarms the guard for the rest of that day. Resume or step re-arms it, so an
 over-limit episode gets exactly one more paid turn. Zero-credit DRY_RUN turns never trip it. Lineages add a
 whole-lineage cap (`config.max_credits`, turns + reflections), and `prod-evolve` refuses to start without one (#95).
+Gap found on prod: when blue's audit went live, `/audit` returned no usage, so its ~4k credits per audit counted as 0.
+#174 (contract) and #176 (code) add `usage` to the `/audit` response; blue's credits count from the deploy containing
+6640354.
 
 **9. Tool-call identity the SDK doesn't hand you (#33, #34, #84).** Finding (Ad, 2026-10-24): the Droid CLI calls
 in-process MCP tools with `_meta: {assemblySessionId, caller}` only, never the `tool_use_id`. The ID only appears in the
@@ -254,16 +251,27 @@ permission request (`McpToolAction.tool_use.id`) and in the stream (`ToolCall.to
 live frames whose exact ID was already sent from history. It doesn't use a high-water mark, because BIGSERIAL IDs can
 commit out of order and a stale `after_id` must not swallow newer events (`battlefield/app/api/events_api.py:52-85`).
 
+**12. Verdicts don't outlive their day or mode (#147, #151).** A stored verdict is replayed only on the same day and
+under the same enforcement it was judged with. Otherwise the caller gets an audited `409 stale verdict` and blue is not
+asked again, on the inline gated routes, `gl.post` and `POST /preparations`. Before this, a shadow-mode block came back
+as an enforced 403 after a switch to enforce, and a human's escalation decision could carry over to a later day. Of
+#151's 11 new tests, 7 fail without the fix. #151 also audits every `PUT /state/{key}` (key and size, never the value).
+
 ### 4.4 Security layers — `LIVE` (infra)
 
 From the internet inward:
 
-1. **Cloudflare proxy + Cloudflare Access** in front of `app.redledger.us`, with an email-PIN policy for the four
-   team members. The policy is configured in Cloudflare, not in the repo.
+1. **Cloudflare proxy, public read-only since 2026-10-25 (P7).** `app.redledger.us` sits behind Cloudflare's proxy.
+   Until ~04:30Z on 2026-10-25 Cloudflare Access (an email-PIN policy for the four team members) gated it. Now the
+   Access app has a bypass-everyone policy, both `CF_ACCESS_*` are blank and `ADMIN_KEY` is set (rotated at the
+   switch), so anyone can watch and only admins can act (#152, #159; item 5). The policy is configured in Cloudflare,
+   not in the repo. `render-env.sh` accepts only full Access or that mode (a partial Access config, or Access off
+   without an `ADMIN_KEY` of ≥ 32 characters, refuses).
 2. **Origin IP lock (#47).** `deploy/Caddyfile` serves only Cloudflare's 22 published ranges (15 IPv4, 7 IPv6) and
    returns 403 to everything else. Before this, a direct-to-origin `GET /api/bf/health` returned 200: the VM's IP
    was in the public git history, and a direct connection skipped Access (#47). ACME HTTP-01 renewal still works.
-3. **Origin-side Access JWT verification (#48, #49, #50).** An attacker could front our origin with their *own*
+3. **Origin-side Access JWT verification (#48, #49, #50; ON MAIN, off on prod since P7 because `CF_ACCESS_*` are
+   blank).** While Access gated the site, an attacker could front our origin with their *own*
    Cloudflare zone, arriving from Cloudflare IPs without ever passing our Access app. So `frontend/middleware.ts` +
    `frontend/lib/access.ts` verify the Access JWT on every page and every `/api/bf/*` call:
    - RS256 against the team JWKS
@@ -271,8 +279,9 @@ From the internet inward:
    - tokens over 8 KiB rejected; header or `CF_Authorization` cookie accepted
 
    It fails closed: a misconfigured team domain or unreachable keys means 403, and token contents are never logged.
-   `deploy/render-env.sh:57-62` refuses to render a public deploy (`DOMAIN` set) without `CF_ACCESS_TEAM_DOMAIN` and
-   `CF_ACCESS_AUD`, so a renamed variable can't silently reopen the bypass (#49). #50 added 18 tests (header, cookie,
+   `deploy/render-env.sh:66-77` refuses to render a public deploy (`DOMAIN` set) with only one of `CF_ACCESS_TEAM_DOMAIN`
+   and `CF_ACCESS_AUD`, or with both blank and no `ADMIN_KEY`, so a renamed variable can't silently reopen the operator
+   proxy (#49, #152). #50 added 18 tests (header, cookie,
    wrong aud/iss, expired, nbf, no exp, bad sig, tampered, HS256/none, JWKS failure).
 4. **No public battlefield REST API.** Caddy routes `app.$DOMAIN` `/api/ws*` → battlefield (which still demands a
    ticket) and everything else → frontend (`deploy/Caddyfile:21-27`). Battlefield, agents and Postgres publish no host
@@ -283,7 +292,12 @@ From the internet inward:
    `content-type`/`accept` go up, and the browser's `Authorization`, cookies and `X-*` never reach battlefield. Path
    rewriting rejects `..`, encoded slashes, schemes, empty segments and control characters. Cross-site mutations
    (`Sec-Fetch-Site: cross-site`) get 403. Timeouts are 30 s, or 300 s for `/step`. The rule "never put a token in a
-   `NEXT_PUBLIC_*` var" is AGENTS.md inv. 9.
+   `NEXT_PUBLIC_*` var" is AGENTS.md inv. 9. **Roles (#159):** `/admin` posts the key to `POST /api/admin/login`
+   (constant-time compare, rate-limited, ≤ 20 failures a minute globally), which sets an HMAC-signed HttpOnly,
+   SameSite=Strict, Secure cookie. Viewers can only GET or HEAD through the proxy; anything else is 403 before
+   battlefield is contacted. The ground-truth lineage export and the paid voice route are admin-only. In production an
+   unset or short `ADMIN_KEY` means nobody is admin. #159's adversarial review found a fail-open path through a
+   runtime mock flag and it was fixed before merge.
 6. **HMAC single-use WS tickets (#41, #42).** Format `<scope>.<exp>.<nonce>.<sig>`:
    - `sig = HMAC-SHA256(OPERATOR_TOKEN, scope|exp|nonce)`
    - 16-hex-character nonce, 60 s lifetime, single use
@@ -336,7 +350,7 @@ From the internet inward:
   - whitespace-only tokens
   - partial or duplicate per-agent tokens
   - values containing a quote or newline
-  - a public `DOMAIN` without the Access JWT settings
+  - a public `DOMAIN` with a partial Access config, or with Access off and no `ADMIN_KEY` (≥ 32 characters)
 
   It also pins `POSTGRES_IMAGE=postgres:16-alpine` for prod. `docker-compose.prod.yml` fails closed if any token is unset.
 - **Rollback** (README §17). Either `git revert` + merge (redeploys), or re-run an older successful deploy: that run
@@ -358,8 +372,9 @@ From the internet inward:
 - **Going live one agent at a time.** `DRY_RUN_RED/GREEN/BLUE` override `DRY_RUN` per agent through compose,
   render-env and deploy. Red went live first (`deploy/PROD-OPS.md` "Going live: red, then blue's audit"); blue's audit
   followed on 2026-10-25. Prod today: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=false`, visible as
-  `dry_run` in `make prod-health`. Blue's `droid_ok` always read false before #176; from the deploy containing
-  6640354 it is truthful.
+  `dry_run` in `make prod-health`. Blue's `droid_ok` always read false before #176; from the deploy containing 6640354
+  it is truthful. #169 fails the blue image build if the Droid CLI or SDK is missing, so a live flip can't land on a
+  broken image.
 - **Record / replay** (#43). `POST /api/replays/{id}/play` re-emits a fixture as a real `replay_*` episode with fresh
   event IDs, so WebSocket catch-up, `GET /events` and the event-derived `/fe` views all work. Safeguards:
   - fixture names must match the listing, and symlinks can't escape the fixtures dir
@@ -385,6 +400,8 @@ From the internet inward:
   - #118: `gemini-3.8-flash` stalled every live red turn at the 170 s stream timeout; fixed by switching only
     `DROID_MODEL_RED` (Finding)
   - #122: a frontend episode collided with a lineage
+  - #174/#176: blue's first live audits on prod were recorded as 0 credits, so the credit guard didn't see them, and
+    blue's `droid_ok` always read false (fixed from the deploy containing 6640354)
 
 ### 4.6 Developer experience — `ON MAIN`
 
@@ -402,16 +419,16 @@ From the internet inward:
   `npm run dev:live` runs `tools/fake-battlefield.mjs` (`frontend/docs/backstage.md`).
 - **Operator fixtures (#124, #130).** `POST /api/episodes/{id}/fixtures` seeds legit employees and expenses in one
   transaction for acceptance runs. It is never agent-callable, and refused while a run is active.
-- **Tests at 119fbf6** (`def test_` / `it(`/`test(` counts; parametrized cases expand at run time):
+- **Tests at 53adcb7** (`def test_` / `it(`/`test(` counts; parametrized cases expand at run time):
   - agentkit 126 in 14 files
-  - battlefield 376 in 36 files
-  - red 64 in 7
-  - green 98 in 12
-  - blue 167 in 20
-  - frontend 123 in 18
+  - battlefield 392 in 39 files
+  - red 103 in 11
+  - green 107 in 13
+  - blue 183 in 20
+  - frontend 202 in 27
 
-  That is 831 Python test functions. PR bodies report higher *pass* counts after parametrization, e.g. "battlefield
-  539 passed against Postgres 16" (#130) and blue "379 passed" (#119).
+  That is 911 Python test functions. PR bodies report higher *pass* counts after parametrization, e.g. "battlefield
+  555 passed" (#151), blue "422 passed" (#176), red "132 passed" (#166) and frontend "214 tests" (#154).
 
 ### 4.7 Independent verification caught real bugs before merge — `ON MAIN` (process)
 
@@ -436,19 +453,28 @@ the CHANGELOG:
 - **#109 verification:** led to the contract change that only known callers' refusals are audited (#110; CHANGELOG
   2026-10-24).
 - **#39:** the held-payment re-read (`FOR UPDATE` on vendor status and bank account) was added after review.
+- **#142, #151:** each had a separate reviewer; the withholding test fails with #142's fix reverted, and 7 of #151's
+  11 new tests fail without its fix.
+- **#159:** the adversarial security review found a fail-open path to admin through a runtime mock flag, fixed before
+  merge, then re-reviewed against a production build (method tricks, header smuggling, cookie forging, CSRF).
+- **#154:** the PR steward found the paid voice route reachable by viewers; it became admin-only before merge (#156).
 
 ---
 
 ## 5. What's in flight / planned (relevant to this track)
 
-| ID | What | Owner | Depends on | If it doesn't land, say |
+| ID | What | Owner | Status | If it doesn't land, say |
 |---|---|---|---|---|
-| P1 | Live-red lineage on prod. **Done:** `ln_f52a3df83c8d`, 5 generations × 8 days, enforce, gpt-5.4-mini, ~109k red credits, ran to completion under one-active-run (#122) | Ad | — | Done. Red adapted (re-weighted to `threshold_split`, extraction $19,076 → $97,734); blue's learned controls never fired on a split. Say that plainly |
-| P2 | Recorded controller-off vs. controller-on episodes with live red, same seed. **Done:** `docs/recordings/` (#136) | Ad | — | Done, not yet wired into the show: "the compare beat uses the recorded mock episode; the controller-off act is a projection, and the UI says so" (`frontend/docs/show-mode.md`); the live-red pair can be replayed via `POST /replays/{id}/play` |
-| P3 | Evolution view in the frontend from real `/fe/lineages` data | R (#117) | — | The EvolutionCard already tries live first: `GET /lineages` (newest first) + `/fe/lineages/{id}/report`, labelled "live lineage" vs. "recorded lineage", with fallback to `public/mocks/lineage-report.json` (`frontend/lib/arena/lineage.ts:47-57`). On prod it now picks `ln_f52a3df83c8d`. Say which label showed |
-| P4 | Green and/or blue live on Droid on prod. **Blue's audit: done** (#157; live on prod since 2026-10-25). **Green: stays keyless** for the hackathon (#160 stays a draft) | M (#78) | — | "Red and blue are live agents; green runs its full logic keyless on the same harness." |
-| P5 | Prod on the TimescaleDB image | Ad | a deliberate switch between episodes (#100 notes `migrate_data` takes an ACCESS EXCLUSIVE lock) | "Prod is plain Postgres 16; CI proves the Timescale path on every battlefield change." |
-| — | A recorded rollback rehearsal | Ad | — | Don't claim "tested rollback"; say "documented rollback path" |
+| P1 | Live-red evolution lineage `ln_f52a3df83c8d` (5 gens × 8 days, enforce, ~109k red credits, ran to completion under one-active-run, #122) | Ad | DONE | Red adapted (re-weighted to `threshold_split`, extraction $19,076 → $97,734); blue's learned controls never fired on a split. Say that plainly |
+| P2 | Live-red off/on recordings (`docs/recordings/`) | Ad | DONE (#136) | Not wired into the show: "the compare beat uses the recorded mock episode; the controller-off act is a projection, and the UI says so" (`frontend/docs/show-mode.md`); the live-red pair can be replayed via `POST /replays/{id}/play` |
+| P3 | Evolution view in the frontend from real data | R (#117) | PARTIAL: the EvolutionCard loads the real `/fe/lineages/{id}/report` (on prod, `ln_f52a3df83c8d`), with fallback to `public/mocks/lineage-report.json` | "The evolution card shows the latest real lineage report." Say which label showed |
+| P4 | Agents live on Droid | M | Blue audit LIVE (#157); green NOT DOING (Ad's decision, #78) | "Red and blue live on Droid; green on the same harness, keyless" |
+| P5 | Prod on the TimescaleDB image | Ad | NOT DOING for the hackathon unless it lands (#100: `migrate_data` takes an ACCESS EXCLUSIVE lock) | "TimescaleDB proven in CI; prod on Postgres 16" |
+| P6 | CRS live demo | M | Acceptance PASSED locally (ep_0181eda1c921); table demo from a laptop pending | "Recorded acceptance run ep_0181eda1c921; live at the table on request" |
+| P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
+| P8 | Invoice threshold-split control in blue | M (#175) | ASKED | "Red found a gap in invoice split detection; the expense version is shipped (#173)" |
+| P9 | Short live lineage after P8 to show blue closing the gap | Ad | PLANNED after P8 | Keep the P1 story: "the sandbox surfaced a real gap" |
+| — | A recorded rollback rehearsal | Ad | not done | Don't claim "tested rollback"; say "documented rollback path" |
 
 ---
 
@@ -458,12 +484,13 @@ R's pitch (`frontend/docs/pitch-script.md`) and the 90-second show (`frontend/do
 technical beats ride on them. Nothing here changes the script; these are what to point at, or what to show if a
 judge stops by the table.
 
-**Important about prod:** the show runs live only if every agent is keyless (`components/arena/useShow.ts:15-20`).
-Prod red and blue are live, so on app.redledger.us the show **defaults to the recording**, and the controller-off act is a
+**Important about prod:** the show runs live only if every agent is keyless (`components/arena/useShow.ts`
+`wantLive`; viewers always get the recording). Prod red and blue are live, so on app.redledger.us the show
+**defaults to the recording**, and the controller-off act is a
 projection. `?show=live` forces live acts, but each act steps 4 days with live red turns of about 11 s each, which
-doesn't fit the act windows. Backstage consoles follow the newest *battlefield* episode, so during a recorded show they
-won't show the show's events. Rehearse with that in mind (open question §9 Q9). The judge's free-play attack at the end
-does hit the real backend.
+doesn't fit the act windows. Since #146/#159 every window joins the running episode or lineage, so during a recorded
+show the consoles show the live run, not the show's events. Rehearse with that in mind (§9 Q9). The judge's free-play
+attack at the end does hit the real backend, and only from a window logged in as admin (`/admin`).
 
 | When (pitch / show) | On screen | Technical point (a) | Real-world point (b) |
 |---|---|---|---|
@@ -473,6 +500,7 @@ does hit the real backend.
 | Green's minute (laptop 3) | gated attempts and blue's answers | CAS transitions; preparations; 403 body with `verdict_id` | no double payments under parallel calls |
 | Any laptop, `/backstage/battlefield` | `/health` of every service, control plane, API TRAFFIC log | one choke point; every call proxied and logged | observability without a dashboard product |
 | Close: "Pick an attack" | judge launches a scheme via `POST /episodes/{id}/attack` | live red on the Droid SDK, queued for its next turn | real system, real backend, right now |
+| Close, optional: "or say one" | judge speaks or types an attack in any language (#154) | speech-to-text server-side, words to red as quoted data via `POST /inputs`, which set the forced scheme's params (#165) | a judge can direct the attacker without any access to it; voice is admin-only and untested against the real ElevenLabs service |
 
 **Table-side extras for technical judges** (pre-record as terminal clips; don't run against prod live):
 - On `make local-stack`: a red-token request claiming `X-Agent: green` → 401. Then `GET /audit_log` as the operator
@@ -503,8 +531,10 @@ them what happens when someone is actively trying to trick that agent. We wanted
 
 **What it does**
 Red Ledger simulates a small company, Coastal Supply Co., through business days, with three AI agents working on one
-shared ledger. Red is an attacker that commits invoice and payroll fraud: ghost vendors, bank-account swaps, duplicate
-invoices, threshold splits, ghost employees. Green is a finance clerk doing real accounts-payable work. Blue is a
+shared ledger. Red is an attacker that commits invoice and payroll fraud from eight schemes: ghost vendors,
+bank-account swaps, duplicate invoices, threshold splits, ghost employees, inflated expenses, over-PO invoices and
+creeping recurring amounts. A judge can steer it by typing or saying an attack. Green is a finance clerk doing real
+accounts-payable work. Blue is a
 controller that gates every money-moving action and audits the books. Every action goes through one Ledger API that
 enforces blue's verdict, holds escalations for a human, logs every call, and scores the run: dollars extracted,
 dollars blocked, and the cost of blocking honest work. Turn the controller off and on with the same seed and you see
@@ -526,7 +556,7 @@ agent tool calls comes from four mechanisms:
 
 Prod is one Vultr VM. GitHub Actions builds secret-free images, and an approval-gated job renders the server's
 environment from a GitHub Environment and rolls Docker Compose. Caddy terminates TLS and only answers Cloudflare.
-Cloudflare Access protects the site, and the frontend re-verifies Access's signed token.
+The site is public and read-only: anyone can watch, and only an admin, checked on the server, can start runs or act.
 
 **Challenges we ran into**
 - The Droid CLI never passes the tool-call ID to tool code, which we need as the idempotency key. We recover it from
@@ -537,12 +567,15 @@ Cloudflare Access protects the site, and the frontend re-verifies Access's signe
 - We found our origin reachable around Cloudflare Access. We locked it to Cloudflare's IP ranges and added origin-side
   JWT verification.
 - On prod, one model started stalling every live attacker turn. We recorded the finding and switched models.
+- Reviewing our own spec, we found a stored verdict could be replayed on a later day or after a shadow-to-enforce
+  switch. Now a verdict is bound to its day and mode, and a stale replay is refused.
 
 **Accomplishments that we're proud of**
-- A live attacker agent on Factory's Droid SDK runs a full attack in about 11 s for about 2.6k credits a turn on prod.
+- Two live Droid agents on prod: the attacker runs a full attack in about 11 s for about 2.6k credits a turn, and
+  the controller's daily audit runs with strict tool-call identity for about 4k credits a day.
 - One enforcement point, with race-safe, exactly-once semantics that independent reviewers tried to break with
   kill/restart harnesses before we merged them.
-- 831 Python test functions and 123 frontend tests, including real-concurrency and real-Postgres tests, and the full
+- 911 Python test functions and 202 frontend tests, including real-concurrency and real-Postgres tests, and the full
   backend suite also running on TimescaleDB in CI.
 - An operator toolkit that drives prod without the operator token ever leaving the server. With it we ran a
   five-generation, 40-turn lineage with the live attacker on prod under a credit guard, one run at a time.
@@ -555,16 +588,19 @@ Cloudflare Access protects the site, and the frontend re-verifies Access's signe
 - Verify your edge: an access proxy in front of an origin is only as good as the origin's refusal to talk to anyone else.
 
 **What's next**
-- Run green live on the Droid SDK in prod (blue's audit already runs live there).
 - Close the control gap our live five-generation lineage found: the attacker learned to split invoices across an
-  established vendor, which no current control catches.
+  established vendor. The expense version of the split control shipped; the invoice version is next `[only if P8:
+  "shipped"]`, then a short live re-run `[only if P9]`.
+- Run the clerk live on the Droid SDK after its acceptance matrix.
 - Move prod to TimescaleDB.
 - Turn the scoreboard into a pre-deployment report a controller could hand an auditor.
 
 **Built with**
 python, fastapi, asyncpg, pydantic, structlog, httpx, uvicorn, postgresql, timescaledb, factory-droid-sdk, mcp,
-next.js, react, typescript, three.js, react-three-fiber, zustand, tailwindcss, jose, vitest, docker, docker-compose,
-caddy, cloudflare, cloudflare-access, github-actions, ghcr, vultr, uv, ruff, pgserver
+next.js, react, typescript, three.js, react-three-fiber, zustand, tailwindcss, jose, vitest, elevenlabs, docker,
+docker-compose, caddy, cloudflare, github-actions, ghcr, vultr, uv, ruff, pgserver
+
+(Drop `elevenlabs` if voice isn't working on prod.)
 
 **Why this fits "Most Technically Advanced Hack"**
 Red Ledger's hard part is invisible on purpose: one API sits between three autonomous agents and the money, and it
@@ -572,16 +608,17 @@ stays correct when agents call tools in parallel, retry, time out, or the server
 decision. We bound idempotency keys to the Droid SDK's tool-call IDs, even though the CLI never hands those IDs to tool
 code. We made every payment a compare-and-set, let the clerk prepare a gate decision ahead of execution that can be
 claimed exactly once under row locks, and made escalations close exactly once across resolvers, timeouts and crash
-recovery. The attacker and the controller's daily audit run live on Factory's Droid SDK. Every mechanism has real-concurrency tests, and independent
-reviewers tried to break each one before it merged.
+recovery. The attacker and the controller's daily audit run live on Factory's Droid SDK. Every mechanism has
+real-concurrency tests, and independent reviewers tried to break each one before it merged.
 
 **Why this fits "Built for the Real World" / "Customer Impact"**
 The customer is a finance team deciding whether to let an AI agent touch accounts payable. Red Ledger gives them
 evidence: what a real attacker extracts with controls off, what the controls block with them on, and what blocking
 honest work costs. Every verdict comes with a reason an auditor can read. We run it like a production service:
 - approval-gated deploys from secret-free images
-- an origin that only answers Cloudflare, with Cloudflare Access verified again at the origin
-- no credential in the browser, and each agent holding only its own token
+- an origin that only answers Cloudflare
+- a public read-only site: no credential in the browser, a server-enforced viewer/admin split, and each agent holding
+  only its own token
 - a spend guard on agent credits, single-active-run protection, and restart recovery that pauses instead of guessing
 - recordings that are secret-scanned before they can be shared
 
@@ -592,27 +629,32 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 ### Safe to say
 - Red runs live on Factory's Droid SDK on prod (`gpt-5.4-mini`, reasoning low): a full attack in about 11 s, about
   2.6k credits per turn (Finding 2026-10-24; ep_568aef023d7c).
-- Blue's daily audit runs live on Factory's Droid SDK on prod since 2026-10-25 (`gpt-5.4-mini`): both days of smoke
-  `ep_f9c695b3144f` finished a live audit, 3,806 and 4,109 credits (blue's `turn_usage`).
 - Every agent action goes through one Ledger API, and agents never touch the database (`docker-compose.yml` `data`
   network is internal; AGENTS.md inv. 1).
 - Parallel pays of one invoice produce exactly one payment, in tests with 3, 5 and 12 concurrent calls (#39, #89).
 - Escalations close exactly once. After a restart, held escalations are timed out and running episodes are paused,
   never auto-resumed (#52; `battlefield/app/main.py:44`).
 - The browser never holds a token. The frontend server adds the operator token (`frontend/app/api/bf/[...path]/route.ts`).
-- The origin only serves Cloudflare IP ranges, and the frontend verifies the Cloudflare Access JWT (#47, #50).
+- The origin only serves Cloudflare IP ranges (#47).
+- The site is public and read-only: anyone can watch at app.redledger.us, and only an admin signed in at `/admin` can
+  start runs, launch attacks, use voice or resolve escalations; viewers get 403 on anything but GET/HEAD (#152, #159).
 - Deploys are approval-gated, and images carry no secrets (`.github/workflows/deploy.yml`).
 - CI runs the backend suite on both plain Postgres 16 and TimescaleDB (`ci.yml` `battlefield-timescale`).
 - Everything runs without model keys (DRY_RUN, mock agents, local stack).
 - Per-agent tokens: no agent can act as another; another agent's token is a 401 (#108–#111), deployed on prod.
+- Blue's daily audit runs live on Droid on prod (#157; ep_f9c695b3144f, 3,806 and 4,109 credits).
+- A stored gate verdict is never replayed on another day or under another mode (#147, #151).
+- 911 Python test functions and 202 frontend tests at 53adcb7.
 
 ### Say with this caveat
 - "Blue's /gate answers in ~8 ms p95." Caveat: measured on a local stack during a live blue audit session (#119:
   p95 8.04 ms, max 56.6 ms, 1,817 samples), not on prod.
-- "Green and blue run their full logic." Caveat: green is keyless on prod (`DRY_RUN_GREEN=true`). Blue's audit is live
-  on Droid, but blue's gate verdicts come from its deterministic rules and learned controls, not an LLM.
-- Blue's credits: for the smoke episode quote `turn_usage` (3,806 / 4,109). It predates #176, so `make prod-credits`
-  shows blue as 0 there and `droid_ok` read false. From the deploy containing 6640354 both are truthful for blue.
+- "Green runs its full logic." Caveat: keyless on prod (`DRY_RUN_GREEN=true`) by decision (P4). Blue's audit is live;
+  blue's gate verdicts come from its deterministic rules either way.
+- "The origin re-verifies the Cloudflare Access JWT." Built and tested (#50), but off on prod since the site went
+  public read-only (P7). Say "it did, while Access gated the site".
+- "A credit guard caps spend." Caveat: blue's audit credits are counted only from the deploy containing 6640354 (#176).
+  For the smoke episode quote `turn_usage` (3,806 / 4,109); `make prod-credits` shows blue as 0 there.
 - "TimescaleDB hypertables and a continuous aggregate." Caveat: CI-proven; prod is plain Postgres 16 (P5).
 - "Agents learn across generations." Caveat: with live red on prod (`ln_f52a3df83c8d`), red adapted and blue's bounded
   learning didn't keep up. The closed-loop numbers (blue catches 5/5 in g3) are a keyless mock-agent lineage
@@ -626,8 +668,7 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
   not human reviewers (`GIT.md` §4, `AGENTS.md` §10).
 
 ### Do NOT say
-- "Green is a live AI agent in production" or "all three agents are live." Green is keyless by decision (P4). Red and
-  blue's audit are live.
+- "Green is a live AI agent in production" or "three live agents." Not true (P4). Say red and blue's audit.
 - "Runs on TimescaleDB in production." Not true (P5).
 - "The agents sharpen each other" with the live attacker: in `ln_f52a3df83c8d` red got better and blue didn't.
 - "Horizontally scalable." Battlefield must run as a single uvicorn worker. The turn guard, escalation waiters and WS
@@ -635,8 +676,9 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
   (`backstage.md` "Limit").
 - "Zero-downtime deploys." A redeploy restarts battlefield and kills any running episode's loop. The episode is left
   `running`/`paused` and needs a resume (`deploy/PROD-OPS.md` "Credit cap").
-- "Per-user authentication." Access gates who reaches the site. Behind it, the proxy acts with one operator token
-  for everyone (`deploy/ENVIRONMENT.md` §5 lists per-user auth as out of scope).
+- "Per-user authentication." The site is public; the proxy acts with one operator token, and #159's viewer/admin
+  split uses one shared admin key, not per-user accounts (`deploy/ENVIRONMENT.md` §5
+  lists per-user auth as out of scope).
 - "Automated migrations." The schema is `CREATE TABLE IF NOT EXISTS`, and a column change means `make db-reset`
   (README §17).
 - Any prod IP, hostname other than app.redledger.us, or key-file path.
@@ -666,16 +708,18 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
    verdict, bound to the exact action and a state fingerprint, for 120 s. Execution claims it exactly once under a row
    lock and re-checks the fingerprint. Blue is asked once per key (#80, #87, #89).
 7. **"How does a judge in the room not get the operator token?"** The browser never has it. The Next server adds it.
-   Cloudflare Access gates the site, the frontend re-verifies the Access JWT, and the origin refuses non-Cloudflare IPs.
-   The WebSocket uses a 60 s single-use HMAC ticket.
+   The origin refuses non-Cloudflare IPs, and the WebSocket uses a 60 s single-use HMAC ticket. The site is public
+   read-only (P7, live): a viewer can only GET or HEAD through the proxy, and only an admin cookie (HMAC-signed, from a
+   constant-time key check) can act. Before P7, Cloudflare Access gated the site and the frontend re-verified its JWT.
 8. **"Is per-agent token separation on in prod?"** Yes, since ~19:00Z on 2026-10-24: battlefield holds all three
    tokens and each agent container only its own (#108–#111). render-env refuses partial or duplicate sets.
 9. **"Is the demo live?"** The attacker and blue's daily audit are live on prod. On prod the 90-second show plays a
-   recording by default, because it only runs live when every agent is keyless. A judge's attack from the console hits
-   the real backend. Green runs keyless there.
+   recording by default, because it only runs live when every agent is keyless (and a viewer always gets the recording). A judge's attack from the console
+   hits the real backend, and the consoles follow the live run. Green runs keyless there.
 10. **"How do you control model spend?"** A per-episode credit guard pauses the episode at `MAX_CREDITS_PER_EPISODE`,
     with exactly one more paid turn after a resume. Prod runs `MAX_CREDITS_PER_EPISODE=375000`; a live-red 10-day
-    episode spends ~25k on red. Blue's live audit adds ~4k a day, which counts toward the cap from the deploy containing 6640354 (before #176 it was recorded as 0). Lineages need their own cap (`prod-evolve` refuses without `MAX_CREDITS=`). One active run at a time.
+    episode spends ~25k of red credits, plus ~4k a day for blue's live audit (counted by the guard from the deploy
+    containing 6640354; before #176 it was recorded as 0). Lineages need their own cap (`prod-evolve` refuses without `MAX_CREDITS=`). One active run at a time.
 11. **"How do you deploy and roll back?"** Merge to `main` builds five images tagged with the SHA. An approval-gated
     job renders `.env` from the `production` environment and rolls compose. Roll back with `git revert` + merge, or by
     re-running an older deploy run (README §17).
@@ -695,7 +739,8 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 
 | Number | Value | Source | Date |
 |---|---|---|---|
-| Live red turn (prod) | 11.2 s, 2,635 Factory credits, full attack | Finding (Ad), `contracts/CHANGELOG.md:11`; ep_568aef023d7c; #118 | 2026-10-24 ~21:05Z |
+| Live red turn (prod) | 11.2 s, 2,635 Factory credits, full attack | Finding (Ad), `contracts/CHANGELOG.md`; ep_568aef023d7c; #118 | 2026-10-24 ~21:05Z |
+| Live blue audit (prod) | 3,806 and 4,109 credits, day 0 / day 1, `gpt-5.4-mini`, ep_f9c695b3144f | #78 | 2026-10-25 ~03:48Z |
 | gemini-3.8-flash stall | stream timeout at 170 s; one `ToolSearch` after 80–140 s | same Finding | 2026-10-24 ~20:30Z on |
 | Earlier live red (local, mock battlefield) | 14 s / 79 s turns, ~6.7k credits/turn, $11,004.37 extracted in 2 days, controller off, seed 34 | #9; Finding (Al) | 2026-10-24 |
 | Blue `/gate` latency during a live audit (local stack) | p95 8.04 ms, max 56.6 ms, 1,817 samples, zero errors; session 9,834 credits | #119 | 2026-10-24 |
@@ -703,7 +748,7 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 | Concurrency proofs | 3 or 12 parallel pays → 1 payment; 20 concurrent `gl.post` → 1 row; 5 concurrent identical prepared payments → 1 payment | #39, #89 | 2026-10-24 |
 | Timeouts | `TURN_TIMEOUT_SEC` 180, stream 170, `GATE_TIMEOUT_SEC` 8, `ESCALATION_TIMEOUT_SEC` 90, preparation TTL 120, boot check 90 + 8 + 15 = 113 ≤ 120, headless escalation 5 s, busy-retry 10 s, lost-race wait 2 s | `docker-compose.yml`; `agentkit/agentkit/models.py:194`; `gatekeeper.py`; `orchestrator/agents.py:21` | main @ 119fbf6 |
 | WS ticket | 60 s, single use, 16-hex-character nonce, HMAC-SHA256 | `battlefield/app/auth.py:33,219-274` | main |
-| Access JWT | RS256, 60 s skew, max 8,192 chars | `frontend/lib/access.ts` | main |
+| Access JWT (off on prod since P7) | RS256, 60 s skew, max 8,192 chars | `frontend/lib/access.ts` | main |
 | Proxy timeouts | 30 s default, 300 s for `/step`, 10 s for ws-ticket | `frontend/lib/proxy.ts:9-11`; ws-ticket route | main |
 | Cloudflare ranges in the origin lock | 22 (15 IPv4 + 7 IPv6), fetched 2026-10-24 | `deploy/Caddyfile:13-17` | main |
 | Timescale bounds | `lock_timeout` 5 s, `statement_timeout` 120 s; `score_timeline` 1-minute buckets, 30-day start offset, 1-minute schedule | `battlefield/app/timescale.py` | main |
@@ -711,21 +756,24 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 | Credit cap | 375,000 per episode on prod (`deploy/PROD-OPS.md` "Credit cap": 1.25 × 30 turns × 10k, from the older 6.7k–10k/turn measurement) | prod config; PROD-OPS | 2026-10-24 |
 | Live-red recordings | off: $10,284.61 extracted, 0/10 caught; enforce: $1,824.22 extracted, 1/10 caught, $100 FP; 26,230 / 24,449 red credits; seed 42, 10 days | `docs/recordings/README.md` (#136) | 2026-10-24 ~22:30Z |
 | Live-red lineage `ln_f52a3df83c8d` | 5 gens × 8 days, enforce, seeds 502–506; extracted $19,076 / $35,423 / $86,510 / $53,619 / $97,734; blocked $6,214 / $4,380 / $0 / $0 / $0; caught 3/7, 5/7, 2/8, 5/8, 1/8; red credits 20,402 / 20,744 / 22,831 / 22,974 / 22,313 (~109k) | lineage report (operator export, not committed) | 2026-10-24 |
-| Tests (functions at 119fbf6) | agentkit 126, battlefield 376, red 64, green 98, blue 167 (Python total 831); frontend 123 in 18 files | `grep` of `def test_` / `it(`/`test(` | 2026-10-24 |
-| Test pass counts in PRs (parametrized) | battlefield 539 against Postgres 16 (#130); blue 379 (#119) | PR bodies | 2026-10-24 |
+| Tests (functions at 53adcb7) | agentkit 126, battlefield 392, red 103, green 107, blue 183 (Python total 911); frontend 202 in 27 files | `grep` of `def test_` / `it(`/`test(` | 2026-10-25 |
+| Test pass counts in PRs (parametrized) | battlefield 555 (#151); blue 422 (#176); red 132 (#166); frontend 214 (#154) | PR bodies | 2026-10-25 |
 | Contract size | 64 API paths; 23 tables | `contracts/ledger-api.yaml`, `contracts/schema.sql` | main |
 | CI / CD jobs | ci.yml: `changes`, `contracts-guard`, `python` (×5), `battlefield-timescale`, `frontend`, `ownership-guard`; deploy.yml: `build` (×5), `roll` | workflow files | main |
-| Commits on main | 119 | `git log --oneline` at 119fbf6 | 2026-10-24 |
+| Commits on main | 153 | `git rev-list --count` at 53adcb7 | 2026-10-25 |
 | Keyless 5-day generation | ~1.3 s | README §15 | main |
 | Keyless **mock-agent** lineage ln_fbdfbd2d74cc (base seed 42, enforce, 5 days/gen) | Gen 1: 5/5 caught, $28,768 blocked, $0 extracted. Gen 2: 1/5 caught, $5,631 extracted. Gen 3: 5/5 caught, $8,663 blocked. Demo gens 4–5: 3/3 caught each | a keyless mock-agent lineage run (local) | 2026-10-24 |
 | Early mock smoke (historical, pre-hardening) | seed 42, 4 days: enforce 4/4 caught, $26,023.14 blocked, $0 extracted; off $24,240.03 extracted | DEVLOG 2026-10-24T03:32Z | 2026-10-24 03:32Z. Don't use as a current number |
 | Frontend first load | `/` ~104 kB first-load JS before the 3D chunk; ~57 fps at quality level 3 on an AMD Radeon 880M iGPU | `frontend/docs/architecture.md`, `performance-and-quality.md` | main |
 
 ### Contradictions found while writing (for Ad and R)
+Items 1 (README part), 3, 4 and 5 (README part) are fixed by the companion repo-docs refresh
+(`docs/refresh-repo-docs`); the rest stand until someone edits those files.
 1. README §13, `deploy/OWNER-CHECKLIST.md` §2–§3 and the header of `docker-compose.prod.yml` describe Caddy serving
    `api.<domain>` → battlefield and the frontend on Cloudflare Pages. `deploy/Caddyfile` serves only `app.$DOMAIN`
    (`/api/ws` → battlefield, everything else → frontend), and its comment says battlefield's REST API has no public
-   hostname. This doc follows the Caddyfile.
+   hostname. This doc follows the Caddyfile. The Caddyfile's own comments still say both routes are "behind Access",
+   stale since P7.
 2. `docker-compose.yml`'s header comment and `agentkit/agentkit/invocation.py`'s docstring still mention the green →
    blue mirror. D1 / #80 removed it (`contracts/agent-service.md` "Tokens").
 3. AGENTS.md inv. 11 says blue's `audit_log` filter is "Not enforced". `battlefield/app/api/reads.py:134-148` enforces
