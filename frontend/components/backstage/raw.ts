@@ -126,11 +126,5 @@ export function liveChecks(i: CheckInput): Check[] {
   ];
 }
 
-/** The judging-hour demo plan: red's scheme pinned per day to ones that move the scoreboard on screen (an escalation,
- *  blocked invoices, an expense that slips through). Unplanned, red mostly repeats duplicate invoices that never resolve.
- *  Red still runs live; a judge's attack still takes over its next turn. */
-export const DEMO_PLAN_CYCLE = ["bank_swap", "threshold_split", "ghost_vendor", "ghost_employee", "expense_inflation", "po_mismatch"] as const;
-export function demoPlan(days: number): { day: number; scheme_id: string }[] {
-  const n = Math.max(0, Math.min(365, Math.floor(days)));
-  return Array.from({ length: n }, (_, day) => ({ day, scheme_id: DEMO_PLAN_CYCLE[day % DEMO_PLAN_CYCLE.length]! }));
-}
+/** The judging-hour demo plan lives with the arena, which starts planned runs too; the console's "planned" box uses the same one. */
+export { DEMO_PLAN_CYCLE, demoPlan } from "@/lib/arena/demoPlan";
