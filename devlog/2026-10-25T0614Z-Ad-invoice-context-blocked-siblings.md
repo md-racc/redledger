@@ -1,0 +1,1 @@
+- 2026-10-25T06:14Z · Ad · battlefield: blocked invoices count as split siblings in the invoice gate context (P8, #175); next: blue rule; blocked: none
