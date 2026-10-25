@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ADMIN_COOKIE,
   ADMIN_TTL_SEC,
@@ -66,13 +66,39 @@ describe("who is admin", () => {
     expect(requestRole(withCookie(signAdminToken(KEY, T0)), env, T0 + ADMIN_TTL_SEC + 1)).toBe("viewer");
   });
 
-  it("fails closed in production without a key, open in development and mock mode", () => {
-    expect(adminSettings({ NODE_ENV: "production" })).toEqual({ mode: "closed" });
+  it("fails closed in production without a key, open outside production", () => {
+    expect(adminSettings({ NODE_ENV: "production" })).toEqual({ mode: "closed", reason: "unset" });
     expect(requestRole(withCookie(signAdminToken(KEY)), { NODE_ENV: "production" })).toBe("viewer");
     expect(adminSettings({ NODE_ENV: "development" })).toEqual({ mode: "open" });
-    expect(adminSettings({ NODE_ENV: "production", NEXT_PUBLIC_MOCK: "true" })).toEqual({ mode: "open" });
+    expect(adminSettings({ NODE_ENV: "development", NEXT_PUBLIC_MOCK: "true" })).toEqual({ mode: "open" });
     expect(requestRole(new Headers(), { NODE_ENV: "development" })).toBe("admin");
-    expect(adminSettings({ NODE_ENV: "production", ADMIN_KEY: "  " })).toEqual({ mode: "closed" }); // blank is unset
+    expect(adminSettings({ NODE_ENV: "production", ADMIN_KEY: "  " })).toEqual({ mode: "closed", reason: "unset" }); // blank is unset
+  });
+
+  it("never trusts a runtime NEXT_PUBLIC_MOCK in production", () => {
+    const env = { NODE_ENV: "production", NEXT_PUBLIC_MOCK: "true" };
+    expect(adminSettings(env)).toEqual({ mode: "closed", reason: "unset" });
+    expect(requestRole(new Headers(), env)).toBe("viewer");
+    expect(requestRole(new Headers(), { ...env, ADMIN_KEY: KEY })).toBe("viewer"); // a key is set: a cookie is still needed
+  });
+
+  // first to see a short key in this file, so the one warning is still to come
+  it("warns once about a short key and never prints it", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const short = "secret-short-key";
+    for (let i = 0; i < 3; i++) requestRole(new Headers(), { NODE_ENV: "production", ADMIN_KEY: short });
+    const lines = warn.mock.calls.map((c) => String(c[0]));
+    expect(lines.filter((l) => l.includes("shorter than 32"))).toHaveLength(1);
+    expect(lines.some((l) => l.includes(short))).toBe(false);
+    warn.mockRestore();
+  });
+
+  it("ignores an ADMIN_KEY shorter than 32 characters in production", () => {
+    const short = "s".repeat(31);
+    expect(adminSettings({ NODE_ENV: "production", ADMIN_KEY: short })).toEqual({ mode: "closed", reason: "short" });
+    expect(requestRole(withCookie(signAdminToken(short)), { NODE_ENV: "production", ADMIN_KEY: short })).toBe("viewer");
+    expect(adminSettings({ NODE_ENV: "production", ADMIN_KEY: "s".repeat(32) })).toEqual({ mode: "key", key: "s".repeat(32) });
+    expect(adminSettings({ NODE_ENV: "development", ADMIN_KEY: short })).toEqual({ mode: "key", key: short }); // dev keeps it
   });
 
   it("sets an HttpOnly, SameSite=Strict cookie, Secure in production", () => {

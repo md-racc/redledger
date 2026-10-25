@@ -58,6 +58,67 @@ export function limiter(name: "viewer" | "login"): RateLimiter {
   return (g.__rlLimits[name] ??= name === "viewer" ? new RateLimiter(VIEWER_RATE_PER_SEC, VIEWER_BURST) : new RateLimiter(LOGIN_RATE_PER_SEC, LOGIN_BURST));
 }
 
+/** Failed admin logins across ALL addresses per window: rotating IPv6 addresses beats the per-address bucket, this doesn't. */
+export const LOGIN_FAILURES_PER_WINDOW = 20;
+export const LOGIN_FAILURE_WINDOW_MS = 60_000;
+
+/**
+ * A fixed-window count of failures. Once `max` failures land in a window, `blocked()` is true until the window ends: every login
+ * is refused then, right key or not (admins already logged in keep their cookies; a guesser gets at most `max` tries a minute).
+ */
+export class FailureWindow {
+  private start = Number.NEGATIVE_INFINITY; // the first call opens the first window
+  private count = 0;
+
+  constructor(readonly max: number, readonly windowMs: number) {}
+
+  private roll(now: number): void {
+    if (now - this.start >= this.windowMs) { this.start = now; this.count = 0; }
+  }
+
+  blocked(now = Date.now()): boolean {
+    this.roll(now);
+    return this.count >= this.max;
+  }
+
+  /** seconds until the window ends */
+  retryAfterSec(now = Date.now()): number {
+    return Math.max(1, Math.ceil((this.start + this.windowMs - now) / 1000));
+  }
+
+  record(now = Date.now()): void {
+    this.roll(now);
+    this.count++;
+  }
+}
+
+export function loginFailures(): FailureWindow {
+  const g = globalThis as unknown as { __rlLoginFailures?: FailureWindow };
+  return (g.__rlLoginFailures ??= new FailureWindow(LOGIN_FAILURES_PER_WINDOW, LOGIN_FAILURE_WINDOW_MS));
+}
+
+/** Concurrent /api/sync/stream connections, all clients together, so the public stream can't exhaust the process. */
+export const MAX_SYNC_STREAMS = 500;
+
+/** A counting semaphore without waiting: `acquire()` is false when full; the release it returns is safe to call more than once. */
+export class Slots {
+  used = 0;
+
+  constructor(readonly max: number) {}
+
+  acquire(): (() => void) | null {
+    if (this.used >= this.max) return null;
+    this.used++;
+    let done = false;
+    return () => { if (!done) { done = true; this.used--; } };
+  }
+}
+
+export function syncStreamSlots(): Slots {
+  const g = globalThis as unknown as { __rlSyncStreams?: Slots };
+  return (g.__rlSyncStreams ??= new Slots(MAX_SYNC_STREAMS));
+}
+
 export function tooMany(retryAfterSec: number): Response {
   return new Response(JSON.stringify({ error: "rate limited" }), {
     status: 429,

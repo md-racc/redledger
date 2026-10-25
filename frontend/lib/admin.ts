@@ -7,8 +7,10 @@
 //   rl_admin=v1.<issued-at s>.<expires-at s>.<base64url HMAC-SHA256(ADMIN_KEY, "v1.<iat>.<exp>")>
 //
 // HttpOnly, SameSite=Strict, Secure in production, 7 days. Rotating ADMIN_KEY invalidates every cookie (the HMAC no longer
-// verifies). ADMIN_KEY unset: in production nobody is admin (fail closed, one warning); in development or with
-// NEXT_PUBLIC_MOCK=true everyone is (local dev and mock mode stay as they were). Never log the key or the cookie.
+// verifies). ADMIN_KEY unset: in production nobody is admin (fail closed, one warning); outside production (`next dev`, tests)
+// everyone is, so local dev and `NEXT_PUBLIC_MOCK=true npm run dev` stay as they were. NODE_ENV=production is never
+// everyone-admin, whatever else is set: in particular a runtime NEXT_PUBLIC_MOCK is never trusted here (compose passes it into the
+// prod container). In production an ADMIN_KEY shorter than 32 characters counts as unset. Never log the key or the cookie.
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { runtimeEnv, type Env } from "./proxy";
 
@@ -22,27 +24,31 @@ const TOKEN_VERSION = "v1";
 /** Real tokens are ~70 chars; refuse to parse anything absurd. */
 const MAX_TOKEN_LENGTH = 256;
 
+/** Production refuses a shorter ADMIN_KEY (deploy's render-env enforces the same floor). */
+export const MIN_ADMIN_KEY_LENGTH = 32;
+
 export type AdminSettings =
   | { mode: "key"; key: string } // ADMIN_KEY set: admin = valid cookie
-  | { mode: "open" } // dev or mock without a key: everyone is admin
-  | { mode: "closed" }; // production without a key: nobody is admin
-
-/** A mock build (inlined at build time, so a `next start` of a mock image still knows it is one). */
-const MOCK_BUILD = process.env.NEXT_PUBLIC_MOCK === "true";
+  | { mode: "open" } // outside production without a key: everyone is admin
+  | { mode: "closed"; reason: "unset" | "short" }; // production without a usable key: nobody is admin
 
 export function adminSettings(env: Env = process.env): AdminSettings {
+  const production = env["NODE_ENV"] === "production";
   const key = runtimeEnv("ADMIN_KEY", env);
-  if (key) return { mode: "key", key };
-  if (MOCK_BUILD || runtimeEnv("NEXT_PUBLIC_MOCK", env) === "true") return { mode: "open" };
-  return env["NODE_ENV"] === "production" ? { mode: "closed" } : { mode: "open" };
+  if (key && (!production || key.length >= MIN_ADMIN_KEY_LENGTH)) return { mode: "key", key };
+  if (production) return { mode: "closed", reason: key ? "short" : "unset" };
+  return { mode: "open" };
 }
 
-let warnedClosed = false;
+const warned = { unset: false, short: false };
 function warnIfClosed(s: AdminSettings): void {
-  if (s.mode === "closed" && !warnedClosed) {
-    warnedClosed = true;
-    console.warn("admin: ADMIN_KEY is unset in production; nobody is admin, the site is read-only");
-  }
+  if (s.mode !== "closed" || warned[s.reason]) return;
+  warned[s.reason] = true;
+  console.warn(
+    s.reason === "short"
+      ? `admin: ADMIN_KEY is shorter than ${MIN_ADMIN_KEY_LENGTH} characters; ignored in production, nobody is admin, the site is read-only`
+      : "admin: ADMIN_KEY is unset in production; nobody is admin, the site is read-only",
+  );
 }
 
 const b64url = (buf: Buffer): string => buf.toString("base64url");

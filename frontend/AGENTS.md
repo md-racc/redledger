@@ -47,8 +47,10 @@ Server-enforced in `lib/admin.ts`. `/admin` posts `ADMIN_KEY` (server env, never
 HMAC-SHA256 keyed by `ADMIN_KEY`; rotating the key logs everyone out). `POST /api/admin/logout` clears it,
 `GET /api/whoami` → `{role}`. The `/api/bf` proxy lets a viewer GET/HEAD only (anything else → `403
 {"error":"viewer"}` before battlefield is contacted) and rate limits viewers per address
-(`lib/ratelimit.ts`; ws-ticket too); `POST /api/sync` is admin-only. `ADMIN_KEY` unset: everyone is admin in
-development / mock, nobody in production. The UI reads `useRole()` (`lib/role.ts`) and disables what a
+(`lib/ratelimit.ts`; ws-ticket too); `POST /api/sync` is admin-only. Failed logins are capped per address and
+globally (20/min, then every login 429s until the minute ends); open `/api/sync/stream`s are capped at 500.
+`ADMIN_KEY` unset: everyone is admin outside production (`next dev`, mock dev); in production (`NODE_ENV=production`)
+nobody is, and a key under 32 characters counts as unset; a runtime `NEXT_PUBLIC_MOCK` is never trusted. The UI reads `useRole()` (`lib/role.ts`) and disables what a
 viewer can't do; every window (arena, backstage, /ops) joins the active run on load
 (`lib/arena/useActiveRun.ts`) and never creates one for a viewer.
 

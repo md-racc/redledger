@@ -7,9 +7,10 @@ import * as loginRoute from "@/app/api/admin/login/route";
 import * as logoutRoute from "@/app/api/admin/logout/route";
 import * as whoamiRoute from "@/app/api/whoami/route";
 import { ADMIN_COOKIE, signAdminToken } from "./admin";
-import { VIEWER_BURST } from "./ratelimit";
+import { LOGIN_FAILURES_PER_WINDOW, MAX_SYNC_STREAMS, VIEWER_BURST, syncStreamSlots } from "./ratelimit";
+import * as streamRoute from "@/app/api/sync/stream/route";
 
-const KEY = "test-admin-key-0123456789abcdef";
+const KEY = "test-admin-key-0123456789abcdef-0123456789";
 const BASE = "http://app.test";
 const adminCookie = () => `${ADMIN_COOKIE}=${signAdminToken(KEY)}`;
 let ipSeq = 0;
@@ -26,6 +27,7 @@ let upstream: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.stubEnv("ADMIN_KEY", KEY);
+  delete (globalThis as { __rlLoginFailures?: unknown }).__rlLoginFailures; // each test starts a fresh global failure window
   vi.stubEnv("BATTLEFIELD_URL", "http://battlefield:8000");
   vi.stubEnv("OPERATOR_TOKEN", "optoken");
   upstream = vi.fn(async (url: string | URL | Request) => {
@@ -185,5 +187,75 @@ describe("login, logout, whoami", () => {
     const out = await logoutRoute.POST(req("POST", "/api/admin/logout"));
     expect(out.status).toBe(200);
     expect(out.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+});
+
+describe("production hardening", () => {
+  const prod = () => vi.stubEnv("NODE_ENV", "production");
+  const whoami = async (cookie?: string) => (await (await whoamiRoute.GET(new Request(`${BASE}/api/whoami`, { headers: cookie ? { cookie } : {} }))).json()).role;
+
+  it("a runtime NEXT_PUBLIC_MOCK=true never makes visitors admin in production", async () => {
+    prod();
+    vi.stubEnv("NEXT_PUBLIC_MOCK", "true");
+    vi.stubEnv("ADMIN_KEY", "");
+    expect(await whoami()).toBe("viewer");
+    const res = await proxyRoute.POST(req("POST", "/api/bf/episodes", { body: { controller_mode: "enforce" } }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "viewer" });
+    expect((await syncRoute.POST(req("POST", "/api/sync", { body: { client: "a", kind: "hello", data: {} } }))).status).toBe(403);
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("an ADMIN_KEY under 32 characters disables admin in production", async () => {
+    prod();
+    const short = "only-twenty-chars-xx";
+    vi.stubEnv("ADMIN_KEY", short);
+    const login = await loginRoute.POST(req("POST", "/api/admin/login", { body: { key: short } }));
+    expect(login.status).toBe(503);
+    expect(login.headers.get("set-cookie")).toBeNull();
+    const cookie = `${ADMIN_COOKIE}=${signAdminToken(short)}`;
+    expect(await whoami(cookie)).toBe("viewer");
+    expect((await proxyRoute.POST(req("POST", "/api/bf/episodes", { body: {}, headers: { cookie } }))).status).toBe(403);
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("caps failed logins across all addresses, then refuses every login for the rest of the window", async () => {
+    for (let i = 0; i < LOGIN_FAILURES_PER_WINDOW; i++) {
+      // a new address each time: the per-address bucket never trips
+      expect((await loginRoute.POST(req("POST", "/api/admin/login", { body: { key: `guess-${i}` } }))).status, `guess ${i}`).toBe(401);
+    }
+    const blocked = await loginRoute.POST(req("POST", "/api/admin/login", { body: { key: "another" } }));
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+    const right = await loginRoute.POST(req("POST", "/api/admin/login", { body: { key: KEY } }));
+    expect(right.status).toBe(429); // even the right key, until the window ends
+    expect(right.headers.get("set-cookie")).toBeNull();
+    vi.useFakeTimers({ now: Date.now() + 61_000 }); // the window ends: logins work again
+    try {
+      expect((await loginRoute.POST(req("POST", "/api/admin/login", { body: { key: KEY } }))).status).toBe(200);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("caps concurrent /api/sync/stream connections", async () => {
+    const slots = syncStreamSlots();
+    const held: (() => void)[] = [];
+    try {
+      while (slots.used < MAX_SYNC_STREAMS) held.push(slots.acquire()!);
+      const full = await streamRoute.GET(new Request(`${BASE}/api/sync/stream`));
+      expect(full.status).toBe(503);
+      held.pop()!();
+      const ctl = new AbortController();
+      const ok = await streamRoute.GET(new Request(`${BASE}/api/sync/stream`, { signal: ctl.signal }));
+      expect(ok.status).toBe(200);
+      expect(slots.used).toBe(MAX_SYNC_STREAMS);
+      ctl.abort(); // the client goes away: its slot is free again
+      await ok.body?.cancel().catch(() => {});
+      expect(slots.used).toBe(MAX_SYNC_STREAMS - 1);
+    } finally {
+      held.forEach((r) => r());
+    }
+    expect(slots.used).toBe(0);
   });
 });

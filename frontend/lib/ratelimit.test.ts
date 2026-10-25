@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RateLimiter, limiter, VIEWER_BURST, VIEWER_RATE_PER_SEC } from "./ratelimit";
+import { FailureWindow, MAX_SYNC_STREAMS, RateLimiter, Slots, limiter, VIEWER_BURST, VIEWER_RATE_PER_SEC } from "./ratelimit";
 
 describe("rate limiter", () => {
   it("lets a burst through, then refills at the rate", () => {
@@ -34,5 +34,28 @@ describe("rate limiter", () => {
     expect(VIEWER_BURST).toBeGreaterThanOrEqual(VIEWER_RATE_PER_SEC);
     expect(limiter("viewer")).toBe(limiter("viewer"));
     expect(limiter("login")).not.toBe(limiter("viewer"));
+  });
+});
+
+describe("global failure window and stream slots", () => {
+  it("blocks after max failures until the window ends", () => {
+    const w = new FailureWindow(3, 60_000);
+    for (let i = 0; i < 3; i++) { expect(w.blocked(1000)).toBe(false); w.record(1000); }
+    expect(w.blocked(1000)).toBe(true);
+    expect(w.retryAfterSec(1000)).toBe(60);
+    expect(w.blocked(60_999)).toBe(true);
+    expect(w.blocked(61_000)).toBe(false);
+  });
+
+  it("hands out at most max slots, and a release counts once", () => {
+    const s = new Slots(2);
+    const a = s.acquire()!;
+    expect(s.acquire()).not.toBeNull();
+    expect(s.acquire()).toBeNull();
+    a();
+    a();
+    expect(s.used).toBe(1);
+    expect(s.acquire()).not.toBeNull();
+    expect(MAX_SYNC_STREAMS).toBe(500);
   });
 });
