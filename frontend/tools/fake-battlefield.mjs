@@ -3,7 +3,7 @@
 //   node tools/fake-battlefield.mjs            listens on :8000 (BF_PORT), operator token "change-me-operator" (OPERATOR_TOKEN)
 //   node tools/dev-live.mjs                    the same, plus `next dev` already pointed at it
 //
-// It speaks the documented contract (contracts/ledger-api.yaml, contracts/events.md, FRONTEND.md "Battlefield /fe API used by the site"): episodes
+// It speaks the documented contract (contracts/ledger-api.yaml, contracts/events.md, docs/FRONTEND.md "Battlefield /fe API used by the site"): episodes
 // you create, start, step and toggle; judge-picked attacks; escalations that hold the day until a human decides; ws
 // tickets and the /api/ws event stream with after_id catch-up; lineages. The events are the recorded episode
 // (public/mocks/sample.jsonl) re-run per day according to the controller mode, the way the mock agents behave, so what it

@@ -100,13 +100,14 @@ The site is public and read-only; only an admin can act (#152, #159).
 | Three-way match, runs the close, reconciles the bank | Two-way invoice↔PO match only; no receiving record, no close agent |
 | Production-ready, horizontally scalable, zero-downtime deploys, per-user auth | Battlefield is single-process (in-memory turn guard, escalation waiters, ticket set); a redeploy stops a running episode's loop; one shared admin key |
 | MLH Gemini use | No Gemini on prod; red moved off `gemini-3.8-flash` after it stalled (#118) |
+| The company is called Coastal Supply Co. | Renamed to Meridian Components, a synthetic electronics components distributor, on 2026-10-25 |
 
 ## 3. Re-check before using
 
 - **`SUBMISSION.md` placeholder:** `⟦CRS-LIVE⟧` is still in the text. Fill it only if the table demo happened;
   otherwise delete the sentence.
-- **Pitch lines** "None of blue's rules fired" and "$19k → $97k": check against the live Evolution card for
-  `ln_f52a3df83c8d` ($97,734, so "$98k" when rounded). On that card red's per-attack chips use the stored
+- **Pitch lines** "None of blue's rules fired" and "$18.5k → $93.6k": check against the live Evolution card for
+  `ln_f52a3df83c8d` ($18,534 → $93,568 in the live report on 2026-10-25; the old "$19k → $98k" was the pre-#207 export). On that card red's per-attack chips use the stored
   `attacks.amount_extracted` while "Stolen" uses #207 scoring, so chips can sum to more than the total; and the
   card shows `retired_rules` as "not fired after this generation".
 - **Evolution card source:** it tries `?lineage=`, then the pinned `ln_f52a3df83c8d`, then the newest finished
@@ -143,8 +144,9 @@ inflated expense $346.15; it predates #206 (split control) and #195 (live flags)
 
 | Lineage | Setup | Extracted per gen | Blocked | FP cost | Caught / launched | Credits per gen |
 |---|---|---|---|---|---|---|
-| `ln_f52a3df83c8d` (P1) | 5 gens × 8 days, enforce, seeds 502–506; red live, green + blue keyless; before #148/#173/#206 | $19,076 / $35,423 / $86,510 / $53,619 / $97,734 | $6,214 / $4,380 / $0 / $0 / $0 | $100 / $50 / $0 / $150 / $100 | 3/7, 5/7, 2/8, 5/8, 1/8 | 20,402 / 20,744 / 22,831 / 22,974 / 22,313 (~109k, red only) |
-| `ln_431bf702e8a0` (P9) | 3 gens × 4 days, enforce, base seed 501 (502–504); red + blue audit live, green keyless; deploy 15f08b4 (#195, #206, #207) | $0 / $0 / $0 | $13,800 / $2,430 / $0 | $100 / $50 / $0 | 2/4, 1/4, 0/4 | 27,877 / 29,576 / 27,525 |
+| `ln_f52a3df83c8d` (P1), **live report: cite this** | same lineage, current #207/#217 scoring: `GET /api/bf/fe/lineages/ln_f52a3df83c8d/report`, checked 2026-10-25 09:00Z | **$18,534 / $27,600 / $79,237 / $40,788 / $93,568** | not re-read | not re-read | not re-read | not re-read |
+| `ln_f52a3df83c8d` (P1), pre-#207 export | 5 gens × 8 days, enforce, seeds 502–506; red live, green + blue keyless; before #148/#173/#206 | $19,076 / $35,423 / $86,510 / $53,619 / $97,734 | $6,214 / $4,380 / $0 / $0 / $0 | $100 / $50 / $0 / $150 / $100 | 3/7, 5/7, 2/8, 5/8, 1/8 | 20,402 / 20,744 / 22,831 / 22,974 / 22,313 (~109k, red only) |
+| `ln_431bf702e8a0` (P9; $0 / $0 / $0 in the live report too, checked 2026-10-25 09:00Z) | 3 gens × 4 days, enforce, base seed 501 (502–504); red + blue audit live, green keyless; deploy 15f08b4 (#195, #206, #207) | $0 / $0 / $0 | $13,800 / $2,430 / $0 | $100 / $50 / $0 | 2/4, 1/4, 0/4 | 27,877 / 29,576 / 27,525 |
 
 P1: `threshold_split` launches 1 → 2 → 6 → 3 → 7, all 19 extracted; no new schemes; blue's four learned
 controls never fired on a split. P9: g1 `bank_swap` and `threshold_split` blocked, `duplicate_invoice` ×2; g2
@@ -282,7 +284,7 @@ Also on the record in the same reporting, not among the five: **Charles Schwab**
 
 ### Where the old synthetic company went
 
-The demo's company is still seeded by the backend (`battlefield/seed/`), which this folder does not own. In `frontend/` it is now "the company" or "the synthetic company" everywhere (arena copy, the report, the pitch, the storyboard, the docs, the stand-in battlefield). A test (`frontend/lib/arena/lenders.test.ts`) keeps the old name out of `frontend/`. If the lenders become the demo's setting rather than its context, that is a seed and prompt change for Ad, Al and M.
+The demo's company is still seeded by the backend (`battlefield/seed/`), which this folder does not own. In `frontend/` it is now "the company" or "the synthetic company" everywhere (arena copy, the report, the pitch, the storyboard, the docs, the stand-in battlefield). A test (`frontend/lib/arena/lenders.test.ts`) keeps the old name out of `frontend/`. If the lenders become the demo's setting rather than its context, that is a seed and prompt change for Ad, Al and M. On 2026-10-25 the company was named Meridian Components, a synthetic electronics components distributor (§2, Do not claim).
 
 ## 9. Sources
 

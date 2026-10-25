@@ -32,7 +32,7 @@ teammate, and stops to ask a human when a rule would be violated.
 
 CI fails the PR if a branch touches files outside its area. The `battlefield/extensions/` and
 `contracts/ext/` carve-outs are the designed way to add routes and tables without a contracts PR
-(README.md (Ledger API overview, extensions)). If your work genuinely needs a change to the core elsewhere (a new Ledger API field, a new event type), that is a **contracts** change: open a
+(docs/ARCHITECTURE.md (Routes and extensions)). If your work genuinely needs a change to the core elsewhere (a new Ledger API field, a new event type), that is a **contracts** change: open a
 separate `contracts/<topic>` PR first, get it merged, then rebase your branch onto it.
 
 ## 3. Commits
@@ -136,7 +136,7 @@ An agent working in this repo:
 - Conflict on `DEVLOG.md` (pre-fragment branches): keep both sides, both lines; better, move your
   line into a `devlog/` fragment.
 
-## 9. Repo settings (Ad applies on creation — full list in `OPERATIONS.md`)
+## 9. Repo settings (Ad applies on creation — full list in `docs/OPERATIONS.md`)
 
 - Branch protection on `main`: require PR, 0 approvals, code-owner review off, required checks
   `python (agentkit)`, `python (battlefield)`, `python (red)`, `python (green)`, `python (blue)`,

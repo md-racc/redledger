@@ -387,7 +387,7 @@ not a re-run loop. Red's and blue's turns are live, so it costs credits (blue's 
 5,318 in ep_9cbc3362d44e).
 
 First pass on prod: ep_9cbc3362d44e, 2026-10-25, `SEED=42 DAYS=2` (`blue/CRS.md`, "Prod live-audit
-acceptance"; recording `recordings/crs-live-ep_9cbc3362d44e.jsonl`). Record a run like any other
+acceptance"; recording `docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`). Record a run like any other
 with `make prod-record EP=… NAME=…`.
 
 ### Credit cap (`MAX_CREDITS_PER_EPISODE`)
@@ -412,7 +412,7 @@ different length, scale it: 1.25 × 30,000 × DAYS = **37,500 × DAYS** (4 days 
 
 The cap is **per episode**, not a budget. The demo plan above plus one live run during judging is
 3 episodes ≈ 0.6M–0.9M credits; check the prod Factory key's balance covers that before
-Saturday. (`README.md` §11 and `deploy/OWNER-CHECKLIST.md` suggest `40` as an example; at
+Saturday. (Older guides suggested `40` as an example; at
 6.7k+ per turn that pauses every episode after its first turn.)
 
 **It is off until you set it.** `render-env.sh` writes `MAX_CREDITS_PER_EPISODE='0'` when the

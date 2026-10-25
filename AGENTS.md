@@ -79,7 +79,7 @@ Branching, commits, PRs, and the coding-agent git rules are in `GIT.md`. Short v
    backend. Don't break these paths; they are how four of five people develop.
 9. **No secrets in the repo, in images, or in `NEXT_PUBLIC_*`.** Secrets live in your local
    `.env` (gitignored) or in the GitHub `production` environment, which the deploy job renders
-   into the VM's `.env` (`OPERATIONS.md` (Environment variables)). Never bake one into an image or a build arg,
+   into the VM's `.env` (`docs/OPERATIONS.md` (Environment variables)). Never bake one into an image or a build arg,
    never put one in a `NEXT_PUBLIC_*` var (those ship to the browser). `.env.example` has every
    variable with an empty or dummy value. Each dev uses their own `FACTORY_API_KEY` locally;
    the prod key exists only in `production`. Keys arrive via the shared vault, not Slack.
@@ -208,11 +208,11 @@ Before pushing: `make test` in your directory and `make lint`. CI runs both per 
 - Emits the events the README says it should.
 - Has at least one test touching the new code path (unit for rules/schemes, integration via
   `httpx` against the FastAPI app for routes).
-- No new environment variable without an entry in `.env.example` and OPERATIONS.md §2.
+- No new environment variable without an entry in `.env.example` and docs/OPERATIONS.md §2.
 
 ## 8. For coding agents specifically
 
-- Start by reading `README.md`, `ARCHITECTURE.md`, `GIT.md` §7, the `AGENTS.md` in your directory, and the `contracts/` file relevant to your task.
+- Start by reading `README.md`, `docs/ARCHITECTURE.md`, `GIT.md` §7, the `AGENTS.md` in your directory, and the `contracts/` file relevant to your task.
 - State which directory you are working in before editing. Stay there.
 - Do not invent endpoints, event types, or table columns. If the contract lacks what you need,
   write the proposed contract change as a diff to `contracts/` and stop for human review.

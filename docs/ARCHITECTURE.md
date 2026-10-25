@@ -118,6 +118,33 @@ Battlefield refuses to start unless `ESCALATION_TIMEOUT_SEC + GATE_TIMEOUT_SEC +
   403. The inline (unprepared) 403 does not carry `cause`, and the frontend doesn't render it, so
   a fallback block looks like a control block in the UI.
 
+### Routes and extensions
+
+Canonical: `contracts/ledger-api.yaml`; live docs at `/docs`. Base `http://battlefield:8000/api`. Agent
+requests carry `Authorization: Bearer <own token>`, `X-Agent`, `X-Episode`, `X-Day`, and on writes
+`X-Tool-Use-Id` (the idempotency key; `<id>:<n>` for a call's n-th write).
+
+| Group | Routes | Who |
+|---|---|---|
+| Reads | `GET /vendors[/{id}] /vendor_changes /employees /purchase_orders /invoices[/{id}] /payments /expenses /bank/transactions /gl/entries /reports/{id}`; `/flags` (green, blue); `/audit_log` (blue, green/blue rows only); `/attacks` (red, outcomes hidden until revealed) | agents + operator |
+| Red writes | `POST /attacks` (declare first), `PATCH /attacks/{id}`, `POST /vendors /vendor_changes /invoices /expenses /employees` | red |
+| Green writes (gated) | `POST /preparations`, `GET /preparations/{key}`; `POST /invoices/{id}/match\|approve\|reject\|pay`, `/vendor_changes/{id}/approve\|reject`, `/expenses/{id}/approve\|pay`, `POST /gl/entries` | green |
+| Blue writes | `POST /flags`, `/vendors/{id}/freeze\|unfreeze`, `/reports` | blue |
+| Agent state and inputs | `GET/PUT /state/{key}`; `POST /inputs` (a message into an agent's next turn); `GET /inputs` operator-only | agents / operator |
+| Playbooks | `GET /playbook`, `/playbook/history`, `PUT /playbook` (own playbook, active turn only) | red, green, blue |
+| Events | `POST /events` (agents: `agent.*`, `x.*`); `GET /events`, `POST /ws/ticket`, `WS /ws` | write: agents; read: operator only |
+| Control plane | `POST /episodes`, `/episodes/{id}/start\|pause\|resume\|step\|attack\|fixtures`, `PATCH /episodes/{id}/controller`, `GET /episodes/{id}/score`, `/attacks/all`, `/schemes`, `/escalations`, `POST /escalations/{id}/resolve`, `/replays`, `/lineages/*`, `/health` | operator / frontend server |
+| Frontend reads | `GET /fe/episodes/{ep}/…` (snapshot, timeline, verdicts, attacks, controls, …), `/fe/compare`, `/fe/lineages/{id}/report\|timeline` | operator / frontend server |
+
+A blocked gated call returns `403 {verdict:"block", reason, verdict_id, …}`; an escalation holds the call
+until resolved, then returns 200 or 403.
+
+**Extensions.** Teams grow the sandbox without a contracts PR through two carve-outs (`GIT.md` §2):
+routes in `battlefield/extensions/<area>_*.py` (mounted under `/api/x/<area>/…`) and tables in
+`contracts/ext/<area>/*.sql` (tables prefixed `<area>_`, applied at startup after `contracts/schema.sql`
+in filename order).
+A change to a core route, event type or column is a `contracts/` change.
+
 ## Red
 
 `red/agent.py`, `red/tools.py`, `red/schemes/`. Droid at `Autonomy.HIGH`, best-effort identity
@@ -281,7 +308,7 @@ Live prod run, **ep_9cbc3362d44e** (seed 42, 2 days, `make prod-crs-episode`, #1
 audit called `crs_identity_check` both days, raised the HIGH flag on P12 (mismatch), and P12's
 day-1 expense was blocked (`expenses.approve`, `already_flagged_high`, enforced) while P01 and
 P16 were paid. Audit credits 3,985 and 5,318. Recording:
-`recordings/crs-live-ep_9cbc3362d44e.jsonl`.
+`docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`.
 
 ## Evolution
 
@@ -338,7 +365,7 @@ playbook timeline, and disclosure counts.
 
 - **`ln_f52a3df83c8d`** (5 gens × 8 days, enforce, seeds 502–506, red live, green and blue
   keyless, before #206): red re-weighted toward `threshold_split`, from 1 of 7 attacks in g1 to
-  7 of 8 in g5; extraction $19,076 → $97,734; all 19 splits extracted and no rule fired on them.
+  7 of 8 in g5; extraction $18,534 → $93,568 (live report, current scoring); all 19 splits extracted and no rule fired on them.
   Blue enabled all four learned controls after g1; `learned:young_vendor_any_amount` fired once.
   Red invented no schemes.
 - **P9, `ln_431bf702e8a0`** (3 gens × 4 days, enforce, seeds 502–504, red **and** blue's audit

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Drive the prod stack from your laptop without the operator token ever leaving the VM.
-# Owner: Dev Ad. Guide: OPERATIONS.md. Make wrappers: `make help | grep prod-`.
+# Owner: Dev Ad. Guide: docs/OPERATIONS.md. Make wrappers: `make help | grep prod-`.
 #
 #   deploy/prod.sh health | ps | logs [SVC]
 #   deploy/prod.sh episode MODE SEED DAYS [ATTACK_PLAN_JSON]    # create + start; stdout = episode id

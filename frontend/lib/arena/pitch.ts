@@ -7,7 +7,7 @@
 //   → at episode.ended a closing card with the final score and the controls report
 //
 // With no backend (NEXT_PUBLIC_MOCK=true, or unreachable) it plays a REAL prod recording (public/mocks/pitch-fallback.jsonl,
-// copied from recordings/demo-enforce-redblue-live.jsonl), labelled RECORDED with its episode id and date.
+// copied from docs/recordings/demo-enforce-redblue-live.jsonl), labelled RECORDED with its episode id and date.
 //
 // Pure, tested (pitch.test.ts). The React side is components/arena/usePitch.ts; the feed side is useFeed's `pitch()`.
 import type { RLEvent } from "../types";
@@ -32,11 +32,11 @@ export interface RecordingInfo {
   episodeId: string;
   /** when it was recorded on prod, YYYY-MM-DD */
   date: string;
-  /** the agents as they ran when it was recorded (EVIDENCE.md, "Recordings") */
+  /** the agents as they ran when it was recorded (docs/EVIDENCE.md, "Recordings") */
   agents: Record<"red" | "green" | "blue", { mode: "live" | "keyless"; model?: string }>;
 }
 
-/** recordings/demo-enforce-redblue-live.jsonl: seed 42, 6 days, enforce, red and blue's audit live on gpt-5.4-mini, green keyless. */
+/** docs/recordings/demo-enforce-redblue-live.jsonl: seed 42, 6 days, enforce, red and blue's audit live on gpt-5.4-mini, green keyless. */
 export const PITCH_FALLBACK: RecordingInfo = {
   fixture: "pitch-fallback",
   episodeId: "ep_d9b561111d60",

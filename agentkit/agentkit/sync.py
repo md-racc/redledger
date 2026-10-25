@@ -1,6 +1,6 @@
 """Loop ownership helpers: per-turn event loops and a lock usable from any loop or thread.
 
-Ownership rule (ARCHITECTURE.md, Droid SDK usage): every asyncio object (Future, Task, Lock, Queue,
+Ownership rule (docs/ARCHITECTURE.md, Droid SDK usage): every asyncio object (Future, Task, Lock, Queue,
 httpx client, EventEmitter, InvocationRegistry, Droid Session) belongs to the loop that created it and
 is only touched from that loop's thread. Crossing loops goes through `loop.call_soon_threadsafe` (or a
 concurrent.futures.Future wrapped with `asyncio.wrap_future`), never a direct call.

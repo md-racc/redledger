@@ -629,7 +629,7 @@ async def escalations(episode_id: str):
     return db.rows_to_list(rows)
 
 
-# ---------------- lineages (ARCHITECTURE.md, Evolution: Export and report) ----------------
+# ---------------- lineages (docs/ARCHITECTURE.md, Evolution: Export and report) ----------------
 
 
 @router.get("/lineages/{lineage_id}/timeline")

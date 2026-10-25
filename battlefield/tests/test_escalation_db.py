@@ -1,7 +1,7 @@
 """DB: the human-in-the-loop escalation path end to end through the real routes.
 
 Green's gated request is held in one task while the operator resolves through
-POST /api/escalations/{id}/resolve in another, both against the same ASGI app (ARCHITECTURE.md, System overview
+POST /api/escalations/{id}/resolve in another, both against the same ASGI app (docs/ARCHITECTURE.md, System overview
 "Escalation", contracts/events.md escalation.*, ledger-api.yaml /escalations).
 """
 

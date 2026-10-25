@@ -39,8 +39,8 @@ describe("the recording the consoles ship with", () => {
   const root = join(__dirname, "../../..");
   const shipped = readFileSync(join(__dirname, `../../public/mocks/${RECORDING}.jsonl`), "utf8");
 
-  it("is the one in recordings, byte for byte (copy it again if that changes)", () => {
-    expect(shipped).toBe(readFileSync(join(root, "recordings", `${RECORDING}.jsonl`), "utf8"));
+  it("is the one in docs/recordings, byte for byte (copy it again if that changes)", () => {
+    expect(shipped).toBe(readFileSync(join(root, "docs", "recordings", `${RECORDING}.jsonl`), "utf8"));
   });
 
   it("is a live-red enforce run with the messy parts: tool calls, thinking, ledger writes, verdicts", () => {

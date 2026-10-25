@@ -18,7 +18,7 @@ Nobody would put a car on the road without crash-testing it. An AI with the comp
 
 ## What we built
 
-A synthetic company with real-looking books: 60 vendors, 40 employees, 90 days of payment history, new legitimate vendors and bank changes every few days. Three AI agents work on the same ledger, and none of them can see the others.
+Meridian Components, a synthetic electronics components distributor, with real-looking books: 60 vendors, 40 employees, 90 days of payment history, new legitimate vendors and bank changes every few days. Its vendors are component suppliers, so the flagship attack, a supplier's bank details "updated" to an account the attacker controls, is the pattern a fake hardware supplier used to take more than $120 million from two US tech companies. Three AI agents work on the same ledger, and none of them can see the others.
 
 - **Red, the attacker**, is a live agent on Factory's Droid SDK. Each day it reads the books with a junior insider's access and runs one of eight schemes taken from real cases: ghost vendor, bank-account swap, duplicate invoice, threshold split, ghost employee, inflated expenses, invoice over its PO, recurring-amount drift. It can submit invoices and request changes. It can never pay, approve or see the controls.
 - **Green, the AP clerk**, does the legitimate work: matches invoices to POs, pays bills, approves bank changes, reimburses expenses.
@@ -36,7 +36,7 @@ Everything below ran on the live, hosted system (app.redledger.us) with red on F
 |---|---|
 | Same company, same seed, 10 days, controller **off** | Red swapped one vendor's bank account, the clerk approved it, and **$10,285** went to red's account. |
 | Same run, controller **on** (enforce) | The ledger held the bank change for independent verification ("destination change overlaps open invoices"). **$0** lost (controls report). |
-| 5 generations × 8 days, red learning between generations | Red found that invoices split under the approval limit got paid, and shifted to them. Extraction rose from **$19k to $98k** a generation, and no control caught it. |
+| 5 generations × 8 days, red learning between generations | Red found that invoices split under the approval limit got paid, and shifted to them. Extraction rose from **$18.5k to $93.6k** a generation, and no control caught it. |
 | Red **and** blue's audit live, a fixed six-scheme plan, 6 days, before the split rule existed | **$18,526** lost with the controller on. $13,800 of it was one split invoice. |
 | After we added a gate rule for the split (#206): 3 generations × 4 days, red and blue's audit live | **$0** stolen in every generation. The split was caught 3 of 3 times. |
 
@@ -49,7 +49,7 @@ The sandbox's most useful result was a control gap that nobody on the team saw c
 - Green, the clerk, runs our full logic without a model on prod. Its live Droid turn is built but switched off until it passes acceptance.
 - Blue doesn't learn yet: in the latest run it caught red with rules we wrote, not ones it learned.
 - Blue caught 3 of red's 12 attempts in that run. The other 9 never got paid, because green held the duplicate invoices and the drift attempts didn't pay out within the 4-day generations.
-- The company is synthetic. The schemes are real.
+- Meridian Components is synthetic. The schemes are real.
 
 ## Built for real use
 

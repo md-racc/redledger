@@ -7,7 +7,7 @@
 //
 // It also keeps a log of the calls the /api/bf proxy made to battlefield, so a console can show the API traffic of all four
 // laptops. In memory only, capped, nothing persisted: a restart empties it. One Node process only (a second container would
-// have its own hub); fine for the stage, see FRONTEND.md ("Backstage consoles").
+// have its own hub); fine for the stage, see docs/FRONTEND.md ("Backstage consoles").
 export const KINDS = ["hello", "select", "launch", "controller", "decision", "show", "panel", "stage", "run", "act"] as const;
 export type SyncKind = (typeof KINDS)[number];
 type Prim = string | number | boolean | null;

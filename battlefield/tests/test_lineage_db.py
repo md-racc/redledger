@@ -1,4 +1,4 @@
-"""DB: lineages run generation by generation with reflection (ARCHITECTURE.md, Evolution: Lineage lifecycle)."""
+"""DB: lineages run generation by generation with reflection (docs/ARCHITECTURE.md, Evolution: Lineage lifecycle)."""
 
 from __future__ import annotations
 

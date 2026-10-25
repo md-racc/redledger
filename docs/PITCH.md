@@ -41,7 +41,7 @@ Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md
 
 ### R — 0:40 to 1:30 (laptop 1, the company)
 
-> While red works on that, here's what it's attacking. A synthetic company with real-looking books: sixty vendors, forty employees, three months of history. Three AI agents work inside it, and none of them can see the others.
+> While red works on that, here's what it's attacking. This is Meridian Components, an electronics distributor: sixty vendors, forty employees, three months of history, all synthetic. Three AI agents work inside it, and none of them can see the others.
 >
 > Red is the thief. Green is the accounts-payable clerk: it pays the bills. Blue is the controller. Before any money moves, blue says allow, block, or ask a human.
 >
@@ -61,7 +61,7 @@ Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md
 >
 > Does it work? Same company, same ten days. With the controller off, red swapped one vendor's bank account and took ten thousand two hundred eighty-five dollars. With it on, that change was held for verification, and red got zero.
 >
-> Then we let red learn across generations. It found that invoices split just under the approval limit got paid, and it climbed from nineteen thousand dollars a run to ninety-eight thousand. None of our controls caught it. That's what a crash test is for. We added the rule in the ledger, and in the next run, with red and blue both live for three generations, red stole nothing.
+> Then we let red learn across generations. It found that invoices split just under the approval limit got paid, and it climbed from about eighteen and a half thousand dollars a run to nearly ninety-four thousand. None of our controls caught it. That's what a crash test is for. We added the rule in the ledger, and in the next run, with red and blue both live for three generations, red stole nothing.
 >
 > One honest limit: blue caught three of red's twelve attempts in that run. The other nine never got paid out. And blue doesn't learn new rules yet. That's next.
 
@@ -79,7 +79,7 @@ Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md
 
 | If they ask | Who answers | The answer |
 |---|---|---|
-| Is the money real? | Al | No. The company is synthetic, and every scheme is one that has stolen real money. |
+| Is the money real? | Al | No. Meridian Components is synthetic, and every scheme is one that has stolen real money. |
 | How does red know what to do? | Al | It reads the books through the same API the clerk uses, and picks from eight schemes. Your request steers which one. |
 | What stops the clerk from just paying? | M | The ledger. The clerk has no database access. Every payment route checks blue's verdict first, and the ledger enforces it. |
 | Why not put the rules in the prompt? | M | A prompt can be talked around. A ledger rule can't. |

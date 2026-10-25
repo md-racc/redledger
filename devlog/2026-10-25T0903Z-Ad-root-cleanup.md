@@ -1,0 +1,1 @@
+- 2026-10-25T09:03Z · Ad · docs: root down to README/LICENSE/Makefile/compose/agent files, all docs in docs/, judge-facing README with Mermaid diagram; company renamed Meridian Components in docs; evolution figures corrected to the live report ($18.5k -> $93.6k); stacked on #223; next: rebrand code PR

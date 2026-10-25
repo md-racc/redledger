@@ -1,4 +1,4 @@
-// The recorded live-red runs (recordings, #136), summarised by tools/gen-live-runs.mjs into public/mocks/live-runs.json. Owner: Dev R.
+// The recorded live-red runs (docs/recordings, #136), summarised by tools/gen-live-runs.mjs into public/mocks/live-runs.json. Owner: Dev R.
 //
 // The 90-second show plays the mock-agent recording (richer to watch: every scheme, a decision to make). These are the real runs it stands in
 // for: the same seed for ten days with the controller off and on, red live on Droid. The Compare card's "Real run" tab shows them.

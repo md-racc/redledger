@@ -21,3 +21,7 @@ coverage/
 .vscode/
 .factory/sessions/
 *.jsonl.tmp
+# generated locally, never committed: uv lockfiles (deps resolve from each pyproject.toml), Next.js and tsc build state
+*/uv.lock
+frontend/next-env.d.ts
+*.tsbuildinfo

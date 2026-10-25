@@ -12,7 +12,7 @@
 - [ ] `make lint` and my area's `make test-<area>` pass locally
 - [ ] Runs under `DRY_RUN=true` (agents) / `NEXT_PUBLIC_MOCK=true` (frontend)
 - [ ] No `contracts/` change — or there is a `contracts/CHANGELOG.md` entry and every affected owner is tagged
-- [ ] No new env var — or `.env.example` and OPERATIONS.md §2 are updated
+- [ ] No new env var — or `.env.example` and docs/OPERATIONS.md §2 are updated
 - [ ] No secrets, no `.env`, no recorded fixtures containing keys
 - [ ] Exactly one devlog fragment added: `make devlog WHO=<Ad|Al|M|R> MSG="what changed; next: …; blocked: …"` (don't append to `DEVLOG.md`)
 - [ ] If an AI coding agent wrote most of this: I read the whole diff

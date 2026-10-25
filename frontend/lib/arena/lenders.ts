@@ -1,6 +1,6 @@
 // What five large US lenders have said in public about outside AI agents in customer accounts, with the source of every line.
 // Owner: Dev R. Researched 2026-10-25 from reporting dated 2026-10-15 to 2026-10-23; the same table, with the caveats in full, is
-// root EVIDENCE.md, "Lenders on the record". Everything here is a paraphrase of someone else's reporting or statement, never a claim of ours.
+// docs/EVIDENCE.md, "Lenders on the record". Everything here is a paraphrase of someone else's reporting or statement, never a claim of ours.
 //
 // The rules this file keeps (lenders.test.ts checks them): a bank is only ever said to have *said* or *done* what a named source says
 // it did; reporting that rests on anonymous sources says so; a bank that has not spoken, or that denies it, is shown as that, not as

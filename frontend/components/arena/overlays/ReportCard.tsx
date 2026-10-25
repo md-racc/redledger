@@ -1,5 +1,5 @@
 "use client";
-// The end-of-day report (ARCHITECTURE.md, System overview): blue posts one each day (report.posted); with a live backend this shows blue's own text, and with a
+// The end-of-day report (docs/ARCHITECTURE.md, System overview): blue posts one each day (report.posted); with a live backend this shows blue's own text, and with a
 // recording it shows a summary built from that day's events and says so. Owner: Dev R.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";

@@ -155,7 +155,7 @@ class AuditAgent(DroidAgent):
 
     async def _droid_turn(self, req: TurnRequest, emitter: Any) -> tuple[str, Usage | None]:
         # Live audit unlocked: every former readiness blocker carries merged live evidence
-        # (ARCHITECTURE.md, Readiness evidence). Strict identity, the pinned
+        # (docs/ARCHITECTURE.md, Readiness evidence). Strict identity, the pinned
         # tool IDs, TurnLock, receipt-first writes and the bounded budget are unchanged.
         await self._prepare(req)
         return await super()._droid_turn(req, emitter)

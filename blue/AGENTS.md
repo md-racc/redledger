@@ -1,6 +1,6 @@
 # blue/ — working guide for Dev M and any coding agent in this directory
 
-Read the root `README.md` (§§3, 5, 6, 9) and `GIT.md` first. You also own `green/`.
+Read the root `README.md`, `docs/ARCHITECTURE.md` and `GIT.md` first. You also own `green/`.
 
 ## Your job
 
@@ -73,7 +73,7 @@ the ambiguous middle, not as a default. Timeout = block, so escalating legit tra
 
 ## Extension points (grow without a contracts PR)
 
-See README.md (Ledger API overview, extensions). For `blue/` specifically:
+See docs/ARCHITECTURE.md (Routes and extensions). For `blue/` specifically:
 - Memory across turns: `ctx.ledger().get_state("k")` / `put_state("k", {...})`.
 - Inputs: `req.options["inputs"]` is a list of messages left for you (judge, crowd, other agents). Read it in `build_prompt` / `dry_run_turn` if you want to react.
 - Custom events: `ctx.emitter().custom("name", {...})` emits `x.blue.name`; the frontend stores it in `state.custom`.
@@ -90,7 +90,7 @@ empty = you missed it), and battlefield's `/gate` requests carry `playbook_versi
   them during `/audit` (or once per new version). Mock blue in `battlefield/mock_agents/server.py`
   shows the pattern.
 - Your after-action review adds `false_positive` items and precision/recall per rule id; override
-  `reflect(req)` / `dry_run_reflect(req)` to act on it. Contract: `contracts/agent-service.md` (Lineages); runbook: ARCHITECTURE.md (Evolution); design: root `ARCHITECTURE.md` (Evolution).
+  `reflect(req)` / `dry_run_reflect(req)` to act on it. Contract: `contracts/agent-service.md` (Lineages); runbook and design: `docs/ARCHITECTURE.md` (Evolution).
 - Both reflection hooks now deterministically enable four fixed `learned:*` review controls
   from extracted/partial attacks in the supplied AAR. Any legitimate-item impact retires the
   corresponding learned control. Only note-only baseline rules (`vendor_age_lt_7d`,
@@ -110,7 +110,7 @@ empty = you missed it), and battlefield's `/gate` requests carry `playbook_versi
 
 ```
 You are working in the Red Ledger repo, directory `blue/`, as Dev M's coding agent.
-Before any edit: read `blue/AGENTS.md`, `GIT.md` §7, `README.md`, `ARCHITECTURE.md`and
+Before any edit: read `blue/AGENTS.md`, `GIT.md` §7, `README.md`, `docs/ARCHITECTURE.md` and
 `contracts/agent-service.md`, `contracts/events.md`. Confirm `git branch --show-current` starts with `blue/`;
 if not, create `blue/<topic>` from origin/main. Edit only inside `blue/`,
 `battlefield/extensions/blue_*.py`, `contracts/ext/blue/`, and append to `DEVLOG.md`.
