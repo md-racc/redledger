@@ -23,8 +23,14 @@ Keys inside a console: `1`-`4` switch team, `0` the address list, `A` or `Esc` b
 1. **Header**: which laptop this is, the time, whether the battlefield answers (and how fast), which episode it follows,
    events held and per minute, and the laptops the relay can see.
 2. **LIVE CHECKS**: seven lines, each a thing measured this second, `[ OK ]` or `[FAIL]` (`components/backstage/raw.ts`,
-   `liveChecks`): battlefield reachable through the proxy, agents answer `/health`, events arriving (age of the last one), the
-   gate issuing verdicts, the relay up, the arena laptop seen in the last 30 s, API calls passing through the proxy.
+   `liveChecks`): battlefield reachable through the proxy, agents answer `/health`, the event stream delivering, the gate
+   issuing verdicts, the relay up, the arena laptop seen in the last 30 s, API calls passing through the proxy.
+   - *Event stream delivering* fails only when it should: something is running and nothing arrives for 60 s, or neither the
+     socket nor the REST read works (the line then says why). A finished or not-yet-started episode is quiet on purpose and
+     reads `idle: episode finished, 260 events delivered, nothing new to send`. The detail also says how events arrive:
+     `(websocket)`, or `(REST fallback: the websocket would not open)`.
+   - *Arena laptop connected* is red until the arena is open **and signed in as admin** (`/admin` on that laptop): a viewer's
+     arena shows but does not report to the relay.
 3. **DEMO SCREEN**: what the arena laptop has selected, which card is open, the show beat, the controller mode, and the last
    relayed actions. If the selected agent belongs to this console's team, a highlighted line says so, and the matching lines
    further down are highlighted too (`concerns()`: a red scheme id, a blue rule id).
@@ -61,10 +67,15 @@ that from the battlefield itself.
 
 1. `GET /api/health` and `GET /api/episodes` every 2.5 s through the `/api/bf` proxy. The episode that is *running* is followed
    (battlefield allows one active run), else the newest, whoever made it (the arena's show, a curl, the battlefield console). A
-   selector pins another one.
+   selector pins another one. Only a backend that is really gone (network failure, timeout, 5xx) switches to the recorded loop; a
+   refusal (403 not signed in, 401 token, 429 rate limit) is an answer, so the console keeps asking and says what it got:
+   `backend REFUSED 403 ...` and `[FAIL] ... refused, not unreachable: 403 ...`.
 2. When the followed episode changes, the ticketed WebSocket (`lib/ws.ts`) is opened with `after_id=0`, so a laptop that joins
    late still receives the whole episode, then the live tail. The socket address is derived from the page host when
-   `NEXT_PUBLIC_WS_URL` is unset (`lib/wsurl.ts`), which is what keeps the whole thing on one domain behind Caddy.
+   `NEXT_PUBLIC_WS_URL` is unset (`lib/wsurl.ts`), which is what keeps the whole thing on one domain behind Caddy. If two socket
+   attempts in a row deliver nothing (a venue network or proxy that drops the upgrade, a dev server with no `/api/ws`, a ticket
+   that keeps being refused), the same file also reads `GET /events?after_id=` through the proxy every 1.5 s and the header
+   reads `via REST (socket blocked)`; the first frame a socket delivers ends the polling. Both the arena and the consoles use it.
 3. Events go through the same reducer as the arena. `/api/fe` reads add what events do not carry (`snapshot`, `ap_aging`,
    `verdicts`, `verdicts/confusion`, `reports`, `timeline`), every 4 s and right after day ends.
 4. With no battlefield a console loops the recorded episode with fresh timestamps and the first LIVE CHECK says `[FAIL]`, so a
@@ -79,7 +90,9 @@ No token is needed in the browser; all of it goes through the proxy.
 3. Start the show on laptop 1 (`S`). Its episodes, selections and decisions appear on the others within a second or two.
 
 Rehearse with no stack: `npm run dev:live` starts `tools/fake-battlefield.mjs` (a stand-in for the contract, see
-[development.md](development.md)) and the frontend pointed at it.
+[development.md](development.md)) and the frontend pointed at it. Other laptops can open it by this machine's LAN address
+(`http://<its address>:3104/backstage/red`): the dev server has no `/api/ws`, so they read events over REST (the header says so).
+The real socket path is only exercised on the deployed site.
 
 ## Files
 
