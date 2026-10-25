@@ -33,7 +33,6 @@ from faker import Faker
 
 from .. import db
 
-ACCOUNTS = ["5100 Office Supplies", "5200 Logistics", "5300 IT Services", "5400 Facilities", "5500 Professional Services"]
 CATEGORIES = ["office", "logistics", "it", "facilities", "professional", "marketing", "raw_materials"]
 
 ESTABLISHED_AGE = 30  # days: bank-change candidates are at least this old, with no change this recent
