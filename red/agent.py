@@ -36,7 +36,14 @@ def judge_block(options: dict, forced: str | None) -> str:
     asked = judge_requests(options)
     if not asked:
         return ""
-    quoted = [{"text": str(a.get("text", ""))[:500], "language": a.get("language"), "closest_built_in": a.get("closest_built_in")} for a in asked[:3]]
+    quoted = [
+        {
+            "text": str(a.get("text", ""))[:500],
+            "language": a["language"][:16] if isinstance(a.get("language"), str) else None,
+            "closest_built_in": a.get("closest_built_in") if a.get("closest_built_in") in SCHEMES else None,
+        }
+        for a in asked[:3]
+    ]
     rule = (
         "The scheme id is fixed; use the request only to set params allowed by that scheme's params_schema (amounts, counts)."
         if forced
