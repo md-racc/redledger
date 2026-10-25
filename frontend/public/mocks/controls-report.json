@@ -8,33 +8,33 @@
   "current_day": 6,
   "lineage_id": null,
   "generation": null,
-  "created_at": "2026-10-25T04:59:09.327805+00:00",
-  "started_at": "2026-10-25T04:59:09.327805+00:00",
-  "finished_at": "2026-10-25T05:04:59.773269+00:00"
+  "created_at": "2026-10-25T04:59:08.845975+00:00",
+  "started_at": "2026-10-25T04:59:09.326504+00:00",
+  "finished_at": "2026-10-25T05:04:59.772765+00:00"
  },
  "final": true,
- "source": "fixture",
+ "source": "ledger",
  "score": {
-  "legit_blocked": 1,
-  "attacks_caught": 2,
-  "dollars_blocked": 1480.0,
-  "legit_processed": 27,
+  "dollars_extracted": 18526.15,
+  "dollars_blocked": 1480,
+  "false_positive_cost": 50,
+  "detection_latency_days": 0,
   "attacks_launched": 6,
-  "dollars_extracted": 20350.37,
-  "false_positive_cost": 50.0,
-  "detection_latency_days": 0.0
+  "attacks_caught": 2,
+  "legit_blocked": 1,
+  "legit_processed": 19
  },
- "lost": 20350.37,
- "to_attacker_accounts": 18180.0,
- "to_real_parties": 2170.37,
- "unattributed": 0.0,
+ "lost": 18526.15,
+ "to_attacker_accounts": 18180,
+ "to_real_parties": 346.15,
+ "unattributed": 0,
  "totals": {
   "attempted": 27565.92,
-  "extracted": 20350.37,
-  "blocked": 1480.0,
+  "extracted": 18526.15,
+  "blocked": 1480,
   "attacks": 6,
   "schemes": 6,
-  "schemes_with_loss": 4,
+  "schemes_with_loss": 3,
   "controls_seen": 4
  },
  "gate": {
@@ -58,12 +58,12 @@
    "notes": 0,
    "on_fraud": {
     "n": 3,
-    "dollars": 1480.0,
+    "dollars": 1480,
     "stopped": 3
    },
    "on_legit": {
     "n": 0,
-    "dollars": 0.0,
+    "dollars": 0,
     "stopped": 0
    },
    "schemes": [
@@ -85,12 +85,12 @@
    "notes": 0,
    "on_fraud": {
     "n": 1,
-    "dollars": 0.0,
+    "dollars": 0,
     "stopped": 1
    },
    "on_legit": {
     "n": 1,
-    "dollars": 0.0,
+    "dollars": 0,
     "stopped": 1
    },
    "schemes": [
@@ -111,7 +111,7 @@
    "notes": 9,
    "on_fraud": {
     "n": 4,
-    "dollars": 18180.0,
+    "dollars": 18180,
     "stopped": 0
    },
    "on_legit": {
@@ -145,7 +145,7 @@
    "notes": 1,
    "on_fraud": {
     "n": 0,
-    "dollars": 0.0,
+    "dollars": 0,
     "stopped": 0
    },
    "on_legit": {
@@ -167,11 +167,11 @@
    "display_name": "Ghost Vendor",
    "attempts": 1,
    "first_day": 0,
-   "targeted": 4380.0,
-   "extracted": 4380.0,
-   "lost": 4380.0,
-   "to_attacker_accounts": 4380.0,
-   "to_real_parties": 0.0,
+   "targeted": 4380,
+   "extracted": 4380,
+   "lost": 4380,
+   "to_attacker_accounts": 4380,
+   "to_real_parties": 0,
    "outcomes": {
     "extracted": 1,
     "partial": 0,
@@ -200,14 +200,14 @@
    "attempts": 1,
    "first_day": 1,
    "targeted": 1824.22,
-   "extracted": 1824.22,
-   "lost": 1824.22,
-   "to_attacker_accounts": 0.0,
-   "to_real_parties": 1824.22,
+   "extracted": 0,
+   "lost": 0,
+   "to_attacker_accounts": 0,
+   "to_real_parties": 0,
    "outcomes": {
     "extracted": 0,
-    "partial": 1,
-    "blocked": 0,
+    "partial": 0,
+    "blocked": 1,
     "flagged": 0,
     "failed": 0,
     "pending": 0
@@ -224,18 +224,18 @@
     "timeout": 1,
     "open": 0
    },
-   "detection_latency_days": 0.0
+   "detection_latency_days": 0
   },
   {
    "scheme_id": "threshold_split",
    "display_name": "Threshold Splitting",
    "attempts": 1,
    "first_day": 2,
-   "targeted": 13800.0,
-   "extracted": 13800.0,
-   "lost": 13800.0,
-   "to_attacker_accounts": 13800.0,
-   "to_real_parties": 0.0,
+   "targeted": 13800,
+   "extracted": 13800,
+   "lost": 13800,
+   "to_attacker_accounts": 13800,
+   "to_real_parties": 0,
    "outcomes": {
     "extracted": 1,
     "partial": 0,
@@ -266,7 +266,7 @@
    "targeted": 346.15,
    "extracted": 346.15,
    "lost": 346.15,
-   "to_attacker_accounts": 0.0,
+   "to_attacker_accounts": 0,
    "to_real_parties": 346.15,
    "outcomes": {
     "extracted": 1,
@@ -294,10 +294,10 @@
    "attempts": 1,
    "first_day": 4,
    "targeted": 5735.55,
-   "extracted": 0.0,
-   "lost": 0.0,
-   "to_attacker_accounts": 0.0,
-   "to_real_parties": 0.0,
+   "extracted": 0,
+   "lost": 0,
+   "to_attacker_accounts": 0,
+   "to_real_parties": 0,
    "outcomes": {
     "extracted": 0,
     "partial": 0,
@@ -323,11 +323,11 @@
    "display_name": "Ghost Employee",
    "attempts": 1,
    "first_day": 5,
-   "targeted": 1480.0,
-   "extracted": 0.0,
-   "lost": 0.0,
-   "to_attacker_accounts": 0.0,
-   "to_real_parties": 0.0,
+   "targeted": 1480,
+   "extracted": 0,
+   "lost": 0,
+   "to_attacker_accounts": 0,
+   "to_real_parties": 0,
    "outcomes": {
     "extracted": 0,
     "partial": 0,
@@ -348,14 +348,14 @@
     "timeout": 0,
     "open": 0
    },
-   "detection_latency_days": 0.0
+   "detection_latency_days": 0
   }
  ],
  "gaps": [
   {
    "scheme_id": "threshold_split",
    "display_name": "Threshold Splitting",
-   "extracted": 13800.0,
+   "extracted": 13800,
    "why": "note only",
    "controls_on_paid": [
     "vendor_age_lt_7d"
@@ -371,7 +371,7 @@
   {
    "scheme_id": "ghost_vendor",
    "display_name": "Ghost Vendor",
-   "extracted": 4380.0,
+   "extracted": 4380,
    "why": "note only",
    "controls_on_paid": [
     "vendor_age_lt_7d"
@@ -380,20 +380,6 @@
    "audit_detected": false,
    "paid_entity_ids": [
     "inv_07b39eea5327"
-   ]
-  },
-  {
-   "scheme_id": "bank_swap",
-   "display_name": "Bank Account Swap",
-   "extracted": 1824.22,
-   "why": "no control fired",
-   "controls_on_paid": [],
-   "caught_elsewhere": [
-    "bank_change_with_open_invoices"
-   ],
-   "audit_detected": false,
-   "paid_entity_ids": [
-    "inv_79f7316f81e8"
    ]
   },
   {
@@ -410,7 +396,7 @@
   }
  ],
  "false_positives": {
-  "cost": 50.0,
+  "cost": 50,
   "legit_blocked": 1,
   "legit_escalated": 0,
   "total_items": 1,
@@ -418,15 +404,15 @@
    {
     "entity_type": "vendor_change",
     "entity_id": "vch_1cc86595ec7c",
-    "amount": 0.0,
+    "amount": 0,
     "verdict": "block",
     "rules": [
      "bank_change_with_open_invoices"
     ],
-    "reason": "Needs independent verification \u2014 Destination change overlaps open invoices; independently verify before approval.",
+    "reason": "Needs independent verification — Destination change overlaps open invoices; independently verify before approval.",
     "day": 2,
     "enforced": true,
-    "cost": 50.0,
+    "cost": 50,
     "verdict_ids": [
      "vd_891e87005158"
     ]
@@ -434,7 +420,7 @@
   ],
   "penalty": {
    "rate": 0.02,
-   "flat": 50.0
+   "flat": 50
   }
  },
  "audit": {
@@ -452,8 +438,7 @@
     "atk_4ee701711332"
    ],
    "entity_ids": [
-    "inv_07b39eea5327",
-    "ven_43058926319e"
+    "inv_07b39eea5327"
    ],
    "verdict_ids": [
     "vd_a3f6b3480aac",
@@ -489,7 +474,8 @@
    "entity_ids": [
     "inv_33008737ab5b",
     "inv_b6f1aa010ef2",
-    "inv_e138853bb3bd"
+    "inv_e138853bb3bd",
+    "ven_43058926319e"
    ],
    "verdict_ids": [
     "vd_366c8b5ba27b",

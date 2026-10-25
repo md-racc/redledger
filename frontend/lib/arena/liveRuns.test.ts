@@ -40,10 +40,17 @@ describe("the live-run summary", () => {
     expect(on.attacks_caught).toBe(1);
     expect(on.attacks_launched).toBe(10);
     expect(on.false_positive_cost).toBe(100);
-    expect(summary.runs.enforce.controls_report?.note).toMatch(/decoy/);
+    expect(summary.runs.enforce.controls_report?.note).toMatch(/paid to the real vendor, not the attacker/);
     // the per-day bars never show the decoy as a loss
     expect(lostByDay(summary.runs.enforce).every((d) => d.lost === 0)).toBe(true);
     expect(lostByDay(summary.runs.off).at(-1)!.lost).toBe(summary.runs.off.score.dollars_extracted);
+  });
+
+  it("says what judges read in plain words: no PR numbers, never the superseded $1,824.22", () => {
+    const shown = [summary.note, ...[summary.runs.off, summary.runs.enforce].flatMap((r) => [r.controls_report?.note, r.controls_report?.source])].join(" ");
+    expect(shown).not.toMatch(/#\d/);
+    expect(shown).not.toMatch(/1,?824/);
+    expect(shown).not.toMatch(/keyless/);
   });
 
   it("falls back to the recording's scoreboard when a run has no controls-report figures", () => {

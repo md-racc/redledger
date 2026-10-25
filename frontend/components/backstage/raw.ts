@@ -59,7 +59,8 @@ export function concerns(e: RLEvent, selectedId: string | null | undefined): boo
   return false;
 }
 
-export interface Check { ok: boolean | null; label: string; detail: string }
+/** `adminOnly`: a check a viewer cannot make (the relay answers admins only): neutral, never a failure. */
+export interface Check { ok: boolean | null; label: string; detail: string; adminOnly?: boolean }
 
 export interface CheckInput {
   mode: "connecting" | "live" | "recorded";
@@ -80,6 +81,8 @@ export interface CheckInput {
   /** status of the followed episode, and how many of its events this window holds: an episode that is not running has nothing new to say */
   episodeStatus?: string | null;
   eventsHeld?: number;
+  /** this browser is a viewer: the relay and the laptops on it are admins' business, so those checks read "admin only", not FAIL */
+  viewer?: boolean;
 }
 
 /** "Is the event stream delivering?" A quiet stream is a fault only when something is running, or when no way in works. */
@@ -109,13 +112,25 @@ export function liveChecks(i: CheckInput): Check[] {
   const arena = clients.find((c) => c.role === "arena");
   const age = (t: number | null) => (t == null ? "never" : `${Math.max(0, Math.round((i.now - t) / 1000))}s ago`);
   const agentList = i.agents ? Object.entries(i.agents) : [];
+  // the relay answers admins only (app/api/sync): for a viewer, what it would tell is not a fault, just not theirs to see
+  const adminOnly = i.viewer || i.sync.link === "admins";
+  const hidden = (label: string): Check => ({ ok: null, label, detail: "admin only", adminOnly: true });
   return [
     { ok: live ? true : i.replaying ? null : false, label: "battlefield reachable through the /api/bf proxy", detail: live ? `GET /health 200 in ${i.healthMs ?? "?"}ms` : i.mode === "connecting" ? (i.answer ? `refused, not unreachable: ${i.answer}` : "connecting") : i.replaying ? "not asked: replaying the recorded live-red run" : "no answer: showing the recorded loop" },
     { ok: live ? agentList.length > 0 && agentList.every(([, a]) => a?.ok !== false) : null, label: "agents answer /health", detail: agentList.map(([k, a]) => `${k}:${a?.ok === false ? "down" : "up"}`).join(" ") || "-" },
     streamCheck(i, age),
     { ok: i.verdicts > 0 ? true : null, label: "the gate is issuing verdicts", detail: `${i.verdicts} gate.verdict events` },
-    { ok: i.sync.link === "stream" ? true : i.sync.link === "polling" ? null : false, label: "relay to the other laptops", detail: i.sync.link === "admins" ? "admins only (sign in at /admin)" : `${i.sync.link}, last item ${Math.max(0, Math.round(i.sync.quietMs / 1000))}s ago` },
-    { ok: arena ? true : false, label: "arena laptop connected", detail: arena ? `${arena.id}, spoke ${Math.max(0, Math.round((i.now - new Date(arena.last).getTime()) / 1000))}s ago` : "not seen in the last 30 s: open the arena on the first laptop and sign in at /admin (a viewer's arena shows but does not report)" },
+    adminOnly ? hidden("relay to the other laptops") : { ok: i.sync.link === "stream" ? true : i.sync.link === "polling" ? null : false, label: "relay to the other laptops", detail: `${i.sync.link}, last item ${Math.max(0, Math.round(i.sync.quietMs / 1000))}s ago` },
+    adminOnly ? hidden("arena laptop connected") : { ok: arena ? true : false, label: "arena laptop connected", detail: arena ? `${arena.id}, spoke ${Math.max(0, Math.round((i.now - new Date(arena.last).getTime()) / 1000))}s ago` : "not seen in the last 30 s: open the arena on the first laptop and sign in at /admin (a viewer's arena shows but does not report)" },
     { ok: i.trafficCount > 0 ? true : null, label: "API calls passing through the proxy", detail: `${i.trafficCount} calls logged` },
   ];
+}
+
+/** The judging-hour demo plan: red's scheme pinned per day to ones that move the scoreboard on screen (an escalation,
+ *  blocked invoices, an expense that slips through). Unplanned, red mostly repeats duplicate invoices that never resolve.
+ *  Red still runs live; a judge's attack still takes over its next turn. */
+export const DEMO_PLAN_CYCLE = ["bank_swap", "threshold_split", "ghost_vendor", "ghost_employee", "expense_inflation", "po_mismatch"] as const;
+export function demoPlan(days: number): { day: number; scheme_id: string }[] {
+  const n = Math.max(0, Math.min(365, Math.floor(days)));
+  return Array.from({ length: n }, (_, day) => ({ day, scheme_id: DEMO_PLAN_CYCLE[day % DEMO_PLAN_CYCLE.length]! }));
 }
