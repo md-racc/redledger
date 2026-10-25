@@ -10,10 +10,13 @@
 import { BLUE_RULES, GREEN_ROSTER, RED_SCHEMES, TEAM_META, greenIdFor, ROSTER_BY_ID, blueIdForRule } from "./roster";
 import type { AgentDetailOverrides, AgentDetails, DetailField, DetailSection } from "./types";
 import type { Attack, UIState } from "../types";
+import { creditsLabel, creditsOf, modelLabel, type RuntimeHealth, type Team } from "./runtime";
 
 export interface Catalogs {
   schemes?: { id: string; display_name?: string; story?: string; params_schema?: { properties?: Record<string, unknown> }; expected_impact?: { min: number; max: number } }[] | null;
   vendors?: { id: string; name?: string; category?: string; status?: string; risk_score?: number; lifetime_paid?: number; invoice_count?: number; blocked_count?: number; created_day?: number }[] | null;
+  /** the agents' runtime from `GET /health` (AgentModal fetches it: lib/arena/runtime.ts `useAgentRuntime`) */
+  runtime?: RuntimeHealth;
 }
 
 const f = (key: string, label: string, value: DetailField["value"], source: string, kind: DetailField["kind"] = "text"): DetailField => ({ key, label, value, source, kind });
@@ -27,7 +30,7 @@ export function buildDetails(id: string, state: UIState, catalogs: Catalogs = {}
   const live = state.episodeId != null;
   let d: AgentDetails;
   if (spec.team === "red") d = redDetails(id, state, catalogs, live);
-  else if (spec.team === "blue") d = blueDetails(id, state, live);
+  else if (spec.team === "blue") d = blueDetails(id, state, catalogs, live);
   else d = greenDetails(id, state, catalogs, live);
   return applyOverrides(d, overrides[id]);
 }
@@ -66,18 +69,14 @@ function redDetails(id: string, s: UIState, c: Catalogs, live: boolean): AgentDe
         f("latency", "Detection latency (days)", live ? (latency == null ? "–" : latency.toFixed(1)) : undefined, "attack.outcome → detected_day"),
         f("last_attack", "Latest attack", last?.attack_id, "event attack.launched → attack_id", "mono"),
       ]),
-      sec("Runtime", [
-        f("model", "Droid model", undefined, "GET /health → red.model", "mono"),
-        f("credits", "Factory credits (today)", undefined, "turn.ended → factory_credits", "int"),
-        f("turn", "Last turn summary", s.turns.filter((t) => t.agent === "red" && t.ended).at(-1)?.summary, "turn.ended → summary"),
-      ]),
+      runtimeSection("red", s, c, "Runtime"),
     ],
   };
 }
 
 // ---- blue: guards -------------------------------------------------------------------------------------------------
 
-function blueDetails(id: string, s: UIState, live: boolean): AgentDetails {
+function blueDetails(id: string, s: UIState, c: Catalogs, live: boolean): AgentDetails {
   const key = id.slice(5);
   const def = BLUE_RULES.find((r) => r.key === key)!;
   const mine = s.verdicts.filter((v) => (v.rules_fired ?? []).some((r) => blueIdForRule(r) === id));
@@ -115,6 +114,7 @@ function blueDetails(id: string, s: UIState, live: boolean): AgentDetails {
         f("true_blocks", "True blocks", undefined, "GET /fe/episodes/{ep}/verdicts/rules (origin = red)", "int"),
         f("false_blocks", "False positives", undefined, "GET /fe/episodes/{ep}/verdicts/rules (origin = sim)", "int"),
       ]),
+      runtimeSection("blue", s, c, "Blue agent runtime"),
     ],
   };
 }
@@ -154,11 +154,22 @@ function greenDetails(id: string, s: UIState, c: Catalogs, live: boolean): Agent
         f("at_risk", "Dollars at risk", live ? sum(targeted, (a) => a.target_amount) : undefined, "attack.launched → target_amount", "money"),
         f("lost", "Dollars lost", live ? sum(targeted, (a) => a.amount_extracted) : undefined, "attack.outcome → amount_extracted", "money"),
       ]),
+      runtimeSection("green", s, c, "Green agent runtime"),
     ],
   };
 }
 
 // ---- helpers ------------------------------------------------------------------------------------------------------
+
+/** The team agent's model (GET /health) and Factory credits (turn.ended). A figure speaks for its team's agent. */
+function runtimeSection(team: Team, s: UIState, c: Catalogs, title: string): DetailSection {
+  const h = c.runtime?.[team];
+  return sec(title, [
+    f("model", "Droid model", modelLabel(h), `GET /health → agents.${team}.model`, "mono"),
+    f("credits", "Factory credits (episode)", creditsLabel(creditsOf(s, team), h), "turn.ended → factory_credits"),
+    f("turn", "Last turn summary", s.turns.filter((t) => t.agent === team && t.ended).at(-1)?.summary, "turn.ended → summary"),
+  ]);
+}
 
 const sum = <T,>(xs: T[], fn: (x: T) => number) => xs.reduce((n, x) => n + (fn(x) || 0), 0);
 

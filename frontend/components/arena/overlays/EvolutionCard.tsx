@@ -1,31 +1,35 @@
 "use client";
 // "Then they learn": the lineage report (README §15) as a strip of generations. Each generation shows what red tried, what
 // blue's rules caught, and what each agent rewrote in its playbook afterwards. Driven by the show's clock, or all at once in
-// free play. Pulses the agents a note is about in the arena. Owner: Dev R.
+// free play. Pulses the agents a note is about in the arena. Owner: Dev R (Ad since 2026-10-25).
+// Which lineage: `?lineage=<id>`, else the pinned showcase lineage, else the newest finished one (lib/arena/lineage.ts).
 import { useEffect, useRef, useState } from "react";
 import { money } from "@/lib/arena/headlines";
-import { evolvedIn, learnedIn, loadLineageReport, notesAfter, retiredIn, type EvoAgent, type GenReport, type LineageReport } from "@/lib/arena/lineage";
+import { blueControlsAfter, cardLineage, evolvedIn, loadLineageReport, notesAfter, prettyId, visibleGenerations, type EvoAgent, type GenReport, type LineageReport, type LoadedLineage } from "@/lib/arena/lineage";
 import { subscribeShowClock } from "@/lib/arena/showClock";
 import { useArena } from "@/lib/arena/store";
 import { Raw } from "./Raw";
 
-const pretty = (s: string) => s.replace(/^learned:/, "").replace(/^evolved:/, "").replace(/_/g, " ");
+const pretty = prettyId;
 const TONE: Record<EvoAgent, "red" | "blue" | "green"> = { red: "red", blue: "blue", green: "green" };
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
-export function EvolutionCard({ open, driven, preferLive, onClose }: { open: boolean; driven: boolean; preferLive: boolean; onClose: () => void }) {
-  const [loaded, setLoaded] = useState<Awaited<ReturnType<typeof loadLineageReport>> | null>(null);
+/** `initial`: a report already in hand (tests, a host that fetched it): shown at once, not fetched. */
+export function EvolutionCard({ open, driven, preferLive, onClose, initial }: { open: boolean; driven: boolean; preferLive: boolean; onClose: () => void; initial?: LoadedLineage }) {
+  const [got, setGot] = useState<{ l: LoadedLineage; live: boolean } | null>(initial ? { l: initial, live: preferLive } : null);
+  const loaded = got?.l ?? null;
   const [p, setP] = useState(1);
   const pulsed = useRef(new Set<string>());
   const cols = useRef<HTMLDivElement>(null);
   const pulse = useArena((s) => s.actions.pulse);
 
   useEffect(() => {
-    if (!open || loaded) return;
+    // load once per backend state: a backend that comes up after the sample was shown replaces it with the live lineage
+    if (!open || (got && got.live === preferLive)) return;
     let dead = false;
-    void loadLineageReport(preferLive).then((l) => { if (!dead) setLoaded(l); });
+    void loadLineageReport(preferLive, cardLineage()).then((l) => { if (!dead) setGot({ l, live: preferLive }); });
     return () => { dead = true; };
-  }, [open, loaded, preferLive]);
+  }, [open, got, preferLive]);
 
   // the show's clock steps through the generations; free play shows them all
   useEffect(() => {
@@ -36,7 +40,7 @@ export function EvolutionCard({ open, driven, preferLive, onClose }: { open: boo
   }, [open, driven]);
 
   const report = loaded?.report;
-  const gens = report ? report.generations.slice(-4) : [];
+  const { shown: gens, hidden } = visibleGenerations(report?.generations ?? []);
   const n = Math.max(1, gens.length);
   const reveal = (i: number) => (driven ? clamp01(p * n - i) : 1);
   const current = driven ? Math.min(n - 1, Math.floor(p * n)) : -1;
@@ -60,16 +64,18 @@ export function EvolutionCard({ open, driven, preferLive, onClose }: { open: boo
     <section className={`evo ${open ? "is-open" : ""}`} role="dialog" aria-label="Evolution across generations" aria-hidden={!open}>
       <header>
         <span className="cmp-kicker">Evolution{report ? ` · ${report.lineage.name || report.lineage.id}` : ""}</span>
-        {loaded && <span className="evo-src">{loaded.source === "live" ? "live lineage" : "recorded lineage"}</span>}
+        {loaded && <span className="evo-src" title={loaded.note}>{loaded.source === "live" ? "live lineage" : "synthetic sample"}</span>}
+        {loaded?.note && <span className="evo-quiet">{loaded.note}</span>}
         <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
       </header>
       {open && !report && <p className="evo-wait">Loading the lineage…</p>}
+      {open && report && hidden > 0 && <p className="evo-quiet" style={{ padding: "8px 16px 0" }}>{report.generations.length} generations: showing generation {gens[0].generation} and the last {gens.length - 1} ({hidden} in between hidden)</p>}
       {open && report && (
         <div ref={cols} className="evo-cols" style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}>
           {gens.map((g, i) => <Generation key={g.generation} g={g} report={report} k={reveal(i)} max={maxMoney(gens)} />)}
         </div>
       )}
-      {open && report && <footer>Between generations each agent gets a debrief and updates its playbook: red re-weights what paid, blue switches on the controls it has pre-written. Nobody sees another agent&apos;s playbook, only its behaviour.<Raw data={{ source: loaded?.source, lineage: report.lineage, generations: gens.map((g) => ({ generation: g.generation, episode_id: g.episode_id, status: g.status, score: g.score })) }} /></footer>}
+      {open && report && <footer>Between generations each agent gets a debrief and updates its playbook: red re-weights what paid, blue switches on the controls it has pre-written. Nobody sees another agent&apos;s playbook, only its behaviour.<Raw data={{ source: loaded?.source, note: loaded?.note, lineage: report.lineage, generations: gens.map((g) => ({ generation: g.generation, episode_id: g.episode_id, status: g.status, score: g.score })) }} /></footer>}
     </section>
   );
 }
@@ -80,8 +86,7 @@ function Generation({ g, report, k, max }: { g: GenReport; report: LineageReport
   const notes = notesAfter(report, g.generation);
   const mix = Object.entries(g.red_mix);
   const evolved = evolvedIn(report, g.generation);
-  const learned = learnedIn(report, g.generation);
-  const retired = retiredIn(report, g.generation);
+  const controls = blueControlsAfter(report, g.generation);
   const versions = (a: EvoAgent) => Math.max(0, ...(report.playbooks[a] ?? []).filter((v) => v.generation <= g.generation).map((v) => v.version));
   return (
     <article className="evo-col" style={{ opacity: 0.18 + 0.82 * clamp01(k * 4), transform: `translateY(${(1 - clamp01(k * 4)) * 14}px)` }}>
@@ -114,8 +119,9 @@ function Generation({ g, report, k, max }: { g: GenReport; report: LineageReport
               </p>
             ))}
             {evolved.map((e) => <p key={e.scheme_id} className="note tone-red"><b>new scheme</b><span>{pretty(e.scheme_id)}, evolved from {pretty(e.parent)}</span></p>)}
-            {learned.length > 0 && <p className="note tone-blue"><b>controls switched on</b><span>{learned.map(pretty).join(", ")}</span></p>}
-            {retired.length > 0 && <p className="note tone-blue"><b>controls retired</b><span>{retired.map(pretty).join(", ")}</span></p>}
+            {controls.on.length > 0 && <p className="note tone-blue"><b>{controls.basis === "playbook" ? "controls switched on" : "rules first fired"}</b><span>{controls.on.map(pretty).join(", ")}</span></p>}
+            {controls.off.length > 0 && <p className="note tone-blue"><b>controls switched off</b><span>{controls.off.map(pretty).join(", ")}</span></p>}
+            {controls.quiet.length > 0 && <p className="note tone-blue"><b>not fired after this generation</b><span>{controls.quiet.map(pretty).join(", ")}</span></p>}
           </div>
         </>
       )}

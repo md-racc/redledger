@@ -1,0 +1,1 @@
+- 2026-10-25T07:11Z · Ad · docs: SUBMISSION.md quotes the live prod controls reports (#207 rescoring: #136 enforce $0, #193 enforce $18,526); next: controls-report per-scheme fix; blocked: none

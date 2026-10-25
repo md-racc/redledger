@@ -31,7 +31,8 @@ SCHEME            scheme_id ............ ghost_vendor
                   Expected impact ...... ○ GET /schemes → expected_impact
 THIS EPISODE      Attempts ............. 1
                   Targeted ............. $4,920
-RUNTIME           Droid model .......... ○ GET /health → red.model
+RUNTIME           Droid model .......... gpt-5.4-mini            (GET /health → agents.red.model)
+                  Factory credits ...... 1,240 over 3 turns · 410 today
 ```
 
 A row whose value is missing renders the dashed `○ <source>` pill. The source is the endpoint or event field the value
@@ -91,6 +92,7 @@ Values may be numbers or strings; numbers are formatted by the row's kind (`mone
 | Rule | `rule_id`, `severity`, `policy`, `mode` |
 | Verdicts this episode | `fired`, `blocks`, `escalations`, `blocked_amount`, `confidence`, `last_reason` |
 | Scorecard | `true_blocks`, `false_blocks` (need `origin`, from `/fe/episodes/{ep}/verdicts/rules`; left as placeholders on purpose) |
+| Blue agent runtime | `model`, `credits`, `turn` |
 
 **Green** (client)
 
@@ -99,10 +101,23 @@ Values may be numbers or strings; numbers are formatted by the row's kind (`mone
 | Counterparty | `name`, `category`, `ein`, `bank`, `created` |
 | Books | `risk`, `paid`, `invoices`, `blocked` |
 | Exposure this episode | `targeted`, `at_risk`, `lost` |
+| Green agent runtime | `model`, `credits`, `turn` |
 
-`ein`, `bank`, `true_blocks`, `false_blocks`, `model` and `credits` are never filled from the live stream: they need
-operator-only endpoints, and `origin` is ground truth the audience must not see during a live run (`frontend/AGENTS.md`).
-Pass them through `agentDetails` for the reveal.
+`ein`, `bank`, `true_blocks` and `false_blocks` are never filled from the live stream: they need operator-only endpoints,
+and `origin` is ground truth the audience must not see during a live run (`frontend/AGENTS.md`). Pass them through
+`agentDetails` for the reveal.
+
+### Runtime rows (every team)
+
+A figure speaks for its team's agent, so each dossier ends with that agent's runtime (`lib/arena/runtime.ts`):
+
+- **Droid model**: from `GET /api/bf/health` → `agents.<team>.{model, droid_ok, dry_run}`, fetched while a dossier is open
+  (shared, kept 30 s; never in `NEXT_PUBLIC_MOCK=true`). A `dry_run` agent shows **keyless (DRY_RUN)**, whatever model is
+  configured, because it never calls one (on prod today: green). `droid_ok: false` on a keyed agent shows
+  `<model> · Droid unavailable`. No health answer → the usual placeholder naming the source.
+- **Factory credits (episode)**: the sum of the team's `turn.ended → factory_credits` in the reducer state, with today's share.
+  A keyless agent's turns carry `null` and show `0 · keyless (DRY_RUN), n turns`; without health it says `none reported`.
+- **Last turn summary**: the team's newest `turn.ended → summary`.
 
 ## Adding a field
 
