@@ -356,9 +356,10 @@ From the internet inward:
     `resolve`, `score`, `credits`, `record`, `fixtures`, `evolve`, `lineage-status|pause|resume|wait|export`,
     `evolution-report`.
 - **Going live one agent at a time.** `DRY_RUN_RED/GREEN/BLUE` override `DRY_RUN` per agent through compose,
-  render-env and deploy. Red went live first (`deploy/PROD-OPS.md` "Going live: red only"); blue's audit followed on
-  2026-10-25. Prod today: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=false`. Read `dry_run` in
-  `make prod-health`, not blue's `droid_ok` (it reads false while live; a display bug).
+  render-env and deploy. Red went live first (`deploy/PROD-OPS.md` "Going live: red, then blue's audit"); blue's audit
+  followed on 2026-10-25. Prod today: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=false`, visible as
+  `dry_run` in `make prod-health`. Blue's `droid_ok` always read false before #176; from the deploy containing
+  6640354 it is truthful.
 - **Record / replay** (#43). `POST /api/replays/{id}/play` re-emits a fixture as a real `replay_*` episode with fresh
   event IDs, so WebSocket catch-up, `GET /events` and the event-derived `/fe` views all work. Safeguards:
   - fixture names must match the listing, and symlinks can't escape the fixtures dir
@@ -610,8 +611,8 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
   p95 8.04 ms, max 56.6 ms, 1,817 samples), not on prod.
 - "Green and blue run their full logic." Caveat: green is keyless on prod (`DRY_RUN_GREEN=true`). Blue's audit is live
   on Droid, but blue's gate verdicts come from its deterministic rules and learned controls, not an LLM.
-- Blue's credits: quote `turn_usage` (3,806 / 4,109), not `make prod-credits` (battlefield's per-episode total shows
-  blue as 0 today) or `/health` `droid_ok` (reads false while live; a display bug).
+- Blue's credits: for the smoke episode quote `turn_usage` (3,806 / 4,109). It predates #176, so `make prod-credits`
+  shows blue as 0 there and `droid_ok` read false. From the deploy containing 6640354 both are truthful for blue.
 - "TimescaleDB hypertables and a continuous aggregate." Caveat: CI-proven; prod is plain Postgres 16 (P5).
 - "Agents learn across generations." Caveat: with live red on prod (`ln_f52a3df83c8d`), red adapted and blue's bounded
   learning didn't keep up. The closed-loop numbers (blue catches 5/5 in g3) are a keyless mock-agent lineage
@@ -674,7 +675,7 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
    the real backend. Green runs keyless there.
 10. **"How do you control model spend?"** A per-episode credit guard pauses the episode at `MAX_CREDITS_PER_EPISODE`,
     with exactly one more paid turn after a resume. Prod runs `MAX_CREDITS_PER_EPISODE=375000`; a live-red 10-day
-    episode spends ~25k on red. Blue's live audit adds ~4k a day that battlefield's total doesn't count yet. Lineages need their own cap (`prod-evolve` refuses without `MAX_CREDITS=`). One active run at a time.
+    episode spends ~25k on red. Blue's live audit adds ~4k a day, which counts toward the cap from the deploy containing 6640354 (before #176 it was recorded as 0). Lineages need their own cap (`prod-evolve` refuses without `MAX_CREDITS=`). One active run at a time.
 11. **"How do you deploy and roll back?"** Merge to `main` builds five images tagged with the SHA. An approval-gated
     job renders `.env` from the `production` environment and rolls compose. Roll back with `git revert` + merge, or by
     re-running an older deploy run (README §17).

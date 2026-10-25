@@ -264,12 +264,13 @@ not enabled on prod.
 - Per-turn `factory_credits` is logged at INFO (`turn_usage`) and returned in `usage`; battlefield
   pauses an episode at `MAX_CREDITS_PER_EPISODE` (`battlefield/app/orchestrator/runner.py`, 0 =
   off) and a lineage at `config.max_credits`; `make prod-evolve` refuses to start without
-  `MAX_CREDITS=`. Battlefield's per-episode total doesn't count blue's audit usage yet (it shows
-  blue as 0), so that pause sees red only; blue's spend is in its own `turn_usage` log lines.
+  `MAX_CREDITS=`. Blue's `/audit` returns its `usage` too (#174, #176), so from the deploy
+  containing 6640354 blue's live-audit credits count toward both caps and `make prod-credits`.
+  Before #176 battlefield recorded blue's audit as 0 credits.
 - Per-agent `DRY_RUN_RED/GREEN/BLUE` (`deploy/render-env.sh`, `.github/workflows/deploy.yml`)
-  is how prod runs red and blue's audit live while green stays keyless. Blue's `/health` reports
-  `droid_ok: false` even when its audit runs live (a display bug: `health()` calls
-  `live_readiness()` with no arguments); use `dry_run` and `turn_usage`, not `droid_ok`.
+  is how prod runs red and blue's audit live while green stays keyless. Before #176 blue's
+  `/health` always reported `droid_ok: false`; from the deploy containing 6640354 it reports
+  truthfully whether the SDK is installed (a metadata check, never a probe).
 
 ---
 

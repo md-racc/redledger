@@ -45,8 +45,9 @@ Not submitting, or drop the claim:
 - Blue's daily audit runs live on Droid on prod since 2026-10-25 ~03:05Z (`DRY_RUN_BLUE=false`,
   `DROID_MODEL_BLUE=gpt-5.4-mini`; #157 lifted the guard, #169 fails the image build without the SDK). Smoke
   `ep_f9c695b3144f` (2-day enforce): a live audit both days, 3,806 and 4,109 Factory credits (blue's `turn_usage`
-  log). Battlefield's per-episode credit total doesn't count blue's audit yet, so don't quote `prod-credits` for
-  blue, and don't cite blue's `/health` `droid_ok` (it reads false while live; a display bug).
+  log). Before #176 battlefield recorded blue's audit as 0 credits and blue's `/health` `droid_ok` always read
+  false (so `prod-credits` shows blue as 0 for the smoke). From the deploy containing 6640354, `/audit` returns
+  `usage` (#174), blue's credits count toward the episode and lineage caps, and `droid_ok` is truthful.
 - Blue's gate is still rules plus learned controls, no LLM: some block, some escalate to a human (bank changes), and
   some only annotate (`vendor_age_lt_7d`, `near_threshold`). Real blue does **not** stop every red attack; see
   hyphenate.md §8.
