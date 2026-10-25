@@ -356,6 +356,7 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 | `MAX_CREDITS_PER_EPISODE` | `0` (off) | e.g. `40`; variable |
 | `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | blank (origin Access check off) | variables; both set = Cloudflare Access enforced at the origin; both blank = public read-only mode, which requires `ADMIN_KEY` |
 | `ADMIN_KEY` | blank (everyone is admin in dev/mock) | secret, ≥ 32 chars, distinct from every token; signs the frontend admin cookie (`/admin`), so only admins can start runs, launch attacks or resolve escalations. Unset in production = nobody is admin; rotating it logs admins out |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_STT_MODEL` | blank (voice off; typing a scheme still works) | secret / optional variable (default `scribe_v2`); ElevenLabs speech-to-text for the voice attack console (#154), approved 2026-10-25; the transcribe route is admin-only |
 | `DOMAIN`, `CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` | n/a / `.env.example` defaults | variables (`CORS_ORIGINS`, `NEXT_PUBLIC_WS_URL` default from `DOMAIN`) |
 | `GITHUB_REPO` | n/a | not settable (GitHub reserves `GITHUB_`); `deploy.yml` passes `github.repository` |
 | `DATABASE_URL`, `POSTGRES_*` | compose default | compose default (Postgres not exposed) |
