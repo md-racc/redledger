@@ -40,6 +40,8 @@ npm run typecheck && npm run lint && npm test && npm run build
 | `lib/arena/show.test.ts` | the 90-second show: beat table, order, tour scroll, pause, jumps, captions (with a fake host) |
 | `lib/arena/showScripts.test.ts` | the script runner (holds for a human), the controller-off projection, the escalation and its approve / block outcomes |
 | `lib/arena/localAttack.test.ts`, `headlines.test.ts`, `pacer.test.ts`, `compare.test.ts` | the offline attack simulator by mode, feed headlines, the live event pacer, the compare pair |
+| `lib/markdown.test.ts`, `lib/arena/report.test.ts`, `thinking.test.ts`, `provenance.test.ts` | the markdown reader (no markup leaks), the report days and fallback summary, reasoning per agent, the LIVE / RECORDED badge |
+| `lib/voice/*.test.ts` | the voice feature: WAV encoder, the ElevenLabs call and its errors, the closest-scheme matcher (eight schemes, accents), the pause detector, the example sentences, the admin-only route |
 | `components/backstage/derive.test.ts`, `raw.test.ts` | what the backstage consoles derive from the event stream; their event / traffic lines, which lines the arena's selection points at, the live checks |
 | `lib/sync/hub.test.ts`, `lib/wsurl.test.ts` | the cross-laptop relay (state, ordering, sanitising, bounds, who is on stage); the same-domain socket address |
 | `lib/reducer.test.ts`, `lib/proxy.test.ts`, `lib/access.test.ts` | the existing suites |

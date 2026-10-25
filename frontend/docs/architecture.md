@@ -87,3 +87,10 @@ host page or the console.
 - Scores are never computed client-side; the HUD renders `score.updated`.
 - `origin` (ground truth) is never shown.
 - Everything works with `NEXT_PUBLIC_MOCK=true` and no backend.
+
+## Cards and what they read
+
+The HUD's cards (Compare, Evolution, Report) are panels in the arena store (`panel`), mounted in `ArenaExperience`, and read the same
+`UIState` the reducer builds. Pure logic lives in `lib/` and is tested without a browser: `lib/markdown.ts` (a safe markdown reader),
+`lib/arena/report.ts` (the report days and the fallback summary), `lib/arena/thinking.ts` (reasoning per agent), `lib/arena/provenance.ts`
+(LIVE / RECORDED / SHOW / REPLAY and each agent's mode).
