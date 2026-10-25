@@ -13,7 +13,7 @@ Seed 42, 6 days, with **red and blue's audit live on Droid** (`gpt-5.4-mini`) an
 | `demo-off-redblue-live.jsonl` | `ep_89d1df6b012a` | `off` | 6 / 0 | $23,681.43 | $0 | $0 | 16,038 / 66,422 |
 | `demo-enforce-redblue-live.jsonl` | `ep_d9b561111d60` | `enforce` | 6 / 2 | $20,350.37 | $1,480.00 | $50 | 14,206 / 37,446 |
 
-Honest reading: with the controller on, blue caught 2 of the 6 schemes. The splitting, drift and inflation schemes still got through. That is the gap P8 (#175) targets.
+Honest reading: with the controller on, blue caught 2 of the 6 schemes. The splitting, drift and inflation schemes still got through. That is the gap P8 (#175) targets. At recording time, blue's live-audit `raise_flag` calls were being refused on prod by agentkit's strict tool identity check (under investigation), so these catches come from the gate rules, not from audit flags.
 
 ## Red live only (2026-10-24)
 
