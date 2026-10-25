@@ -1,6 +1,6 @@
 # Pitch: the 5-minute judging talk
 
-The video script is in [SCRIPT.md](SCRIPT.md). Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md](EVIDENCE.md). If a line here disagrees with STORY.md, STORY.md wins: change it there first.
+Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md](EVIDENCE.md). If a line here disagrees with STORY.md, STORY.md wins: change it there first.
 
 **Rules for every speaker:**
 - Never call a block a catch unless the card shows a rule. A fail-safe block, when blue is unreachable, is labelled as one. Read the reason line before you narrate it.
@@ -100,5 +100,4 @@ The video script is in [SCRIPT.md](SCRIPT.md). Everything here is cut from [STOR
 - **Microsoft:** It's built to run like a real product: hosted, CI-gated, isolated per agent, public, and running live adversarial episodes in production since Saturday.
 - **CRS:** Ghost employees are real payroll fraud. Blue checks identities against CRS. In a live production run, an identity mismatch got that employee's next expense blocked at the gate.
 - **Armadin:** The attacker is the engine. It's an agent with an insider's view that picks its schemes, adapts between generations, and found a gap our defenders missed.
-- **Atlassian (Security for agents):** Every action an agent takes is checked before it happens, in the system of record, and logged with its inputs and reasoning. The guardrail sits outside the agent, where no prompt can reach it.
 - **Most Technically Advanced:** The hard part was the protocol. The agent learns the verdict before it acts, with no second source of truth. Agents learn across generations without ever seeing which rows are fraud during play.

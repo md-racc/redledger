@@ -4,7 +4,7 @@ The Devpost "About the project" text, cut from [STORY.md](STORY.md); every numbe
 
 Prize checkboxes to tick on Devpost: Hyphenate (Autonomous Systems for Finance), Factory (Best Use of the Droid SDK), Cal Hacks Most
 Technically Advanced, Microsoft (Built for the Real World; Customer Impact), Armadin (Best Security Hack), CRS (Best Identity / Fraud
-Innovation and Best Financial AI Agent; not Best Overall), Atlassian (only if the Forge app ships; track: **Best Security Solution for Agents**), MLH Best Use of Tiger Data, MLH Best Use of Vultr.
+Innovation and Best Financial AI Agent; not Best Overall), MLH Best Use of Tiger Data, MLH Best Use of Vultr.
 
 Elevator pitch (≤200 chars, 169): **A live fraud agent attacks an AI accounts-payable clerk while a controller gates every payment at the ledger. You get the dollars it lost, the dollars it cost, and why.**
 
@@ -53,8 +53,6 @@ A judge can attack live: type or say a fraud scheme in your own words, in any la
 **Armadin: Best Security Hack.** Red is an offensive agent with a deliberately small capability surface: it can create vendors, submit invoices and expenses, request bank changes and add employees, and nothing else. Per-agent tokens and a per-route permission matrix make another agent's token or route a 401/403. Judge input reaches red as quoted data and `run_scheme` accepts catalog IDs only, so a prompt-injected "attack" can't escape the catalog. We red-teamed ourselves and fixed what we found: red could read unrevealed attack outcomes (#138/#142), a replayed gate verdict could be reused on another day (#147/#151), the origin was reachable around Cloudflare (#47, now IP-locked), and public viewers could read which rows were fraud (#196). The sandbox's own job is security research on agents: it found an evasion (invoice splitting) that the controls missed.
 
 **CRS: Best Identity / Fraud Innovation.** Ghost employees and synthetic new hires are payroll fraud. Blue's audit has a `crs_identity_check` tool that verifies operator-bound new hires against TransUnion identity verification through the CRS sandbox and maps the response codes to findings: a mismatch raises a high-severity flag, and the gate's `already_flagged_high` rule blocks that person's next payment. It's an agent decision, not a hard-coded check: blue's live Droid audit chose to call the tool, read the mismatch and raised the flag, and the ledger enforced it on the next payment, in a recorded two-day production run (one mismatch flagged and blocked, two clean hires paid). Locally the same chain ran with 19 identity checks, all non-billable, and it never sends a seeded identity that wasn't bound to an approved persona.
-
-**Atlassian: Best Security Solution for Agents.** ⟦ONLY IF THE FORGE APP SHIPS: one paragraph on the Jira audit queue, written once it's deployed⟧
 
 **MLH Best Use of Tiger Data.** The event stream and audit log are TimescaleDB hypertables, and a `score_timeline` continuous aggregate serves score over time; CI runs the full battlefield suite on the TimescaleDB image, and local compose defaults to it. Production still runs plain Postgres 16.
 

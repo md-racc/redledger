@@ -245,7 +245,7 @@ Rules:
 - `GET/PUT /api/state/{key}` — per-agent JSON memory across turns (`LedgerClient.get_state/put_state`).
 - `POST /api/inputs` — message another agent's next turn (`LedgerClient.post_input(target, payload)`).
 - `POST /api/events` with type `x.<agent>.<name>` — custom events (`EventEmitter.custom(name, payload)`).
-- `battlefield/extensions/<agent>_*.py` + `contracts/ext/<agent>/*.sql` — your own routes and tables (README §16).
+- `battlefield/extensions/<agent>_*.py` + `contracts/ext/<agent>/*.sql` — your own routes and tables (README.md, Ledger API overview: extensions).
 
 ## Gated actions (what blue will be asked about)
 

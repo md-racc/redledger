@@ -212,7 +212,7 @@ Before pushing: `make test` in your directory and `make lint`. CI runs both per 
 
 ## 8. For coding agents specifically
 
-- Start by reading `README.md`, `ARCHITECTURE.md``GIT.md` §7, the `AGENTS.md` in your directory, and the `contracts/` file relevant to your task.
+- Start by reading `README.md`, `ARCHITECTURE.md`, `GIT.md` §7, the `AGENTS.md` in your directory, and the `contracts/` file relevant to your task.
 - State which directory you are working in before editing. Stay there.
 - Do not invent endpoints, event types, or table columns. If the contract lacks what you need,
   write the proposed contract change as a diff to `contracts/` and stop for human review.
