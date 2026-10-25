@@ -1,0 +1,1 @@
+- 2026-10-25T05:43Z · Ad · battlefield: make prod-crs-episode runs blue's CRS identity scenario on prod (create, seed, bind, step, summary, PASS/FAIL); first live PASS ep_9cbc3362d44e; next: P8, P9; blocked: none

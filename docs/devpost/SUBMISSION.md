@@ -9,14 +9,13 @@ Placeholder tags (each says what goes in it and where it comes from):
 |---|---|---|---|
 | `⟦GEN-…⟧` | numbers from the next lineage run (current main, after the blue fixes) | `make evolution-report LN=<id>` → `runs/<id>/report.md` | the dated 2026-10-24 numbers already in the text, and delete the "re-run" sentences |
 | `⟦FIX-…⟧` | the invoice split control (#175) and what it changed | the blue PR + keyless before/after catch matrix | delete the sentence |
-| `⟦FLAGS⟧` | whether blue's live audit now raises flags on prod (#195 deployed) | one prod episode: `flag.raised` with agent blue | "Its live audit's flag calls were refused by our own strict tool-identity check until #195; the gate rules did the catching." |
 | `⟦REPORT⟧` | the controls assessment report page, once merged | `/report/<episode>` on app.redledger.us | delete the sentence |
 | `⟦DASH⟧` | the red./blue. live dashboards, once deployed | red.redledger.us, blue.redledger.us | "per-team consoles at /backstage" |
-| `⟦CRS-LIVE⟧` | the live CRS table demo, if it happened | M | delete the sentence |
+| `⟦CRS-LIVE⟧` | the live CRS table demo, if it happened (`make prod-crs-episode`) | whoever runs it | delete the sentence |
 
 Prize checkboxes to tick on Devpost: Hyphenate (Autonomous Systems for Finance), Factory (Best Use of the Droid SDK), Cal Hacks Most
 Technically Advanced, Microsoft (Built for the Real World; Customer Impact), Armadin (Best Security Hack), CRS (Best Identity / Fraud
-Innovation; only if the table demo happens, see crs.md §0), MLH Best Use of Tiger Data, MLH Best Use of Vultr.
+Innovation and Best Financial AI Agent; not Best Overall, see crs.md §0), MLH Best Use of Tiger Data, MLH Best Use of Vultr.
 
 Elevator pitch (≤200 chars, 169): **A live fraud agent attacks an AI accounts-payable clerk while a controller gates every payment at the ledger. You get the dollars it stole, the dollars it cost, and why.**
 
@@ -34,7 +33,7 @@ Red Ledger runs a seeded synthetic company, Coastal Supply Co. (60 vendors, 40 e
 
 - **Red, the attacker**, is a live agent on Factory's Droid SDK. Each day it reads the books with the access a junior insider has and runs one of eight fraud schemes: ghost vendor, bank-account swap, duplicate invoice, threshold split, ghost employee, inflated expenses, invoice over its PO, and recurring-amount drift. It can submit invoices and request changes; it can never pay, approve, or read the controls.
 - **Green, the AP clerk**, does the legitimate work: matches invoices to POs, pays bills, approves vendor bank changes, reimburses expenses. It's deliberately a busy, trusting clerk.
-- **Blue, the controller**, decides every money-moving action *before* it happens: allow, block, or escalate to a human, with rule IDs and a plain-English reason. Once a day it audits the books as a live Droid agent and posts a report. ⟦FLAGS⟧
+- **Blue, the controller**, decides every money-moving action *before* it happens: allow, block, or escalate to a human, with rule IDs and a plain-English reason. Once a day it audits the books as a live Droid agent, raises flags the gate then enforces, and posts a report.
 
 The ledger is the enforcement point. Green can't move a dollar without the ledger asking blue first, and the ledger, not the agent, enforces the answer. An escalation waits up to 90 seconds for a person; if nobody answers, it's blocked. Every call is in an audit log, and every verdict traces from a rule ID to a written reason to an audit row.
 
@@ -49,7 +48,7 @@ A judge can attack live: type or say a fraud scheme in your own words, in any la
 - **Red live, choosing its own schemes** (2026-10-24, seed 42, 10 days): controller off, **$10,285** stolen; controller on, **$1,824** stolen, at $100 of false-positive cost.
 - **Red and blue's audit live, a fixed plan of six different schemes** (2026-10-25, seed 42, 6 days): controller off, **$23,681** stolen, 0 of 6 caught; controller on, **$20,350** stolen, 2 of 6 caught, $1,480 blocked, $50 false-positive cost. One split invoice was $13,800 of that. This is the harder test, and today's controls lose most of it. That's the point: the lab tells you which controls you'd be trusting and which ones aren't there.
 - **Evolution:** in a 5-generation live-red lineage (2026-10-24, 8 days per generation), red found that invoices split under the approval threshold get paid and moved to them: 1 of 7 attacks in generation 1, 7 of 8 in generation 5, extraction from $19k to $98k, and no control caught it. ⟦GEN-RERUN: after the invoice split control ⟦FIX-SPLIT⟧, a ⟦GEN-N⟧-generation re-run on current main: red's tactic mix ⟦GEN-MIX⟧, extraction ⟦GEN-G1⟧ → ⟦GEN-GN⟧, blue's catches ⟦GEN-CAUGHT⟧, false-positive cost ⟦GEN-FP⟧ (lineage ⟦GEN-ID⟧).⟧
-- **Identity fraud with CRS:** against the live CRS sandbox (TransUnion identity verification), blue's audit flagged a new hire whose identity didn't match, and the gate blocked that person's next expense while two clean hires were paid; 19 checks, all non-billable (local stack, keyless audit). ⟦CRS-LIVE⟧
+- **Identity fraud with CRS** (2026-10-25, a recorded two-day production run): blue's live audit agent checked three fictional new hires against TransUnion identity verification through the CRS sandbox, flagged the one whose identity didn't match, and the gate blocked that person's next expense while the two clean hires were paid. ⟦CRS-LIVE⟧
 
 ## How it fits each track
 
@@ -63,7 +62,7 @@ A judge can attack live: type or say a fraud scheme in your own words, in any la
 
 **Armadin: Best Security Hack.** Red is an offensive agent with a deliberately small capability surface: it can create vendors, submit invoices and expenses, request bank changes and add employees, and nothing else. Per-agent tokens and a per-route permission matrix make another agent's token or route a 401/403. Judge input reaches red as quoted data and `run_scheme` accepts catalog IDs only, so a prompt-injected "attack" can't escape the catalog. We red-teamed ourselves and fixed what we found: red could read unrevealed attack outcomes (#138/#142), a replayed gate verdict could be reused on another day (#147/#151), the origin was reachable around Cloudflare (#47, now IP-locked), and public viewers could read which rows were fraud (#196). The sandbox's own job is security research on agents: it found an evasion (invoice splitting) that the controls missed.
 
-**CRS: Best Identity / Fraud Innovation.** Ghost employees and synthetic new hires are payroll fraud. Blue's audit has a `crs_identity_check` tool that verifies operator-bound new hires against TransUnion identity verification through the CRS sandbox and maps the response codes to findings: a mismatch raises a high-severity flag, and the gate's `already_flagged_high` rule blocks that person's next payment. Proven end to end against the live sandbox with fictional personas, every call non-billable, and it never sends a seeded identity that wasn't bound to an approved persona. ⟦CRS-LIVE⟧
+**CRS: Best Identity / Fraud Innovation.** Ghost employees and synthetic new hires are payroll fraud. Blue's audit has a `crs_identity_check` tool that verifies operator-bound new hires against TransUnion identity verification through the CRS sandbox and maps the response codes to findings: a mismatch raises a high-severity flag, and the gate's `already_flagged_high` rule blocks that person's next payment. It's an agent decision, not a hard-coded check: blue's live Droid audit chose to call the tool, read the mismatch and raised the flag, and the ledger enforced it on the next payment, in a recorded two-day production run (one mismatch flagged and blocked, two clean hires paid). Locally the same chain ran with 19 identity checks, all non-billable, and it never sends a seeded identity that wasn't bound to an approved persona. ⟦CRS-LIVE⟧
 
 **MLH Best Use of Tiger Data.** The event stream and audit log are TimescaleDB hypertables, and a `score_timeline` continuous aggregate serves score over time; CI runs the full battlefield suite on the TimescaleDB image, and local compose defaults to it. Production still runs plain Postgres 16.
 
@@ -78,7 +77,7 @@ Five services plus Postgres. Only one service, `battlefield` (FastAPI, asyncpg),
 - **Making "ask first" airtight:** idempotency keys bound to their first action, a state fingerprint recomputed inside the payment transaction, and compare-and-set status changes.
 - **Exactly-once escalations** across a human click, a timeout and a server restart.
 - **Hiding ground truth while letting agents learn:** only resolved attacks, inside a sliding window, every disclosure logged.
-- **Live agents fail in new ways.** One model stalled red's turns until our 170-second timeout, so we measured credits per turn and switched. Streamed tool arguments broke our strict tool-identity check, so blue's live audit couldn't raise a flag until we traced the cause and fixed it (#195).
+- **Live agents fail in new ways.** One model stalled red's turns until our 170-second timeout, so we measured credits per turn and switched. Streamed tool arguments broke our strict tool-identity check, so blue's live audit couldn't raise a flag until we traced the cause and fixed it (#195); the next production run flagged and blocked the identity mismatch.
 - **Honest numbers.** Our first headline came from a run where red mostly tried duplicate invoices that were never paid anyway; a fixed plan of six schemes told a much less flattering story, so we report both.
 
 ## Accomplishments that we're proud of
@@ -108,7 +107,7 @@ python, fastapi, pydantic, httpx, asyncpg, postgresql, timescaledb, factory-droi
 - $10,285 / $1,824 / $100: `docs/recordings/README.md` (#136; `ep_7f473df2a138`, `ep_540353ebf616`)
 - $23,681 / $20,350 / 2 of 6 / $1,480 / $50, and the $13,800 split: `docs/recordings/README.md` (#193; `ep_89d1df6b012a`, `ep_d9b561111d60`)
 - Lineage 1/7 → 7/8, $19k → $98k: `ln_f52a3df83c8d`, `docs/devpost/hyphenate.md` §4.10
-- CRS: `ep_0181eda1c921`, 19 checks `billable:false`, `docs/devpost/crs.md` §0
+- CRS: prod `ep_9cbc3362d44e` (#197, recording in `docs/recordings/`), local `ep_0181eda1c921` with 19 checks `billable:false`; `docs/devpost/crs.md` §0
 - ~11 s and ~2.6k credits per red turn: `contracts/CHANGELOG.md` Findings (`ep_568aef023d7c`); blue 3,454–18,723 per audit: #193 recordings
 - 12 Findings: 11 dated entries in `contracts/CHANGELOG.md` plus #195; tests: 926 Python test functions (`grep` over `*/tests`), 271 frontend tests (`npm test`)
 - Leaks fixed: `docs/devpost/armadin.md` §4.9 and #196

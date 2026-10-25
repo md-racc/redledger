@@ -64,6 +64,7 @@ logs as sensitive anyway.
 | `make prod-score EP=` | `score EP` | |
 | `make prod-credits EP=` | `credits EP` | sums `turn.ended.factory_credits` per agent and per day; shows the cap and any guard trips |
 | `make prod-record EP= [NAME=]` | `record EP [NAME]` | events → `battlefield/fixtures/episodes/<NAME or EP>.jsonl`, secret-scanned |
+| `make prod-crs-episode SEED= [DAYS=]` | `crs-episode SEED [DAYS]` | blue's CRS identity scenario, stepped; summary + PASS/FAIL. See "Blue's CRS scenario" below |
 
 ## Going live: red, then blue's audit
 
@@ -134,6 +135,52 @@ and replayed publicly:
 Hits are printed as line number + first 4 chars + length, never in full. Commit the fixtures on a
 `battlefield/` branch; after the next deploy they are on the VM too (the repo checkout is mounted
 into battlefield) and `POST /api/replays/<NAME>/play` replays them.
+
+## Blue's CRS scenario (`make prod-crs-episode`)
+
+```bash
+make prod-crs-episode SEED=42            # DAYS defaults to 2 (allowed 2-30)
+make prod-crs-episode SEED=42 DAYS=3
+```
+
+`SEED` is required: it's a live run that spends credits, so it never starts on defaults. The script
+(`deploy/prod.sh crs-episode`, #197) mirrors `blue/tests/crs_episode_acceptance.py`:
+
+1. Refuses if another episode or lineage is running (one run at a time).
+2. Creates an `enforce` episode and doesn't start it, so it only advances by `/step`.
+3. Seeds `battlefield/fixtures/crs-personas.json` through the operator fixtures route.
+4. Binds the three persona employees, found by exact name, to P01/P12/P16 through blue's operator
+   extension (`PUT /api/x/blue/crs/episodes/{ep}/employees/{emp}`).
+5. Steps day 0, adds one more expense per persona while paused, then steps the remaining days.
+6. Prints a JSON summary (per persona: flags and expense statuses; P12/P01/P16 day-1 gate verdicts;
+   blue's `crs_identity_check` calls and result counts by day; reports posted; blue credits; notes)
+   and a last line `crs-episode <ep>: PASS` or `FAIL: <reasons>`.
+
+PASS means P12 has a high-severity flag, P12's day-1 expense got a block verdict naming
+`already_flagged_high` and wasn't paid, and every P01 and P16 expense was paid. Notes don't fail the
+run but say what to look at: no `crs_identity_check` call, no blue credits (the audit ran keyless),
+fewer reports than days, or P12's day-0 expense unpaid.
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | PASS |
+| 2 | FAIL; the summary's `fail_reasons` say why |
+| 3 | busy: another run is active, nothing was created |
+| 1 | a step failed; stderr names the step and the episode id. Nothing is deleted: inspect with `make prod-score` / `make prod-credits EP=…` |
+
+It needs blue's live audit (`DRY_RUN_BLUE=false`; a keyless audit never calls CRS) and the CRS
+credentials (`CRS_USERNAME`, `CRS_PASSWORD`) as `production` environment secrets
+(`deploy/ENVIRONMENT.md`). Without them every check comes back unknown and the run FAILs. Blue logs
+in to CRS once per process and never retries (`blue/CRS.md`): if a run FAILs with all-unknown CRS
+result counts after an earlier run worked, suspect the login: a failed or expired token needs a blue restart,
+not a re-run loop. Red's and blue's turns are live, so it costs credits (blue's audit was 3,985 and
+5,318 in ep_9cbc3362d44e).
+
+First pass on prod: ep_9cbc3362d44e, 2026-10-25, `SEED=42 DAYS=2` (`blue/CRS.md`, "Prod live-audit
+acceptance"; recording `docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`). Record a run like any other
+with `make prod-record EP=… NAME=…`.
 
 ## Credit cap (`MAX_CREDITS_PER_EPISODE`)
 
