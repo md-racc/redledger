@@ -281,8 +281,21 @@ def bank_change_with_open_invoices(req: GateRequest) -> RuleHit | None:
 def no_po_from_po_vendor(req: GateRequest) -> RuleHit | None:
     if req.action in INVOICE_ACTIONS:
         paid = _paid(req)
-        if not _invoice(req).get("po_id") and len(paid) >= 3 and all(p.get("po_id") for p in paid):
-            return RuleHit("no_po_from_po_vendor", 1, "Invoice lacks the PO customary in this vendor's paid history.", family="authorization")
+        if (
+            not _invoice(req).get("po_id")
+            and len(paid) >= 5
+            and all(p.get("po_id") for p in paid)
+            and money(req.amount) > max(money(p["amount"]) for p in paid)
+        ):
+            # Legit traffic routinely sends small ad-hoc invoices without a PO to vendors whose
+            # history is all-PO (#133: 28 prod fires, all legit). Only a no-PO invoice larger than
+            # anything the vendor has ever been paid is a separation signal worth a review note.
+            return RuleHit(
+                "no_po_from_po_vendor",
+                1,
+                "Invoice lacks the PO customary in this vendor's paid history and exceeds every prior paid amount.",
+                family="authorization",
+            )
     return None
 
 
@@ -358,6 +371,20 @@ RULES: list[Rule] = [
     already_flagged,
     unverified_vendor_exposure,
 ]
+
+
+# Baseline rule ids reflection may retire for a lineage after sustained legit-only fire (#133).
+# Only note-effect rules qualify: their hits never block or escalate, so retiring one only drops
+# a diagnostic note. Block, review (hold) and unavailable rules are never retireable, whatever the
+# statistics say; verification_unavailable and rule_error:* are diagnostics, never retireable.
+RETIREABLE_RULE_IDS: frozenset[str] = frozenset(
+    {
+        "near_threshold",
+        "no_po_from_po_vendor",
+        "recurring_drift",
+        "vendor_age_lt_7d",
+    }
+)
 
 
 def evaluate(req: GateRequest) -> list[RuleHit]:
