@@ -3,13 +3,16 @@
 // Everything visual is yours to replace. The data wiring below is the part worth keeping.
 // On load it joins the run that is going (lib/arena/useActiveRun.ts: a running episode, or a running lineage's current generation),
 // waits for one when nothing runs, and follows a lineage to its next generation. Only admins see the buttons that change the sim.
+// /ops is an operator screen: it prints every agent's raw thinking (red's included), so a viewer gets a pointer to the arena instead and
+// nothing is connected for them. The role is a hint (lib/role.ts); a viewer until /api/whoami says otherwise, so nothing leaks meanwhile.
+import Link from "next/link";
 import { useEffect, useReducer, useState } from "react";
 import { api } from "@/lib/api";
 import { currentRun, parseActiveRun } from "@/lib/arena/activeRun";
 import { useActiveRun } from "@/lib/arena/useActiveRun";
 import { loadFixture, replay } from "@/lib/mock";
 import { attacksByDay, blockedVerdicts, initialState, openEscalations, reduce } from "@/lib/reducer";
-import { useRole } from "@/lib/role";
+import { useRole, useRoleStore } from "@/lib/role";
 import type { RLEvent, UIState } from "@/lib/types";
 import { FAIL_SAFE_NOTE, failSafeLabel, isFailSafe } from "@/lib/verdictCause";
 import { connect } from "@/lib/ws";
@@ -23,7 +26,8 @@ export default function Page() {
   const [state, dispatch] = useReducer(wrapped, undefined, initialState);
   const [episodeId, setEpisodeId] = useState<string | null>(null);
   const admin = useRole() === "admin";
-  const active = useActiveRun({ enabled: !MOCK });
+  const roleKnown = useRoleStore((s) => s.known);
+  const active = useActiveRun({ enabled: !MOCK && admin });
 
   // the run on stage is the one to show; when it ends it stays on screen until the next one starts
   useEffect(() => { if (active.run) setEpisodeId(active.run.episodeId); }, [active.run]);
@@ -34,10 +38,10 @@ export default function Page() {
       loadFixture().then((evs) => { cancel = replay(evs, dispatch); });
       return () => cancel();
     }
-    if (!episodeId) return;
+    if (!episodeId || !admin) return;
     dispatch({ type: "__reset" });
     return connect(episodeId, dispatch);
-  }, [episodeId]);
+  }, [episodeId, admin]);
 
   async function newEpisode(mode: "off" | "shadow" | "enforce") {
     // battlefield runs one thing at a time: watch a run that is going instead of creating an episode that can never start
@@ -59,6 +63,16 @@ export default function Page() {
     } finally {
       active.refresh();
     }
+  }
+
+  if (!admin) {
+    return (
+      <main className="p-6 space-y-4 font-mono text-sm">
+        <h1 className="text-xl font-bold">Red Ledger · operator console</h1>
+        <p>{roleKnown ? "This console is for the operators. The run is on the arena, live, for everyone." : "Checking who you are…"}</p>
+        <p><Link className="underline" href="/">Watch the run in the arena →</Link></p>
+      </main>
+    );
   }
 
   const esc = openEscalations(state);
@@ -90,7 +104,7 @@ export default function Page() {
           <h2 className="font-bold">Needs a human</h2>
           {esc.map((e) => (
             <div key={e.escalation_id} className="flex gap-3 items-center">
-              <span className={isFailSafe(e) ? "opacity-60" : undefined}>{e.action} ${e.amount?.toLocaleString()} — {isFailSafe(e) ? failSafeLabel("escalate") : e.reason}</span>
+              <span className={isFailSafe(e) ? "opacity-60" : undefined}>{escalationLine(e)} — {isFailSafe(e) ? failSafeLabel("escalate") : e.reason}</span>
               {admin && <button className="border px-2" onClick={() => api.resolve(e.escalation_id, "approve")}>approve</button>}
               {admin && <button className="border px-2" onClick={() => api.resolve(e.escalation_id, "block")}>block</button>}
             </div>
@@ -134,6 +148,11 @@ export default function Page() {
       </section>
     </main>
   );
+}
+
+/** "invoices.pay $4,200", or just the action when the escalation carries no amount (never "$ —"). */
+function escalationLine(e: { action: string; amount?: number | null }): string {
+  return typeof e.amount === "number" && Number.isFinite(e.amount) ? `${e.action} $${e.amount.toLocaleString()}` : e.action;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

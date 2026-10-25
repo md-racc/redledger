@@ -2,8 +2,10 @@
 // Heads-up display for the arena stage: episode state, the show and converge triggers, controller mode, the money
 // scoreboard, the attack console, a roster of every agent (also the keyboard route to the dossier) and the escalation
 // that needs a human.
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { explainEscalation } from "@/lib/arena/escalation";
+import { explainEscalation, type EscalationExplained } from "@/lib/arena/escalation";
+import { runStatus, useRunPulse } from "@/lib/arena/useActiveRun";
 import { rosterOf, TEAM_META, TEAMS } from "@/lib/arena/roster";
 import { provenance } from "@/lib/arena/provenance";
 import { useArena } from "@/lib/arena/store";
@@ -19,6 +21,11 @@ import { isAdmin, useRole } from "@/lib/role";
 
 const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const MODES: ControllerMode[] = ["off", "shadow", "enforce"];
+const MOCK_ONLY = process.env.NEXT_PUBLIC_MOCK === "true";
+const BADGE_MEANING = {
+  "BETWEEN RUNS": "The backend is up and no run is going right now. The scoreboard shows the last finished run.",
+  PAUSED: "The backend is up and the operator has paused the run.",
+} as const;
 
 export function Hud({ feed, show, pitch }: { feed: Feed; show: ShowController; pitch?: PitchController }) {
   const stage = useArena((s) => s.stage);
@@ -52,16 +59,23 @@ export function Hud({ feed, show, pitch }: { feed: Feed; show: ShowController; p
   useEffect(() => { if (inShow) { setThreat(false); setRoster(false); } }, [inShow]);
 
   const { backend } = feed;
-  const apiLabel = backend.state === "live" ? (backend.keyless ? "open · agents keyless" : "open") : backend.state === "offline" ? "closed" : "calling";
+  const pulse = useRunPulse();
+  // "backend offline" only when nothing answered: the run poll answering counts, even if the slower health probe timed out
+  const status = runStatus({ mock: MOCK_ONLY, note: feed.note, backend: backend.state, link: pulse.link, onScreen: source !== "idle" || feed.running || inShow, paused: pulse.paused });
+  const ledState = backend.state === "live" || status.reachable ? "live" : backend.state;
+  const apiLabel = backend.state === "live" ? (backend.keyless ? "open · agents keyless" : "open") : status.reachable ? "open" : backend.state === "offline" ? "closed" : "calling";
   const prov = provenance({ backend, source, inShow, episodeId: state.episodeId, recording: feed.recording });
+  // between runs the scoreboard shows the last finished run's final score (never $0 with nothing pointing anywhere)
+  const last = status.between ? pulse.last : null;
+  const score = last?.score ?? state.score;
 
   return (
     <div className={`hud ${stage === "arena" ? "is-on" : ""} ${inShow ? "in-show" : ""} ${inPitch ? "in-pitch" : ""}`} aria-hidden={stage !== "arena"}>
       <header className="hud-top">
         <div className="hud-brand">
           <span className="brand" onClick={brandClick}><b>red</b>ledger</span>
-          <span className="stat" title="The battlefield behind the /api/bf proxy"><i className={`led led-${backend.state}`} />Ledger <b>{apiLabel}</b></span>
-          <span className={`stat badge-${prov.badge.toLowerCase()}`} title={prov.meaning}>Source <b>{prov.badge}</b>{prov.recordedOn && <> · {prov.recordedOn}</>}</span>
+          <span className="stat" title="The battlefield behind the /api/bf proxy"><i className={`led led-${ledState}`} />Ledger <b>{apiLabel}</b></span>
+          <span className={`stat badge-${prov.badge.toLowerCase()}`} title={status.badge ? BADGE_MEANING[status.badge] : prov.meaning}>{status.badge ? <b>{status.badge === "PAUSED" ? "Paused" : "Between runs"}</b> : <>Source <b>{prov.badge}</b></>}{prov.recordedOn && <> · {prov.recordedOn}</>}</span>
           <span className="stat stat-agents" title={`Each agent's own /health. live = a real model is running it, keyless = canned turns. ${prov.agentsLine}${prov.episode ? ` · ${prov.episode}` : ""}`}>Agents <b>{prov.agentsLine}</b></span>
           {state.episodeId && <span className="stat">Day <b>{state.currentDay}/{state.days}</b></span>}
           <span className={`stat mode-${state.controllerMode}`}>Controller <b>{state.controllerMode}</b></span>
@@ -92,11 +106,11 @@ export function Hud({ feed, show, pitch }: { feed: Feed; show: ShowController; p
         </aside>
       )}
 
-      <section className="hud-score" aria-label="Scoreboard">
-        <Tile label="Stolen" value={money(state.score.dollars_extracted)} tone="red" />
-        <Tile label="Blocked" value={money(state.score.dollars_blocked)} tone="blue" />
-        <Tile label="False-positive cost" value={money(state.score.false_positive_cost)} tone="amber" />
-        <Tile label="Caught" value={`${state.score.attacks_caught}/${state.score.attacks_launched}`} tone="green" />
+      <section className="hud-score" aria-label={last?.score ? `Final score of the last run, ${last.episodeId}` : "Scoreboard"} title={last?.score ? `Final score of the last run (${last.episodeId})` : undefined}>
+        <Tile label="Stolen"value={money(score.dollars_extracted)} tone="red" />
+        <Tile label="Blocked" value={money(score.dollars_blocked)} tone="blue" />
+        <Tile label="False-positive cost" value={money(score.false_positive_cost)} tone="amber" />
+        <Tile label="Caught" value={`${score.attacks_caught}/${score.attacks_launched}`} tone="green" />
       </section>
 
       <ThreatConsole open={threat && !inShow && admin} mode={state.controllerMode} onClose={() => setThreat(false)} onLaunch={feed.launchAttack} />
@@ -118,7 +132,11 @@ export function Hud({ feed, show, pitch }: { feed: Feed; show: ShowController; p
             <button key={m} className={state.controllerMode === m ? "on" : ""} onClick={() => void feed.setController(m).catch(() => {})} disabled={!admin}>{m}</button>
           ))}
         </div>
-        <p className="hud-note">{feed.note}{model === "fallback" ? " · stand-in palace" : ""}</p>
+        <p className="hud-note">
+          {status.note}
+          {last && <> · last run {last.episodeId}{last.status === "failed" ? " (failed)" : ""}{last.score ? ": final score above" : ""} · <Link href={`/report/${encodeURIComponent(last.episodeId)}`} style={{ color: "inherit", textDecoration: "underline" }}>its report</Link></>}
+          {model === "fallback" ? " · stand-in palace" : ""}
+        </p>
       </section>
 
       {/* the side screens on stage, named for the audience; an admin's screen only, like the doors (the consoles stay hidden from viewers) */}
@@ -146,6 +164,7 @@ function Tile({ label, value, tone }: { label: string; value: string; tone: stri
 /** Open escalations are a human decision (docs/ARCHITECTURE.md, System overview): approve or block right from the arena, against the clock. */
 function EscalationBar({ feed, pitch = false }: { feed: Feed; pitch?: boolean }) {
   const admin = useRole() === "admin";
+  const narrow = useNarrow();
   const open = Object.values(feed.state.escalations).filter((e) => e.status === "open");
   const e = open[0];
   const [left, setLeft] = useState(0);
@@ -169,11 +188,74 @@ function EscalationBar({ feed, pitch = false }: { feed: Feed; pitch?: boolean })
   // a real recording played back: its outcomes are what happened, so the only honest button is Block
   const approvable = canApprove({ recording: feed.recording, source: feed.source });
   return (
-    <div className={`escalation ${pitch ? "is-pitch" : ""} ${x.failSafe ? "is-failsafe" : ""}`} role="alert" style={{ ["--left" as string]: String(Math.min(1, left / total)) }}>
+    <EscalationCard
+      x={x}
+      admin={admin}
+      approvable={approvable}
+      pitch={pitch}
+      compact={!admin && narrow}
+      left={left}
+      total={total}
+      onResolve={(d) => void feed.resolveEscalation(e.escalation_id, d).catch(() => {})}
+      raw={{ escalation: e, verdict: feed.state.verdicts.find((v) => v.verdict_id === e.verdict_id) ?? null }}
+    />
+  );
+}
+
+/** Below this width a viewer's escalation is one line and a countdown, so it never covers the phone's screen (and its buttons). */
+export const NARROW_QUERY = "(max-width: 639px)";
+
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia(NARROW_QUERY);
+    const on = () => setNarrow(mq.matches);
+    on();
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
+  return narrow;
+}
+
+export interface EscalationCardProps {
+  x: EscalationExplained;
+  /** an admin decides here; a viewer watches a person decide (the proxy refuses a viewer's resolve anyway) */
+  admin: boolean;
+  approvable: boolean;
+  pitch?: boolean;
+  /** a viewer on a narrow screen: one line and the countdown */
+  compact?: boolean;
+  left: number;
+  total: number;
+  onResolve: (decision: "approve" | "block") => void;
+  raw?: unknown;
+}
+
+/**
+ * The escalation as each audience needs it. An admin gets the decision: what, why, Approve / Block. A viewer cannot decide, so the card
+ * never says "your decision" or shows buttons that do nothing: it says a person decides, what is held and why, and runs the clock. On a
+ * phone (compact) a viewer's card is a single line with the countdown.
+ */
+export function EscalationCard({ x, admin, approvable, pitch = false, compact = false, left, total, onResolve, raw }: EscalationCardProps) {
+  const meter = { ["--left" as string]: String(Math.min(1, left / Math.max(1, total))) };
+  const clockTitle = "If nobody decides before it runs out, it is blocked";
+  if (!admin && compact) {
+    return (
+      <div className={`escalation is-compact ${x.failSafe ? "is-failsafe" : ""}`} role="status" aria-label={`A person decides: ${x.title} ${left} seconds left`}
+        style={{ ...meter, flexDirection: "row", alignItems: "center", gap: 10, padding: "9px 12px", maxHeight: "none", overflow: "hidden" }}>
+        <span className="escalation-tag" style={{ flex: "none", letterSpacing: "0.14em" }}>{x.failSafe ? "Fail-safe" : "A person decides"}</span>
+        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13 }}>{x.title}</span>
+        <span className="escalation-clock" title={clockTitle} style={{ flex: "none" }}><b style={{ fontSize: 18 }}>{left}</b> s</span>
+      </div>
+    );
+  }
+  return (
+    <div className={`escalation ${pitch ? "is-pitch" : ""} ${x.failSafe ? "is-failsafe" : ""}`} role={admin ? "alert" : "status"} style={meter}>
       {pitch && <i className="escalation-meter" aria-hidden />}
       <div className="escalation-head">
-        <span className="escalation-tag">{x.failSafe ? "Fail-safe · your decision" : "Your decision"}</span>
-        <span className="escalation-clock" title="If nobody decides before it runs out, the payment is blocked"><b>{left}</b> s left</span>
+        <span className="escalation-tag">{admin ? (x.failSafe ? "Fail-safe · your decision" : "Your decision") : (x.failSafe ? "Fail-safe · a person decides" : "A person decides")}</span>
+        <span className="escalation-clock" title={clockTitle}><b>{left}</b> s left</span>
       </div>
       <h3>{x.title}</h3>
       <p className="escalation-what">{x.what}</p>
@@ -181,12 +263,18 @@ function EscalationBar({ feed, pitch = false }: { feed: Feed; pitch?: boolean })
         <h4>{x.failSafe ? "Why it is held" : "Why the controller stopped it"}</h4>
         <ul>{x.why.map((w) => <li key={w}>{w}</li>)}</ul>
       </div>
-      <div className="escalation-act">
-        {approvable && <button className="esc-btn approve" disabled={!admin} onClick={() => void feed.resolveEscalation(e.escalation_id, "approve").catch(() => {})}><b>{x.approve.label}</b><span>{x.approve.result}</span></button>}
-        <button className="esc-btn block" disabled={!admin} onClick={() => void feed.resolveEscalation(e.escalation_id, "block").catch(() => {})}><b>{x.block.label}</b><span>{x.block.result}</span></button>
-      </div>
-      <p className="escalation-foot">{approvable ? "" : "A recording: what happened next on prod stays as it was, so it can only be blocked. "}{pitch && !admin && approvable ? "The presenter decides. " : ""}If nobody decides before the clock runs out, it is blocked.</p>
-      <Raw data={{ escalation: e, verdict: feed.state.verdicts.find((v) => v.verdict_id === e.verdict_id) ?? null }} />
+      {admin && (
+        <div className="escalation-act">
+          {approvable && <button className="esc-btn approve" onClick={() => onResolve("approve")}><b>{x.approve.label}</b><span>{x.approve.result}</span></button>}
+          <button className="esc-btn block" onClick={() => onResolve("block")}><b>{x.block.label}</b><span>{x.block.result}</span></button>
+        </div>
+      )}
+      <p className="escalation-foot">
+        {approvable ? "" : "A recording: what happened next on prod stays as it was, so it can only be blocked. "}
+        {admin ? "" : approvable ? `The operator decides: approve (${x.approve.result}) or block (${x.block.result}). ` : "The operator decides. "}
+        If nobody decides before the clock runs out, it is blocked.
+      </p>
+      {raw !== undefined && <Raw data={raw} />}
     </div>
   );
 }

@@ -124,4 +124,19 @@ describe("live checks", () => {
     const none = liveChecks({ ...base, mode: "recorded", healthMs: null, sync: sync("stream", true) });
     expect(none[0]!.ok).toBe(false);
   });
+
+  it("shows a viewer the relay and arena checks as neutral 'admin only' lines, never FAIL", () => {
+    for (const input of [{ ...base, sync: sync("admins", false) }, { ...base, viewer: true, sync: sync("connecting", false) }]) {
+      const c = liveChecks(input);
+      for (const label of ["relay to the other laptops", "arena laptop connected"]) {
+        const x = c.find((y) => y.label === label)!;
+        expect(x.ok).toBeNull();
+        expect(x.adminOnly).toBe(true);
+        expect(x.detail).toBe("admin only");
+      }
+      expect(c.some((x) => x.ok === false)).toBe(false);
+    }
+    // an admin's missing arena laptop is still a failure
+    expect(liveChecks({ ...base, viewer: false, sync: sync("stream", false) }).find((x) => x.label === "arena laptop connected")!.ok).toBe(false);
+  });
 });
