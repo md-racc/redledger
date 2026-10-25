@@ -46,11 +46,12 @@ describe("the lenders", () => {
     expect(TIE).toMatch(/90 seconds/); // the escalation timeout the gate really has
   });
 
-  it("have every source in docs/lenders.md, and every lender in the pitch with Axios named", () => {
-    const doc = read("docs/lenders.md");
+  it("have every source in EVIDENCE.md, and the pitch names Axios and Wells Fargo's silence", () => {
+    const doc = read("../EVIDENCE.md");
     for (const s of allSources) expect(doc, s.url).toContain(s.url);
-    const script = read("docs/pitch-script.md");
-    for (const n of ["JPMorgan Chase", "Bank of America", "Citi", "Wells Fargo", "Morgan Stanley", "Axios"]) expect(script, n).toContain(n);
+    for (const n of ["JPMorgan Chase", "Bank of America", "Citi", "Wells Fargo", "Morgan Stanley", "Axios"]) expect(doc, n).toContain(n);
+    const script = read("../PITCH.md");
+    expect(script).toContain("Axios");
     expect(script).toMatch(/Wells Fargo has said nothing we could find/);
   });
 });

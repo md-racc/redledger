@@ -4,6 +4,7 @@
 // vendor_age_lt_7d, near_threshold."). The card a judge has to answer in a few seconds needs three things instead: what is about
 // to happen, why the controller stopped it, and what each button does. Pure, tested.
 import type { Escalation, VerdictCard } from "@/lib/types";
+import { failSafeLabel, isFailSafe } from "../verdictCause";
 import { money } from "./headlines";
 
 export interface EscalationExplained {
@@ -16,6 +17,8 @@ export interface EscalationExplained {
   /** the two buttons: a label and what it does */
   approve: { label: string; result: string };
   block: { label: string; result: string };
+  /** opened by battlefield's fail-safe (blue unreachable), not by a control: render it muted, never as a catch */
+  failSafe: boolean;
 }
 
 /** What each gated action means, and what the money does if it is let through. */
@@ -67,11 +70,16 @@ export const ruleWhy = (rule: string): string | null => WHY[ALIAS[rule] ?? rule]
 
 const pretty = (id: string) => id.replace(/^[a-z_]*:/, "").replace(/[._]/g, " ");
 
-export function explainEscalation(esc: Pick<Escalation, "action" | "amount" | "reason">, verdict?: Pick<VerdictCard, "rules_fired" | "reason"> | null): EscalationExplained {
+export function explainEscalation(
+  esc: Pick<Escalation, "action" | "amount" | "reason"> & { cause?: Escalation["cause"] },
+  verdict?: (Pick<VerdictCard, "rules_fired" | "reason"> & { cause?: VerdictCard["cause"] }) | null,
+): EscalationExplained {
   const w: ActionWords = ACTIONS[esc.action] ?? { doing: pretty(esc.action), title: "Allow this?", moneyOut: false, approve: "it goes ahead", block: "it is stopped" };
   const amount = money(esc.amount);
-  const rules = verdict?.rules_fired ?? [];
-  const why: string[] = [];
+  // blue could not be reached: the ledger's fail-safe is asking, not a control (lib/verdictCause.ts)
+  const failSafe = isFailSafe(esc) || isFailSafe(verdict);
+  const rules = failSafe ? [] : verdict?.rules_fired ?? [];
+  const why: string[] = failSafe ? [`${failSafeLabel("escalate")}. No control flagged this: blue did not answer in time, so the ledger holds it for a person.`] : [];
   for (const r of rules) {
     const text = WHY[ALIAS[r] ?? r];
     if (text && !why.includes(text)) why.push(text);
@@ -86,10 +94,11 @@ export function explainEscalation(esc: Pick<Escalation, "action" | "amount" | "r
   const kept = w.moneyOut ? " If it was a real bill, the vendor has to wait." : "";
   return {
     title: w.title,
-    what: `The finance clerk wants to ${w.doing}${sum}. The controller is not sure it is safe, so it is asking you.`,
+    what: `The finance clerk wants to ${w.doing}${sum}. ${failSafe ? "The controller could not be reached, so the fail-safe is asking you." : "The controller is not sure it is safe, so it is asking you."}`,
     why,
     approve: { label: "Approve", result: `${cap(w.approve)}.${lost}` },
     block: { label: "Block", result: `${cap(w.block)}.${kept}` },
+    failSafe,
   };
 }
 

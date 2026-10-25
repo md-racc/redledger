@@ -1,8 +1,8 @@
 // The 30 agents of the arena and their backend identities. Owner: Dev R.
 //
-//   red   = fraudsters. One per scheme in the red catalog (README §8). id key = scheme_id, the same string
+//   red   = fraudsters. One per scheme in the red catalog (ARCHITECTURE.md, Red). id key = scheme_id, the same string
 //           that arrives in `attack.launched.payload.scheme_id`.
-//   blue  = guards. One per gate rule in blue/gate/rules.py (README §9). id key = rule id, the same string
+//   blue  = guards. One per gate rule in blue/gate/rules.py (ARCHITECTURE.md, Blue gate). id key = rule id, the same string
 //           that arrives in `gate.verdict.payload.rules_fired[]`.
 //   green = clients / victims. Slots for the synthetic company's (lib/company.ts) counterparties. They are bound to real vendors
 //           by the director (lib/arena/director.ts) as vendor/attack events arrive.

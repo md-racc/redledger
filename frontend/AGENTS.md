@@ -1,6 +1,6 @@
 # frontend/ — working guide for Dev R and any coding agent in this directory
 
-Read the root `README.md` (§§1, 3, 5, 7) and `GIT.md` first. `FRONTEND-API.md` in this directory
+Read the root `README.md` and `GIT.md` first. The root `FRONTEND.md`
 documents every endpoint built for you.
 
 ## Your job
@@ -77,9 +77,9 @@ into `UIState`; `lib/types.ts` has the shapes; `contracts/events.md` is the auth
 - `lib/reducer.ts` — idempotent reducer; `lib/reducer.test.ts` shows the pattern.
 - `lib/api.ts` — every REST route, including `/api/fe/*`, via the same-origin proxy. No token.
 - `lib/mock.ts` + `public/mocks/sample.jsonl` — fixture replay with `NEXT_PUBLIC_MOCK=true`.
-- `app/page.tsx` — the 3D arena front door (see `ARENA.md`). The old throwaway skeleton that proves the data path now lives at `app/ops/page.tsx` (`/ops`).
+- `app/page.tsx` — the 3D arena front door (see the root `FRONTEND.md`). The old throwaway skeleton that proves the data path now lives at `app/ops/page.tsx` (`/ops`).
 
-## Demo-critical surfaces (README §15)
+## Demo-critical surfaces (ARCHITECTURE.md (Evolution))
 
 1. Headline money panel (stolen / blocked / FP cost).
 2. Controller toggle with visible mode (off / shadow / enforce). Note `shadow` still produces
@@ -112,7 +112,7 @@ npm run gen:api                              # regenerate REST types from contra
 
 ## Extension points (grow without a contracts PR)
 
-See README §16. For the frontend specifically:
+See README.md (Ledger API overview, extensions). For the frontend specifically:
 - Ad-hoc reads: `POST /api/fe/query {sql}` (single SELECT, 5 s cap) while exploring; promote stable queries to an `fe_*` extension route.
 - Your own server-side routes on battlefield: `battlefield/extensions/fe_<name>.py` with `router = APIRouter()`, mounted at `/api/x/fe/...`. `fe_*` is the only prefix allowed to expose no-token public routes (a QR crowd page, a kiosk). See `blue_crs.py` for a real extension; any public `fe_*` route that writes must be designed with care (no unauthenticated writes into agent `inputs`).
 - Your own tables: `contracts/ext/fe/<nn>_<name>.sql`, prefixed `fe_`.
@@ -126,7 +126,7 @@ Crowd page sketch (not built): Next route `/play` → public `POST /api/x/fe/cro
 
 ## Evolution / lineages
 
-Lineages are chains of episodes in which the agents evolve (README §15). For the evolution view:
+Lineages are chains of episodes in which the agents evolve (ARCHITECTURE.md (Evolution)). For the evolution view:
 - `GET /api/bf/fe/lineages/{id}/timeline`: playbook versions with diffs, generation scores, in order.
 - `GET /api/bf/fe/lineages/{id}/report`: the evolution report (scores per generation, red tactic
   mix, blue rules incl. `learned:*`, who-beat-whom matrix, playbook diffs).
@@ -134,14 +134,14 @@ Lineages are chains of episodes in which the agents evolve (README §15). For th
 - Events in a lineage episode: `generation.started|ended`, `playbook.updated`, `debrief.delivered`
   (counts only), `lineage.paused|resumed` (`contracts/events.md`).
 - The demo episode is the lineage's next generation; `generation.started.playbook_versions` tells
-  you how evolved the agents are. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
+  you how evolved the agents are. Contract: `contracts/agent-service.md` (Lineages); runbook: ARCHITECTURE.md (Evolution); design: root `ARCHITECTURE.md` (Evolution).
 
 ## Paste this to your coding agent as its first message
 
 ```
 You are working in the Red Ledger repo, directory `frontend/`, as Dev R's coding agent.
-Before any edit: read `frontend/AGENTS.md`, `frontend/FRONTEND-API.md`, `GIT.md` §7,
-`README.md` §§0,1,3,7,16, and `contracts/events.md`. Confirm `git branch --show-current`
+Before any edit: read `frontend/AGENTS.md`, the root `FRONTEND.md`, `GIT.md` §7,
+`README.md`, `ARCHITECTURE.md`and `contracts/events.md`. Confirm `git branch --show-current`
 starts with `frontend/`; if not, create `frontend/<topic>` from origin/main. Edit only inside
 `frontend/`, `battlefield/extensions/fe_*.py`, `contracts/ext/fe/`, and append to `DEVLOG.md`.
 Never force-push, never merge, never touch another directory; if you need a new event type,

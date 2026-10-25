@@ -2,7 +2,7 @@
  "recorded": "2026-10-24",
  "where": "our production server",
  "note": "Red was live on Factory's Droid SDK (gpt-5.4-mini). Green and blue ran their full logic keyless, before blue's daily audit went live.",
- "source": "docs/recordings (#136)",
+ "source": "recordings (#136)",
  "runs": {
   "off": {
    "episode_id": "ep_7f473df2a138",
@@ -18,6 +18,16 @@
     "dollars_extracted": 10284.61,
     "false_positive_cost": 0,
     "detection_latency_days": 0
+   },
+   "controls_report": {
+    "lost": 10284.61,
+    "to_attacker": 10284.61,
+    "caught": 0,
+    "launched": 10,
+    "blocked": 0,
+    "fp_cost": 0,
+    "note": "All of it reached red's account, through one approved bank swap.",
+    "source": "controls report (#207 scoring)"
    },
    "by_day": [
     {
@@ -153,6 +163,16 @@
     "dollars_extracted": 1824.22,
     "false_positive_cost": 100,
     "detection_latency_days": 0
+   },
+   "controls_report": {
+    "lost": 0,
+    "to_attacker": 0,
+    "caught": 1,
+    "launched": 10,
+    "blocked": 0,
+    "fp_cost": 100,
+    "note": "The recording's scoreboard counted $1,824.22, but that was a decoy invoice paid into the real vendor's own account, so nothing was lost.",
+    "source": "controls report (#207 scoring)"
    },
    "by_day": [
     {

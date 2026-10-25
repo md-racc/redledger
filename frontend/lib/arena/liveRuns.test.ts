@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { enforceStory, schemeMix, type LiveRuns } from "./liveRuns";
+import { enforceStory, lostByDay, runScore, schemeMix, type LiveRuns } from "./liveRuns";
 
 const root = join(__dirname, "../../..");
 const summary = JSON.parse(readFileSync(join(__dirname, "../../public/mocks/live-runs.json"), "utf8")) as LiveRuns;
-const events = (f: string) => readFileSync(join(root, "docs/recordings", f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; payload: Record<string, any>; episode_id: string });
+const events = (f: string) => readFileSync(join(root, "recordings", f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; payload: Record<string, any>; episode_id: string });
 
 describe("the live-run summary", () => {
   it("matches the recordings it was made from (run `node tools/gen-live-runs.mjs` after they change)", () => {
@@ -20,7 +20,7 @@ describe("the live-run summary", () => {
     }
   });
 
-  it("carries the numbers the pitch says out loud", () => {
+  it("keeps each recording's own (pre-#207) scoreboard as it was", () => {
     expect(summary.runs.off.mode).toBe("off");
     expect(summary.runs.enforce.mode).toBe("enforce");
     expect(Math.round(summary.runs.off.score.dollars_extracted)).toBe(10285);
@@ -28,6 +28,27 @@ describe("the live-run summary", () => {
     expect(summary.runs.enforce.score.false_positive_cost).toBe(100);
     expect(summary.runs.off.seed).toBe(summary.runs.enforce.seed);
     expect(summary.runs.off.days).toBe(10);
+  });
+
+  it("shows money lost as the controls report has it: $10,285 off, $0 on (the $1,824.22 was a decoy paid to the real vendor)", () => {
+    const off = runScore(summary.runs.off);
+    const on = runScore(summary.runs.enforce);
+    expect(summary.runs.off.controls_report?.source).toMatch(/controls report/);
+    expect(summary.runs.enforce.controls_report?.source).toMatch(/controls report/);
+    expect(Math.round(off.dollars_extracted)).toBe(10285);
+    expect(on.dollars_extracted).toBe(0);
+    expect(on.attacks_caught).toBe(1);
+    expect(on.attacks_launched).toBe(10);
+    expect(on.false_positive_cost).toBe(100);
+    expect(summary.runs.enforce.controls_report?.note).toMatch(/decoy/);
+    // the per-day bars never show the decoy as a loss
+    expect(lostByDay(summary.runs.enforce).every((d) => d.lost === 0)).toBe(true);
+    expect(lostByDay(summary.runs.off).at(-1)!.lost).toBe(summary.runs.off.score.dollars_extracted);
+  });
+
+  it("falls back to the recording's scoreboard when a run has no controls-report figures", () => {
+    const { controls_report: _, ...bare } = summary.runs.enforce;
+    expect(runScore(bare)).toEqual(bare.score);
   });
 
   it("is numbers only: no agent text or tool-call ids", () => {

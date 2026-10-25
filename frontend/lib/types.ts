@@ -52,6 +52,8 @@ export interface VerdictCard {
   confidence?: number | null;
   rules_fired: string[];
   enforced: boolean;
+  /** contracts/events.md: `gate_unavailable` = battlefield's fail-safe default, not a control (lib/verdictCause.ts) */
+  cause?: "control" | "gate_unavailable" | null;
 }
 
 export interface Escalation {
@@ -61,6 +63,8 @@ export interface Escalation {
   amount?: number | null;
   reason: string;
   expires_at: string;
+  /** contracts/events.md: `gate_unavailable` = opened by the fail-safe because blue could not be reached */
+  cause?: "control" | "gate_unavailable" | null;
   status: "open" | "approve" | "block" | "timeout";
   by?: string;
 }
