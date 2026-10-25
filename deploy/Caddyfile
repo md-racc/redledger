@@ -1,5 +1,6 @@
-# TLS at the edge. One public hostname: app.$DOMAIN (Cloudflare DNS, proxied with SSL "Full
-# (strict)"). Internal traffic stays plain HTTP on the compose networks.
+# TLS at the edge. Public hostnames: app.$DOMAIN, plus red.$DOMAIN and blue.$DOMAIN, the hidden backstage
+# doors (frontend/lib/backstage/alias.ts; admin-only, everyone else gets a 404). Cloudflare DNS, proxied with SSL "Full
+# (strict)". Internal traffic stays plain HTTP on the compose networks.
 #
 # Access mode is chosen by deploy/render-env.sh (README §11, §13): either Cloudflare Access in front
 # with the origin verifying its JWT (both CF_ACCESS_* set), or public read-only mode (both blank)
@@ -28,5 +29,13 @@ app.{$DOMAIN} {
 	encode gzip
 	@ws path /api/ws /api/ws/*
 	reverse_proxy @ws battlefield:8000
+	reverse_proxy frontend:3000
+}
+
+# The hidden doors: the frontend rewrites / to /backstage/<team> on these hosts and serves it only to admins
+# (frontend/lib/backstage/gate.ts). WebSockets still go to app.$DOMAIN (NEXT_PUBLIC_WS_URL).
+red.{$DOMAIN}, blue.{$DOMAIN} {
+	import cloudflare_only
+	encode gzip
 	reverse_proxy frontend:3000
 }

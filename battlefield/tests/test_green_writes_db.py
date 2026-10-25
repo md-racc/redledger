@@ -385,9 +385,9 @@ async def test_invoice_context_carries_the_vendors_other_open_invoices(pg: None,
     b = await f.invoice(ep, v, amount=4800.0, status="pending", origin="red")
     m = await f.invoice(ep, v, amount=4700.0, status="matched", day=1)
     c_ = await f.invoice(ep, v, amount=4850.0, status="approved", day=2)
+    blk = await f.invoice(ep, v, amount=4600.0, status="blocked", day=3)  # a blocked split part is still evidence
     await f.invoice(ep, v, status="paid")  # settled: lives in vendor_paid_invoices, not here
     await f.invoice(ep, v, status="rejected")
-    await f.invoice(ep, v, status="blocked")
     await f.invoice(ep, other_v, status="pending")  # another vendor's open invoice stays out
     other_ep = await _episode("enforce")
     await f.invoice(other_ep, v, status="pending")  # same vendor id, another episode: stays out
@@ -400,9 +400,14 @@ async def test_invoice_context_carries_the_vendors_other_open_invoices(pg: None,
     assert r.status_code == 200, r.text
     (context,) = context_blue
     open_invoices = context["vendor_open_invoices"]
-    assert [i["id"] for i in open_invoices] == [c_, m, b]  # received_day DESC; the judged invoice excluded
-    assert {(i["vendor_id"], i["episode_id"], i["status"]) for i in open_invoices} == {(v, ep, "pending"), (v, ep, "matched"), (v, ep, "approved")}
-    assert sum(float(i["amount"]) for i in open_invoices) == 14_350.0
+    assert [i["id"] for i in open_invoices] == [blk, c_, m, b]  # received_day DESC; the judged invoice excluded
+    assert {(i["vendor_id"], i["episode_id"], i["status"]) for i in open_invoices} == {
+        (v, ep, "pending"),
+        (v, ep, "matched"),
+        (v, ep, "approved"),
+        (v, ep, "blocked"),
+    }
+    assert sum(float(i["amount"]) for i in open_invoices) == 18_950.0
     assert all(not (set(i) & db.HIDDEN_COLUMNS) for i in open_invoices)  # invariant 4: no origin/attack_id reaches blue
     assert {"invoice_number", "amount", "received_day", "po_id"} <= set(open_invoices[0])
 
@@ -417,3 +422,38 @@ async def test_invoice_context_open_invoices_are_capped_at_twenty(pg: None, cont
     assert r.status_code == 200, r.text
     (context,) = context_blue
     assert [i["id"] for i in context["vendor_open_invoices"]] == newest
+
+
+@pytest.mark.parametrize("via", ["route", "preparation"])
+async def test_invoice_context_keeps_a_blocked_split_part_next_to_a_pending_one(pg: None, context_blue: list, via: str) -> None:
+    """The last part of a split must not be judged alone because an earlier part was already blocked."""
+    ep = await _episode("enforce")
+    v = await f.vendor(ep)
+    last = await f.invoice(ep, v, amount=4550.0, status="approved", origin="red")
+    blocked = await f.invoice(ep, v, amount=4650.0, status="blocked", origin="red", day=1)
+    pending = await f.invoice(ep, v, amount=4600.0, status="pending", origin="red")
+    key = f"tu_{uuid.uuid4().hex}"
+    async with _client() as c:
+        if via == "route":
+            r = await c.post(f"/api/invoices/{last}/pay", headers=_green(ep, key))
+        else:
+            r = await c.post("/api/preparations", json={"action": "invoices.pay", "entity_id": last, "args": {}}, headers=_green(ep, key))
+    assert r.status_code == 200, r.text
+    (context,) = context_blue
+    rows = context["vendor_open_invoices"]
+    assert [(i["id"], i["status"]) for i in rows] == [(blocked, "blocked"), (pending, "pending")]
+    assert all(not (set(i) & db.HIDDEN_COLUMNS) for i in rows)
+
+
+async def test_vendor_change_context_open_invoices_stay_unpaid_open_only(pg: None, context_blue: list) -> None:
+    """The bank-change exposure is separate: a blocked invoice is not money that could follow a new account."""
+    ep = await _episode("enforce")
+    v = await f.vendor(ep)
+    ch = await f.change(ep, v, origin="sim")
+    open_ = await f.invoice(ep, v, status="pending")
+    await f.invoice(ep, v, status="blocked")
+    async with _client() as c:
+        r = await c.post(f"/api/vendor_changes/{ch}/approve", headers=_green(ep, f"tu_{uuid.uuid4().hex}"))
+    assert r.status_code == 200, r.text
+    (context,) = context_blue
+    assert [i["id"] for i in context["vendor_open_invoices"]] == [open_]

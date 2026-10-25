@@ -11,7 +11,8 @@ data-path dashboard still lives at `/ops`.
 | [show-mode.md](show-mode.md) | the 90-second show, its beats and data sources, the focus spotlight, and what a judge can do |
 | [backstage.md](backstage.md) | the hidden consoles for the other laptops: red, green, blue and battlefield, live |
 | [voice.md](voice.md) | speak (or type) a fraud scheme in any language: the microphone, the speech-to-text route, what red gets, setup and limits |
-| [pitch-script.md](pitch-script.md) | the spoken pitch for the four-laptop demo: who says what, and what to click |
+| [pitch-script.md](pitch-script.md) | the spoken pitch for all four people, two pages: who says what, what to click, and which sponsor's feature each beat shows |
+| [sponsors.md](sponsors.md) | every sponsor we enter: the features of theirs that we use, where a judge sees each, the proof, the honest status, and what not to claim |
 | [demo-video.md](demo-video.md) | the three-minute demo video for Devpost: a shot list with the words to say, and what not to cut |
 | [agent-design.md](agent-design.md) | what each of the 30 figures looks like (team base + role kit), how it is built and animated, how to add one |
 | [dossier-modal.md](dossier-modal.md) | the click-to-open modal: placeholders, live data, catalogs, host overrides, every field key |
