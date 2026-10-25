@@ -16,6 +16,9 @@ from .. import db
 from ..scoring import score
 from . import debrief
 
+# $2: sim invoices of a vendor whose red bank swap was live when the controller judged them (stopped
+# or diverted, see score._red_changes). They are attack traffic, scored as such by score.compute and
+# kept out of debrief.legit_items, so a rule firing on them counts on_red, not on_legit.
 _RULES_SQL = """
 SELECT r.rule_id, COUNT(*) AS fired,
        COUNT(*) FILTER (WHERE x.origin = 'red') AS on_red,
@@ -23,6 +26,7 @@ SELECT r.rule_id, COUNT(*) AS fired,
 FROM verdicts v
 CROSS JOIN LATERAL jsonb_array_elements_text(v.rules_fired) AS r(rule_id)
 CROSS JOIN LATERAL (SELECT COALESCE(
+    CASE WHEN v.entity_id = ANY($2::text[]) THEN 'red' END,
     (SELECT origin FROM invoices WHERE id = v.entity_id),
     (SELECT origin FROM expenses WHERE id = v.entity_id),
     (SELECT origin FROM vendor_changes WHERE id = v.entity_id),
@@ -71,8 +75,11 @@ async def build(lineage_id: str, generation: int, ep: Any, agent: str, cfg: Line
 
 
 async def rules(episode_id: str) -> list[dict[str, Any]]:
-    """Blue's precision table: per rule id, verdicts it fired on, split by the judged entity's origin."""
-    return [{"rule_id": r["rule_id"], "fired": r["fired"], "on_red": r["on_red"], "on_legit": r["on_legit"]} for r in await db.fetch(_RULES_SQL, episode_id)]
+    """Blue's precision table: per rule id, verdicts it fired on, split by the judged entity's origin
+    (a hijacked vendor's invoices judged while the red swap was live count as red)."""
+    swap_hit = sorted({i for ch in await score._red_changes(episode_id) for i in ch["stopped"] | ch["paid_invoices"]})
+    rows = await db.fetch(_RULES_SQL, episode_id, swap_hit)
+    return [{"rule_id": r["rule_id"], "fired": r["fired"], "on_red": r["on_red"], "on_legit": r["on_legit"]} for r in rows]
 
 
 async def history(lineage_id: str, generation: int, n: int, agent: str) -> list[dict[str, Any]]:
