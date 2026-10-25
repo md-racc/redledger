@@ -1,6 +1,6 @@
-# Pitch: video and judging talk
+# Pitch: the 5-minute judging talk
 
-Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md](EVIDENCE.md). If a line here disagrees with STORY.md, STORY.md wins: change it there first.
+The video script is in [SCRIPT.md](SCRIPT.md). Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md](EVIDENCE.md). If a line here disagrees with STORY.md, STORY.md wins: change it there first.
 
 **Rules for every speaker:**
 - Never call a block a catch unless the card shows a rule. A fail-safe block, when blue is unreachable, is labelled as one. Read the reason line before you narrate it.
@@ -9,33 +9,7 @@ Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md
 
 ---
 
-## 1. The 90-second video (Dev R)
-
-About 215 words of voiceover, at about 145 words a minute.
-
-**Screens:**
-- **The arena** for 0:20.
-- **Red's and blue's consoles in replay** (`/backstage/red?replay=1`, `/backstage/blue?replay=1`) for 0:33. They replay `recordings/demo-enforce-live.jsonl`, controller on, where red's bank-account swap is held.
-- **The Compare card's "Real run" tab** for 0:50.
-- **The Evolution card** for 1:03: first `?lineage=ln_f52a3df83c8d`, then `?lineage=ln_431bf702e8a0`.
-
-Every shot is a recording or a finished run, so every take comes out the same.
-
-| Time | On screen | Voiceover (word for word) |
-|---|---|---|
-| 0:00–0:12 | Black. Text cards fade in: "Arup · Hong Kong · 2024", then "HK$200,000,000". | "In 2024, a finance worker at Arup joined a video call with his CFO. Every face on that call was a deepfake. He sent twenty-five million dollars." |
-| 0:12–0:20 | Text card: "Fraud gets past whoever approves the payment." Then: "That job is going to AI agents." | "Fraud like this works by getting past whoever approves the payment. And that job is going to AI agents." |
-| 0:20–0:33 | The arena: the company and its three agents, each labelled as it's named. | "Red Ledger is the crash test. A live AI fraud agent attacks a company's books. An AI clerk pays the bills. And a controller rules on every payment before it moves." |
-| 0:33–0:50 | Red's console asks to change a vendor's bank account. Cut to blue's console: the **ESCALATE** card. Zoom on "Needs independent verification: destination change overlaps open invoices." | "Red asks to change a vendor's bank account. That's the move that took a hundred and twenty million dollars from Google and Facebook. The clerk would approve it. But the ledger asks the controller first, and the change is held until someone verifies it." |
-| 0:50–1:03 | Compare card, "Real run" tab: controller off vs on, same seed. | "Same company, same ten days. Controller off: that one swap cost ten thousand dollars. Controller on: zero." |
-| 1:03–1:20 | Evolution card for ln_f52a3df83c8d climbing from $19k to $98k, then the card for ln_431bf702e8a0 at $0. | "Then we let red learn. Over five generations it found that invoices split just under the approval limit got paid, and it climbed to ninety-eight thousand dollars. None of our controls caught it. We closed the gap in the ledger, and the next live run stole nothing." |
-| 1:20–1:30 | Title card: "Red Ledger", then "app.redledger.us · github.com/…". | "Before your agent gets the checkbook, crash-test it. Red Ledger." |
-
-**Atlassian allows a video up to 3 minutes.** If we want a longer cut for Atlassian, add 0:30 after 1:20: the controls report (`/report/<ep>`) and the audit log ("every action, with its inputs and its reason"). Otherwise one 90-second video goes to every track.
-
----
-
-## 2. The 5-minute judging talk
+## 1. The 5-minute judging talk
 
 **The one moment it builds to:** the judge attacks the company, then decides whether the money moves.
 
@@ -47,7 +21,7 @@ Every shot is a recording or a finished run, so every take comes out the same.
   4. the escalation panel and the latest controls report (Ad)
 - The continuous run is going in enforce mode.
 - A fifth tab on laptop 3 is paused on a recorded ESCALATE or BLOCK card. That's the fallback.
-- The track card is on the table face up (see §3).
+- The track card is on the table face up (see §2).
 
 **Timing to expect** (measured on prod): red attacks at the start of each simulated day, and a day takes 20–30 seconds. An escalation waits up to 90 seconds for a person, then blocks. A judge's request reaches red on its next turn, so plan on 30–60 seconds before green acts on it.
 
@@ -97,7 +71,7 @@ Every shot is a recording or a finished run, so every take comes out the same.
 
 > This isn't a mockup. It's five services and a database, hosted on Vultr behind Cloudflare. Only the ledger service can touch the database. Every agent has its own key, can't see the scoreboard, and never sees which rows are fraud. Every deploy goes through eight CI checks and a manual production approval, and there are about fifteen hundred automated tests. Red and blue run on Factory's Droid SDK, and a red turn costs about a cent.
 >
-> *(Read the one line for this judge's track from §3.)*
+> *(Read the one line for this judge's track from §2.)*
 >
 > Every big accounts-payable fraud got past a person. The next ones will try to get past an agent. Red Ledger is how you find out first.
 
@@ -119,7 +93,7 @@ Every shot is a recording or a finished run, so every take comes out the same.
 
 ---
 
-## 3. Track card (one line each, Ad reads the one for the judge's badge)
+## 2. Track card (one line each, Ad reads the one for the judge's badge)
 
 - **Hyphenate:** The clerk does accounts payable end to end, and people only see the calls that need judgment: an escalation, with a reason and 90 seconds to answer. What makes that safe to hand over is measured here, in dollars, in both directions.
 - **Factory:** Green and blue run Droid with autonomy off, so every tool call raises a permission request. We made that request the control point: the handler asks the ledger before it says yes.
