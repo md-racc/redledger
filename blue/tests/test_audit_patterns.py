@@ -143,3 +143,10 @@ async def test_live_path_delegates_to_the_shared_sdk_turn(runtime, monkeypatch):
     assert ledger.read_counts and not ledger.writes  # _prepare collects the snapshot, then delegates.
     assert agent._tool_ids == list(AUDIT_TOOL_IDS)
     assert (await agent.health())["droid_ok"] is sdk_installed()  # installed-or-not only; health never imports the SDK
+
+
+@pytest.mark.parametrize("amount,found", [(1000, False), (1000.01, True), (4380, True)])
+async def test_audit_unverified_exposure_shares_gate_floor(amount, found):
+    ledger = FakeLedger(vendors=[vendor(created_day=4)], invoices=[invoice("first", amount=amount, received_day=5)])
+    snapshot = await evidence.collect_snapshot(ledger, "ep", 5)
+    assert ("unverified_vendor_exposure" in [f.code for f in snapshot.findings]) is found

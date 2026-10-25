@@ -185,7 +185,7 @@ Related fixes whose finder the PR does **not** name (don't attribute them to a v
 ### 4.11 Known gaps (still open) `ON MAIN`
 
 - **Invoice threshold splitting gets past the gate** (§4.7; P8, #175). The live lineage measured it: 19 of 19 extracted.
-- **Blue's live audit spend wasn't counted by the credit guard before #176.** `/audit` returned no usage, so prod recorded blue's ~4k credits per audit as 0. Fixed from the deploy containing 6640354 (#174 contract, #176 code).
+- **Blue's live audit spend wasn't counted by the credit guard before #176.** `/audit` returned no usage, so prod recorded blue's 3.4k–19k credits per audit as 0. Fixed from the deploy containing 6640354 (#174 contract, #176 code).
 - **Agent-visible sim-vs-red signals** (listed in #29): red employees always have `hr_record=false`; legit expense memos are always empty; legit invoices always have one "services" line; legit vendor changes touch only the bank account with one of five justifications. Blue could learn these tells.
 - **Not enforced in code**: blue reading `audit_log` only for green, and red not reading reports/flags beyond route permissions, rely partly on reviewed tool lists (AGENTS.md §3 inv. 11, "Not enforced").
 - **Agents share one Docker network.** Separation between agents is by token (§4.4). With the shared-token fallback (local dev), red's token would authenticate to blue's `/gate`.

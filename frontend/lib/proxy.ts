@@ -83,21 +83,77 @@ export function upstreamPath(pathname: string): string | null {
 }
 
 /**
- * Battlefield routes that carry ground truth ("Operator only") and that no screen reads: admins only, even for GET.
+ * Battlefield routes that carry ground truth ("Operator only") and that no viewer screen needs: admins only, even for GET.
  * Matched on the decoded, lower-cased upstream path segments, so `%65xport`, `EXPORT` or a trailing slash can't slip past.
+ * They say which rows are red's (attacks and their invoices, red's tool-call args, agent memory) or score blue against origin.
  */
-const OPERATOR_ONLY: RegExp[] = [/^\/api\/lineages\/[^/]+\/export$/];
+const OPERATOR_ONLY: RegExp[] = [
+  /^\/api\/lineages\/[^/]+\/export$/,
+  /^\/api\/attacks(\/.*)?$/,
+  /^\/api\/audit_log$/,
+  /^\/api\/state(\/.*)?$/,
+  /^\/api\/fe\/compare$/,
+  /^\/api\/fe\/episodes\/[^/]+\/attacks$/,
+  /^\/api\/fe\/episodes\/[^/]+\/entities\/.*$/,
+  /^\/api\/fe\/episodes\/[^/]+\/state\/.*$/,
+  /^\/api\/fe\/episodes\/[^/]+\/verdicts\/(rules|confusion)$/,
+];
+
+/** Ground-truth keys battlefield includes for the operator. Removed from every JSON answer a viewer gets. */
+const GROUND_TRUTH_KEYS = new Set(["origin", "entity_origin", "origin_of_source"]);
+
+/** A copy of a parsed JSON body with every ground-truth key removed, at any depth. */
+export function stripGroundTruth(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripGroundTruth);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) if (!GROUND_TRUTH_KEYS.has(k)) out[k] = stripGroundTruth(v);
+    return out;
+  }
+  return value;
+}
+
+/** The upstream path decoded and lower-cased per segment; null for an invalid path, "" when it can't be decoded. */
+function normalizedPath(pathname: string): string | null {
+  const path = upstreamPath(pathname.replace(/\/+$/, ""));
+  if (!path) return null; // refused as an invalid path anyway, never forwarded
+  try {
+    return path.split("/").map((s) => decodeURIComponent(s).toLowerCase()).join("/");
+  } catch {
+    return "";
+  }
+}
 
 export function isOperatorOnlyPath(pathname: string): boolean {
-  const path = upstreamPath(pathname.replace(/\/+$/, ""));
-  if (!path) return false; // refused as an invalid path anyway, never forwarded
-  let normalized: string;
-  try {
-    normalized = path.split("/").map((s) => decodeURIComponent(s).toLowerCase()).join("/");
-  } catch {
-    return true;
-  }
-  return OPERATOR_ONLY.some((re) => re.test(normalized));
+  const normalized = normalizedPath(pathname);
+  if (normalized === null) return false;
+  return normalized === "" || OPERATOR_ONLY.some((re) => re.test(normalized));
+}
+
+/**
+ * Reads that are made of ground truth but are the point of the public report once a run is over: a viewer gets them only when
+ * battlefield's answer says `final: true` (the controls assessment, /report/[ep]). Before that the answer would say, mid-run,
+ * which rows are red's. Admins always get them.
+ */
+const FINAL_ONLY: RegExp[] = [/^\/api\/fe\/episodes\/[^/]+\/controls$/];
+
+export function isFinalOnlyPath(pathname: string): boolean {
+  const normalized = normalizedPath(pathname);
+  if (normalized === null) return false;
+  return normalized === "" || FINAL_ONLY.some((re) => re.test(normalized));
+}
+
+/** A final-only answer a viewer may have: a JSON object whose `final` is exactly true. */
+export function isFinalAnswer(body: unknown): boolean {
+  return !!body && typeof body === "object" && !Array.isArray(body) && (body as { final?: unknown }).final === true;
+}
+
+/** What a viewer gets for a final-only read before the run ends. */
+export function notFinalYet(): Response {
+  return new Response(JSON.stringify({ error: "viewer", detail: "available when the run ends" }), {
+    status: 403,
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
 }
 
 /** Full upstream URL, re-checked so it can only land on battlefield's origin under `/api/`. */

@@ -30,7 +30,7 @@ AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
 LN_MODE = $(if $(filter command line,$(origin MODE)),$(MODE),enforce)
 LN_DAYS = $(if $(filter command line,$(origin DAYS)),$(DAYS),6)
 
-.PHONY: help up up-dry mock-agents down logs ps db-reset db-shell seed episode step toggle attack escalations score record replay \
+.PHONY: help up up-dry mock-agents down logs ps db-reset db-shell episode step toggle attack escalations score record replay \
         local-stack local-stack-status local-stack-stop \
         evolve lineage-status lineage-pause lineage-resume evolution-report lineage-export fixtures \
         prod-health prod-ps prod-logs prod-episode prod-step prod-pause prod-resume prod-toggle prod-attack prod-escalations \

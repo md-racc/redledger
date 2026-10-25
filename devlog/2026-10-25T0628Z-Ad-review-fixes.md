@@ -1,0 +1,1 @@
+- 2026-10-25T06:28Z · Ad · battlefield: review fixes — bank_swap decoy scoring, rule precision on_red, amount bounds on red/GL writes, seed-paid invoices, report retired-rule label, varied legit memos; next: rescore demo numbers after deploy; blocked: none

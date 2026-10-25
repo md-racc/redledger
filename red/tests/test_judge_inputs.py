@@ -53,3 +53,12 @@ async def test_request_is_capped_in_count_and_length():
     prompt = await RedAgent(S).build_prompt(turn(inputs=[judge_input(text="x" * 2000)] * 5))
     assert prompt.count('"text"') == 3  # at most three requests
     assert "x" * 501 not in prompt  # each cut to 500 chars
+
+
+@pytest.mark.asyncio
+async def test_side_fields_are_capped_and_catalog_checked():
+    big = judge_input(language="y" * 200_000, closest_built_in="z" * 200_000)
+    prompt = await RedAgent(S).build_prompt(turn(inputs=[big]))
+    assert "y" * 17 not in prompt and "z" * 10 not in prompt
+    ok = await RedAgent(S).build_prompt(turn(inputs=[judge_input(closest_built_in=FIRST)]))
+    assert FIRST in ok

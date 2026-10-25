@@ -71,6 +71,51 @@ describe("live checks", () => {
     expect(c.find((x) => x.label.includes("relay"))!.ok).toBe(false);
   });
 
+  describe("the event stream", () => {
+    const stream = (over: object) => liveChecks({ ...base, sync: sync("stream", true), ...over }).find((x) => x.label.includes("event stream"))!;
+    const idle = { lastEventAt: 1_000_000 - 90_000, eventsInLastMinute: 0 };
+
+    it("is not a fault when the episode is over and its history arrived", () => {
+      const c = stream({ ...idle, feed: { via: "socket", detail: "websocket open" }, episodeStatus: "finished", eventsHeld: 260 });
+      expect(c.ok).toBe(true);
+      expect(c.detail).toMatch(/idle: episode finished, 260 events delivered/);
+    });
+
+    it("is a fault when something is running and nothing arrives", () => {
+      expect(stream({ ...idle, feed: { via: "socket", detail: "websocket open" }, episodeStatus: "running", eventsHeld: 260 }).ok).toBe(false);
+    });
+
+    it("has nothing to say yet before an episode has delivered anything", () => {
+      expect(stream({ lastEventAt: null, eventsInLastMinute: 0, feed: { via: "socket", detail: "websocket open" }, episodeStatus: "pending", eventsHeld: 0 }).ok).toBeNull();
+      expect(stream({ lastEventAt: null, eventsInLastMinute: 0, feed: { via: "connecting", detail: "asking for a ticket" }, episodeStatus: "running", eventsHeld: 0 }).ok).toBeNull();
+    });
+
+    it("names the REST fallback when the socket will not open, and still passes while events arrive", () => {
+      const c = stream({ feed: { via: "polling", detail: "x" }, episodeStatus: "running", eventsHeld: 30 });
+      expect(c.ok).toBe(true);
+      expect(c.detail).toMatch(/REST fallback/);
+    });
+
+    it("fails with the reason when there is no way in", () => {
+      const c = stream({ ...idle, feed: { via: "down", detail: "the socket does not connect (ws-ticket → 403) and events → 403" }, episodeStatus: "finished", eventsHeld: 260 });
+      expect(c.ok).toBe(false);
+      expect(c.detail).toMatch(/ws-ticket → 403/);
+    });
+  });
+
+  it("says what the proxy refused with instead of sitting on 'connecting'", () => {
+    const c = liveChecks({ ...base, mode: "connecting", healthMs: null, lastEventAt: null, eventsInLastMinute: 0, answer: "403 forbidden", sync: sync("stream", true) });
+    expect(c[0]!.ok).toBe(false);
+    expect(c[0]!.detail).toMatch(/refused, not unreachable: 403 forbidden/);
+    expect(liveChecks({ ...base, mode: "connecting", healthMs: null, lastEventAt: null, eventsInLastMinute: 0, sync: sync("stream", true) })[0]!.detail).toBe("connecting");
+  });
+
+  it("tells the operator how to bring the arena laptop in", () => {
+    const c = liveChecks({ ...base, sync: { link: "stream", quietMs: 3000, state: emptyState() } }).find((x) => x.label.includes("arena"))!;
+    expect(c.ok).toBe(false);
+    expect(c.detail).toMatch(/sign in at \/admin/);
+  });
+
   it("does not call a replay of the recorded live-red run a failure to reach the backend", () => {
     const c = liveChecks({ ...base, mode: "recorded", healthMs: null, replaying: "demo-enforce-live", sync: sync("stream", true) });
     expect(c[0]!.ok).toBeNull();

@@ -19,6 +19,8 @@ rest of the frontend; without it, "Run episode" tries the live battlefield first
 | `/?show=1` | start the 90-second show on load (`?show=live` / `?show=recorded` force its data source), see [show-mode.md](show-mode.md) |
 | `/backstage`, `/backstage/{red,green,blue,battlefield}` | the raw consoles for the other laptops. Hidden: nothing links to them. See [backstage.md](backstage.md) |
 | `/ops` | the original data-path dashboard (episodes, attacks, verdicts, escalations, thinking) |
+| `/report/{ep}` | the controls assessment report for one episode, printable (viewers: once the run has ended). `NEXT_PUBLIC_MOCK=true` renders `public/mocks/controls-report.json`, a hand-built fixture |
+| `/?pitch=1` | pitch mode: a live run on the main screen, see [show-mode.md](show-mode.md) |
 
 Keys: `S` starts the show (`space` pauses, `←` `→` jump, `esc` leaves), `B` (or three quick clicks on the brand) opens the backstage in a new tab. Controls: scroll or the rail to tour; *Skip intro*; in the arena drag to orbit, click an agent for its
 dossier (`Esc` closes), *Roster* lists every agent, *Run episode*, *Send agents in / back*, controller `off | shadow |

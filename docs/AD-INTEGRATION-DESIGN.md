@@ -21,7 +21,7 @@ refs from §2 on are main at that commit; §1 is re-verified at a later commit (
 | 5 SDK findings | #91 (blue OFF, bounded), #96 (green tool ids); blue live evidence #119, #127 | partly; "OFF prompts on every MCP call" and CANCEL comment still open |
 | 6 green live handler (M) | #93, #94 | merged; live green turn still guarded (`green/agent.py:81-83`) |
 | 7 blue shared adapter (M) | #85, #88, #90 | merged; guard lifted (#157), live audit on prod since 2026-10-25 |
-| 8 joint acceptance (3-day shadow, all live) | issue #78 | blocked on 6/7 |
+| 8 joint acceptance (3-day shadow, all live) | issue #78 | not run: 6/7 are merged, but green stays keyless by decision (#78), so "all live" is out of scope for the hackathon; the red-and-blue-live off/enforce pair (#193) is the nearest evidence |
 | 9 cleanup | #97 (invariants 2/7, §5 rules, README) | partly; spec + this doc not yet deleted |
 
 ## 0. Summary of position
@@ -93,7 +93,7 @@ compared only action/entity/amount/args and ran under the current mode, with no 
 | Tests: complete context, replay hit/miss/expiry/conflict, state/mode change, concurrent identical, cancelled blocks, one reused escalation | done | `battlefield/tests/test_preparations_db.py`, `test_consume_preparation_db.py`, `test_stale_verdict_db.py`, `test_escalation_db.py`, `test_green_writes_db.py` |
 | Off skips Blue; shadow observes; enforce follows effective decision; auth/identity/ledger validation in every mode | done | `gatekeeper.py:583-599`, `green_writes.py:251-288`; tests `test_preparations_db.py:79-113`, `test_consume_preparation_db.py:169-243` |
 | Permission → events → ledger write/receipt ids match incl. cancelled/timed-out; one pair; no blind retry | partial | Code done (B1–B3); proven live for blue only (#119, #127); green live unrun |
-| Owner-loop safety and `/gate` responsiveness during live audit; 8 s budget | partial | `/gate` max 56.6 ms during an authorized local live audit (#119), 69 ms under interruption (#127); green clerk state open (B5); blue's `LIVE_BLOCKERS` still set (`blue/audit/readiness.py:22-29`) |
+| Owner-loop safety and `/gate` responsiveness during live audit; 8 s budget | partial | `/gate` max 56.6 ms during an authorized local live audit (#119), 69 ms under interruption (#127); green clerk state open (B5); blue's `LIVE_BLOCKERS` emptied (#157; asserted by `blue/tests/test_sdk_readiness.py:50`) |
 | No-key DRY_RUN, lint, actual SDK acceptance with versions/SHAs | partial | DRY_RUN suites pass per owners; blue SDK acceptance recorded with droid-sdk 0.5.0 / mcp 1.30.0 (#119, #127); green none |
 | One shared stack, matching off/shadow/enforce seeds ×2 | missing | Operator-authorized only (D15 hold) |
 | Verifier/steward, PRs < 600 lines; durable docs, spec deleted last | partial | Steward/verifier loop runs (`AGENTS.md` §10); invariants 2/7 and §5 updated (#97); spec and this doc not yet deleted (PR 9) |

@@ -42,3 +42,15 @@ export const CHAPTERS = [
   { at: 0.71, no: "IV", title: "The Fraudsters", line: "Eight on the wall. All built.", body: "Eight fraudsters on the wall, a scheme built for each. One mission: get money out the door before the controller notices." },
   { at: 1.0, no: "V", title: "The Arena", line: "Everyone converges.", body: "Everyone converges on the rotunda floor. Run the episode and watch the ledger decide." },
 ] as const;
+
+// The show and pitch mode both shorten the flight. Whoever set it last owns it, and only the owner puts it back, so stopping one never
+// undoes the other's (the show's effect that resets it on "off" used to run right after pitch mode had shortened it).
+let introOwner: string | null = null;
+/** shorten (or lengthen) the flight for `owner` */
+export function claimIntroLen(owner: string, seconds: number) { introOwner = owner; timeline.introLen = seconds; }
+/** back to the normal flight, if `owner` still holds it */
+export function releaseIntroLen(owner: string) {
+  if (introOwner !== owner) return;
+  introOwner = null;
+  timeline.introLen = INTRO_SECONDS;
+}

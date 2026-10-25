@@ -47,7 +47,10 @@ Server-enforced in `lib/admin.ts`. `/admin` posts `ADMIN_KEY` (server env, never
 HMAC-SHA256 keyed by `ADMIN_KEY`; rotating the key logs everyone out). `POST /api/admin/logout` clears it,
 `GET /api/whoami` → `{role}`. The `/api/bf` proxy lets a viewer GET/HEAD only (anything else → `403
 {"error":"viewer"}` before battlefield is contacted) and rate limits viewers per address
-(`lib/ratelimit.ts`; ws-ticket too); `POST /api/sync` and `POST /api/voice/transcribe` (it spends the speech credits) are admin-only, and any new
+(`lib/ratelimit.ts`; ws-ticket too, which must name an episode for a viewer). The proxy also keeps ground truth from viewers: reads
+that say which rows are red's are admins-only (`OPERATOR_ONLY` in `lib/proxy.ts`) and `origin` keys are stripped from every other JSON
+a viewer reads (`stripGroundTruth`); a new screen that needs one of those reads is an admin screen. `/api/sync` (both ways) and
+`POST /api/voice/transcribe` (it spends the speech credits) are admin-only, and any new
 route that calls a paid or external service must be too. Failed logins are capped per address and
 globally (20/min, then every login 429s until the minute ends); open `/api/sync/stream`s are capped at 500.
 `ADMIN_KEY` unset: everyone is admin outside production (`next dev`, mock dev); in production (`NODE_ENV=production`)
@@ -111,7 +114,7 @@ npm run gen:api                              # regenerate REST types from contra
 
 See README §16. For the frontend specifically:
 - Ad-hoc reads: `POST /api/fe/query {sql}` (single SELECT, 5 s cap) while exploring; promote stable queries to an `fe_*` extension route.
-- Your own server-side routes on battlefield: `battlefield/extensions/fe_<name>.py` with `router = APIRouter()`, mounted at `/api/x/fe/...`. `fe_*` is the only prefix allowed to expose no-token public routes (a QR crowd page, a kiosk). `fe_example.py` shows the shape.
+- Your own server-side routes on battlefield: `battlefield/extensions/fe_<name>.py` with `router = APIRouter()`, mounted at `/api/x/fe/...`. `fe_*` is the only prefix allowed to expose no-token public routes (a QR crowd page, a kiosk). See `blue_crs.py` for a real extension; any public `fe_*` route that writes must be designed with care (no unauthenticated writes into agent `inputs`).
 - Your own tables: `contracts/ext/fe/<nn>_<name>.sql`, prefixed `fe_`.
 - Push into the sim: `POST /api/inputs {episode_id, target: red|blue|green, source, payload}` lands in that agent's next turn as `options.inputs`. Whether an agent reacts is up to Al/M; coordinate the payload shape with them in DEVLOG.
 - Custom events: extensions can `bus.emit(..., "x.fe.<name>", {...})`; the reducer keeps them in `state.custom`.

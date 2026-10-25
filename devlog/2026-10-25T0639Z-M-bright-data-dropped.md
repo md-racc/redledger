@@ -1,0 +1,1 @@
+- 2026-10-25T06:39Z · M · docs: mark Bright Data C3 dropped; its Phase C start gate never cleared and #78 is closed

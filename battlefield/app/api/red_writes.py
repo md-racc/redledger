@@ -6,7 +6,7 @@ when an attack has been declared this day, linked to it via attack_id for scorin
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -17,6 +17,12 @@ from ..events import bus
 from . import audit
 
 router = APIRouter()
+
+
+# Money and day bounds. Without them red could submit a negative invoice (green's payment then adds
+# cash and score.compute counts negative dollars extracted) or NaN (the row persists, audit.record's
+# jsonb rejects it, and every later invoice read fails to serialize). NUMERIC(14,2) caps below 1e12.
+Money = Annotated[float, Field(gt=0, le=1e10, allow_inf_nan=False)]
 
 
 class VendorCreate(BaseModel):
@@ -37,16 +43,16 @@ class VendorChangeCreate(BaseModel):
 
 class InvoiceCreate(BaseModel):
     vendor_id: str
-    amount: float
+    amount: Money
     invoice_number: str
     po_id: str | None = None
     line_items: list[dict[str, Any]] = Field(default_factory=list)
-    due_in_days: int = 30
+    due_in_days: int = Field(30, ge=0, le=3650)
 
 
 class ExpenseCreate(BaseModel):
     employee_id: str
-    amount: float
+    amount: Money
     category: str
     memo: str | None = None
 
@@ -55,7 +61,7 @@ class EmployeeCreate(BaseModel):
     name: str
     role: str
     department: str | None = None
-    salary: float
+    salary: float = Field(ge=0, le=1e10, allow_inf_nan=False)
     bank_account: str
 
 
@@ -64,7 +70,7 @@ class AttackCreate(BaseModel):
     display_name: str
     story: str
     params: dict[str, Any] = Field(default_factory=dict)
-    target_amount: float
+    target_amount: float = Field(ge=0, le=1e10, allow_inf_nan=False)
 
 
 class AttackPatch(BaseModel):

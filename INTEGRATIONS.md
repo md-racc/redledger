@@ -34,7 +34,7 @@ owner, and exact file list.
 | B2 | CRS Credit API | M | `blue/crs-verification` | `blue/audit/{crs,evidence,tools,snapshot,agent,readiness}.py`, approved fictional fixtures, Blue docs/tests, `battlefield/extensions/blue_crs.py`, `contracts/ext/blue/` | **yes** — runtime/CI wiring in `battlefield/crs-runtime`, root docs in `docs/crs-runbook`; live credentials/profile setup by humans |
 | C1 | Atlassian Forge | unassigned | needs Ad's ruling first | new top-level `forge/**`, `battlefield/extensions/fe_*.py` | **yes** — `forge/` is not in `GIT.md` §2's table |
 | C2 | Cartesia voice | R | `frontend/voice-escalation` | `frontend/**`, `battlefield/extensions/fe_voice.py`, `contracts/ext/fe/` | none |
-| C3 | Bright Data | M | `blue/web-diligence` | `blue/audit/webcheck.py` (new), `blue/audit/evidence.py` | none |
+| C3 | Bright Data | M | **DROPPED** 2026-10-25 (M): Phase C start gate never cleared (#78 closed) | — | — |
 | C4 | Capital One Nessie | Ad | `battlefield/nessie` | `battlefield/seed/company.py`, payment + bank-feed path | none, but it is Ad's critical path |
 | C5 | Auth0 | R | `frontend/auth` | `frontend/**` | none |
 | C6 | Elastic | M | `blue/search` | `blue/audit/` | none |
@@ -200,8 +200,8 @@ with real agents) must be green first. **Status: not met as written.** Red and b
 live on prod (#157; smoke `ep_f9c695b3144f`, 2-day enforce), but green stays keyless by Ad's
 decision (#78; #160 stays a draft), and no 3-day `shadow` run with live agents is recorded. M
 proposed an overnight all-real shadow run in its place (#78), pending Ad's decision. CRS sandbox
-acceptance passed on its own (B2: ep_0181eda1c921 locally, ep_9cbc3362d44e on prod); Bright Data live readiness is tracked
-separately. Neither is proven by that checkpoint. Each item ends the weekend either merged or marked
+acceptance passed on its own (B2: ep_0181eda1c921 locally, ep_9cbc3362d44e on prod). Bright Data (C3) is
+**DROPPED** (2026-10-25, M): the shadow checkpoint never ran, so C3's start gate never cleared (#78 closed). Each item ends the weekend either merged or marked
 **DROPPED** — that is part of the §0 deletion condition.
 
 - **C1 Atlassian Forge — escalation inbox.** Prereq P5 + P6. Design: blue returns `escalate`
@@ -213,11 +213,12 @@ separately. Neither is proven by that checkpoint. Each item ends the weekend eit
 - **C2 Cartesia voice escalation.** Prereq P7. Spoken summary of the pending decision; approver
   answers by voice; answer resolves the escalation. A frontend page plus
   `battlefield/extensions/fe_voice.py`, owned by R alone.
-- **C3 Bright Data — web due diligence.** Does this vendor have a registration, a site, an
-  address? Second evidence source beside CRS, same audit path, `blue/audit/webcheck.py`.
-  **Extra gate:** B2 and its runtime/documentation prerequisites merged — then it reuses the
-  finding plumbing. Draft PRs do not clear this gate. Blue's audit is live on prod (#157), so a
-  live Bright Data tool would run inside that live session and needs its own live evidence.
+- **C3 Bright Data — web due diligence. DROPPED 2026-10-25 (M).** The Phase C start gate never
+  cleared: no all-real shadow run was approved or completed (#78 closed). A keyless, evidence-only
+  implementation (`blue/audit/webcheck.py`, vendor-name-only SERP lookup, `mutation_authority=false`)
+  passed independent verification but was never pushed or merged; the branch was discarded. No Bright
+  Data code, credentials, or env wiring exist on main. Original scope: a second evidence source beside
+  CRS in the same audit path.
 - **C4 Capital One Nessie.** Back `payments` and `bank_transactions` with real Nessie accounts
   so reconciliation runs against an external system instead of a self-consistent fiction.
   **Extra gate: do not start.** It rewrites battlefield's payment path, Ad's critical path,
