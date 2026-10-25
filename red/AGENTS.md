@@ -32,7 +32,7 @@ fails: if the controller-off baseline doesn't lose real money, nothing else matt
 | `server.py` | leave alone; it's the agentkit factory plus `/schemes` |
 | `tests/` | one test per scheme using `respx` against a fake Ledger API |
 
-## Scheme checklist (README §8 has the list)
+## Scheme checklist (ARCHITECTURE.md (Red) has the list)
 
 Each scheme needs: a `story` sentence a non-engineer judge understands, a `params_schema` so the
 judge's picker can offer knobs, `viable()` so red doesn't attempt impossible things, `plan()`
@@ -70,7 +70,7 @@ Stop the mock red first (`docker compose stop red`) so battlefield hits yours.
 
 ## Extension points (grow without a contracts PR)
 
-See README §16. For `red/` specifically:
+See README.md (Ledger API overview, extensions). For `red/` specifically:
 - Memory across turns: `ctx.ledger().get_state("k")` / `put_state("k", {...})`.
 - Inputs: `req.options["inputs"]` is a list of messages left for you (judge, crowd, other agents). Read it in `build_prompt` / `dry_run_turn` if you want to react.
 - Custom events: `ctx.emitter().custom("name", {...})` emits `x.red.name`; the frontend stores it in `state.custom`.
@@ -90,19 +90,19 @@ one exception to "red doesn't see blue's reasons" below; outside the debrief the
   review of the whole generation, `req.playbook` your current version; return new content or `None`.
 - Composed (`evolved:<slug>`) schemes are not implemented: red runs only the catalog, and evolution drops anything outside it.
 - `battlefield/mock_agents/server.py` (mock red's evasion ladder) is a worked example of using only
-  these inputs. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
+  these inputs. Contract: `contracts/agent-service.md` (Lineages); runbook: ARCHITECTURE.md (Evolution); design: root `ARCHITECTURE.md` (Evolution).
 
 ## Paste this to your coding agent as its first message
 
 ```
 You are working in the Red Ledger repo, directory `red/`, as Dev Al's coding agent.
-Before any edit: read `red/AGENTS.md`, `GIT.md` §7, `README.md` §§0,1,3,5,6,7,16, and
+Before any edit: read `red/AGENTS.md`, `GIT.md` §7, `README.md`, `ARCHITECTURE.md`and
 `contracts/agent-service.md`, `contracts/events.md`. Confirm `git branch --show-current` starts with `red/`;
 if not, create `red/<topic>` from origin/main. Edit only inside `red/`,
 `battlefield/extensions/red_*.py`, `contracts/ext/red/`, and add one `devlog/` fragment.
 Never force-push, never merge, never touch another directory; if you need a contracts change,
 write the proposed diff into the PR description and stop. Run `make lint test-red` before
-each push. Everything must work with DRY_RUN=true. Goal for this session: implement the next scheme in README §8 with a test, land it against `make mock-agents`.
+each push. Everything must work with DRY_RUN=true. Goal for this session: implement the next scheme in ARCHITECTURE.md (Red) with a test, land it against `make mock-agents`.
 ```
 
 ## Don't

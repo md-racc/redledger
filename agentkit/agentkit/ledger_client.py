@@ -220,7 +220,7 @@ class LedgerClient:
     EXTENSION_AREAS = frozenset({"red", "green", "blue", "fe"})
 
     async def get_extension(self, area: str, path: str, **params: Any) -> Any:
-        """GET a team extension route, `/api/x/<area>/<path>` (README §16), with this client's headers and
+        """GET a team extension route, `/api/x/<area>/<path>` (README.md, Ledger API overview: extensions), with this client's headers and
         timeouts. The public way for an agent to read its own area's extension tables instead of `_get`.
         Reads only: extension writes stay explicit methods so they carry the invocation's key. `path` must be
         plain segments: `?`, `#`, `%` and `\\` are refused (so ids that would need URL encoding aren't supported)

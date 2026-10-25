@@ -6,7 +6,7 @@
 -- Battlefield NEVER returns `origin` to any X-Agent caller.
 
 -- A lineage is a chain of episodes, one per generation, whose agents carry versioned playbooks
--- from one generation to the next (docs/EVOLUTION-DESIGN.md). `config` is validated by battlefield
+-- from one generation to the next (ARCHITECTURE.md, Evolution). `config` is validated by battlefield
 -- (LineageConfig in agentkit/models.py). Generation g runs on seed `base_seed + g`; no two episodes
 -- of a lineage share a seed (episodes_lineage_seed below), so the legit traffic agents learn about in
 -- one generation is never replayed verbatim in the next.
@@ -312,7 +312,7 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_ep ON events(episode_id, id);
 CREATE INDEX IF NOT EXISTS events_id ON events(id);
 
--- ---------- evolution (lineages; docs/EVOLUTION-DESIGN.md) ----------
+-- ---------- evolution (lineages; ARCHITECTURE.md, Evolution) ----------
 
 -- Per (lineage, agent) versioned playbook. Content is opaque to battlefield and owned by the agent's
 -- team. Versions are immutable; version 0 is the seed ({}), every write adds one. Agents read and
@@ -350,7 +350,7 @@ CREATE TABLE IF NOT EXISTS debriefs (
 CREATE INDEX IF NOT EXISTS debriefs_lineage ON debriefs(lineage_id, generation, agent);
 CREATE INDEX IF NOT EXISTS debriefs_ep ON debriefs(episode_id, day);
 
--- ---------- extension points (core, owned by Ad; see README §16) ----------
+-- ---------- extension points (core, owned by Ad; see README.md, Ledger API overview: extensions) ----------
 
 -- Per-agent key/value memory across turns. No schema change needed to persist agent state.
 CREATE TABLE IF NOT EXISTS agent_state (

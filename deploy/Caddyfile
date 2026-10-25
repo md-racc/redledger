@@ -2,7 +2,7 @@
 # doors (frontend/lib/backstage/alias.ts; admin-only, everyone else gets a 404). Cloudflare DNS, proxied with SSL "Full
 # (strict)". Internal traffic stays plain HTTP on the compose networks.
 #
-# Access mode is chosen by deploy/render-env.sh (README §11, §13): either Cloudflare Access in front
+# Access mode is chosen by deploy/render-env.sh (OPERATIONS.md, Access): either Cloudflare Access in front
 # with the origin verifying its JWT (both CF_ACCESS_* set), or public read-only mode (both blank)
 # where anyone can watch and only ADMIN_KEY holders can act. Prod runs public read-only since
 # 2026-10-25 (Access app kept, with a bypass policy).
@@ -12,7 +12,7 @@
 #   *        → frontend (its server-side /api/bf/* proxy is the only holder of OPERATOR_TOKEN and
 #              refuses every non-GET for viewers; see frontend/AGENTS.md "Viewers and admins")
 # Battlefield's REST API has no public hostname: agents reach it on the `agents` network and the
-# frontend on `edge`. Operators use `make prod-*` (deploy/PROD-OPS.md).
+# frontend on `edge`. Operators use `make prod-*` (OPERATIONS.md).
 #
 # Origin lock: everything is meant to arrive through Cloudflare's edge (TLS, proxying and, when it
 # is on, Access). A client that connects to the VM's IP directly would skip all of that, so only
