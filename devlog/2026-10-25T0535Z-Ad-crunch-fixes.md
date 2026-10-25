@@ -1,0 +1,1 @@
+- 2026-10-25T05:35Z · Ad · chore: viewers no longer get ground truth (red-row reads admin-only, origin keys stripped, relay and all-episode WS tickets admin-only); ws/useFeed/ops/backstage feed fixes; Devpost + design docs match the red+blue-live recordings (#193); next: blue live-audit flags (check #195 on prod); blocked: none
