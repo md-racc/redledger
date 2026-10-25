@@ -156,11 +156,13 @@ paid/approved/blocked/rejected). Legit items you had blocked arrive only in the 
   characters). No raw items, identifiers, amounts, field values, source prose, scores, history or
   other agents' internals are learned. Unrelated operator content, including unknown namespace
   fields, is preserved; incompatible namespace versions and oversized content are kept unchanged.
-- This is stored reflection memory, **not changed AP policy**: neither `build_prompt` nor the
-  keyless clerk consumes it or daily debriefs yet. Active-turn consumption needs a separate PR;
-  do not add playbook tools/writes without fresh tool-ID acceptance. Live Green's pre-SDK guard
-  was lifted following the accepted Stage B evidence (issue #78); DRY_RUN stays the default.
-  Contract: `contracts/agent-service.md` (Lineages).
+- `build_prompt` consumes it on lineage turns only: a bounded (≤1 KB), deterministic section of
+  stored `procedure_reminders` (fixed PROCEDURES entries, stored order, no rationale or operator
+  prose), degrading to the static prompt on any read failure. The keyless clerk never sees it
+  (`dry_run_turn` does not call `build_prompt`), and daily debriefs remain unconsumed. No
+  playbook tools/writes were added — that still needs fresh tool-ID acceptance. Live Green's
+  pre-SDK guard was lifted following the accepted Stage B evidence (issue #78); DRY_RUN stays
+  the default. Contract: `contracts/agent-service.md` (Lineages).
 
 ## Paste this to your coding agent as its first message
 

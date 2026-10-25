@@ -1,0 +1,1 @@
+- 2026-10-25T02:27Z · Ad · docs: README §11 row for the ElevenLabs speech-to-text key; next: none; blocked: none

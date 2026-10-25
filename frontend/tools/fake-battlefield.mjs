@@ -41,6 +41,7 @@ const PROFILE = {
 // ---- state ---------------------------------------------------------------------------------------------------------
 
 let nextEventId = 1000;
+const inputs = []; // POST /api/inputs: messages left for an agent's next turn (the stand-in only keeps them; no agent reads them)
 const episodes = new Map();
 const escalations = new Map();
 const tickets = new Map();
@@ -261,6 +262,14 @@ async function route(req, res) {
     return json(res, 201, pub(ep));
   }
   if (m === "GET" && path === "/api/episodes") return json(res, 200, [...episodes.values()].map(pub).reverse());
+  if (m === "POST" && path === "/api/inputs") {
+    const b = await readBody(req);
+    if (!episodes.get(b.episode_id) || !["red", "green", "blue"].includes(b.target)) return json(res, 422, { detail: "bad input" });
+    const row = { id: inputs.length + 1, episode_id: b.episode_id, target: b.target, source: b.source ?? "operator", payload: b.payload ?? {}, created_at: ts() };
+    inputs.push(row);
+    return json(res, 201, row);
+  }
+  if (m === "GET" && path === "/api/inputs") return json(res, 200, inputs.filter((i) => !url.searchParams.get("episode_id") || i.episode_id === url.searchParams.get("episode_id")));
   if (m === "GET" && path === "/api/lineages") return json(res, 200, [lineageRow()]);
   if (m === "GET" && path === "/api/escalations") {
     const ep = url.searchParams.get("episode_id");

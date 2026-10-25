@@ -7,6 +7,7 @@
 //
 // Server-Sent Events when the network lets them through, one-second polling when it does not.
 import { useEffect, useRef, useState } from "react";
+import { isAdmin } from "../role";
 import { emptyState, reduceState, type SyncKind, type SyncMsg, type SyncState, type TrafficRow } from "./hub";
 
 const CAP = 300;
@@ -36,6 +37,7 @@ let lastAt = 0;
 
 export function publish(kind: SyncKind, data: Record<string, string | number | boolean | null> = {}): void {
   if (typeof window === "undefined") return;
+  if (!isAdmin()) return; // only the laptops (admins) speak on the relay; the server refuses anyone else (app/api/sync)
   const body = JSON.stringify({ client: clientId(), kind, data: { ...data, role } });
   const now = Date.now();
   if (kind !== "hello" && body === lastSent && now - lastAt < 250) return; // a double-fired effect is one message

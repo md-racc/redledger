@@ -162,7 +162,9 @@ redact=fn)` redacts `agent.tool_call` arguments on every narration path.
   Green). Whether every MCP call at `OFF` raises a request is still an open Finding; if it doesn't,
   record it in `contracts/CHANGELOG.md` and rely on ledger-side enforcement alone.
 - Blue audit: `Autonomy.OFF`, strict identity, permission handler always `PROCEED_ONCE` (D11, #90);
-  live audit stays disabled until its readiness blockers are proven.
+  the live-audit guard is lifted (#157), so the audit runs on Droid whenever `DRY_RUN_BLUE=false`.
+  Prod keeps `DRY_RUN_BLUE=true` until Ad flips it between runs; set it explicitly, because an unset
+  `DRY_RUN_BLUE` follows the global `DRY_RUN`.
 - Never return `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*` from any handler. They disable the gate.
 - Handlers may be async and may do I/O. They must not start a turn on the same session.
 - Pin models via `DROID_MODEL_*`. Don't use `model="auto"` in anything that runs during judging.

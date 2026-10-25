@@ -1,0 +1,1 @@
+- 2026-10-25T02:25Z · Ad · battlefield: ELEVENLABS_API_KEY/ELEVENLABS_STT_MODEL wired to the frontend through compose, deploy and render-env (vendor approved by Ad for #154; API base deliberately not configurable); next: Ad sets the secret; blocked: none

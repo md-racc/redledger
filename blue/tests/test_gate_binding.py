@@ -71,12 +71,12 @@ async def test_pending_key_rejects_collision_without_disturbing_singleflight(gat
     compute = engine._compute
     calls = 0
 
-    async def delayed(req, key, binding, dry_run=False):
+    async def delayed(req, key, binding, dry_run=False, extra_hits=(), retired=frozenset()):
         nonlocal calls
         calls += 1
         ready.set()
         await release.wait()
-        return await compute(req, key, binding, dry_run)
+        return await compute(req, key, binding, dry_run, extra_hits, retired)
 
     monkeypatch.setattr(engine, "_compute", delayed)
     req = gate_request()

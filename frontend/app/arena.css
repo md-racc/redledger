@@ -293,6 +293,19 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .threat li b { display: block; font-size: 14px; font-weight: 500; margin-bottom: 2px; }
 .threat li span { display: block; font-size: 12px; line-height: 1.35; color: var(--ink-3); }
 .threat-err { padding: 8px 16px 10px; color: var(--red) !important; }
+.threat { max-height: calc(100vh - var(--bar) - 150px); overflow: auto; scrollbar-width: thin; }
+.speak { padding: 14px 16px 16px; border-top: 1px solid var(--red); display: grid; gap: 10px; }
+.speak h4 { margin: 0; font-family: var(--caps); font-weight: 600; font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-3); }
+.speak-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.speak-level { position: relative; width: 90px; height: 6px; background: var(--line); }
+.speak-level i { position: absolute; inset: 0 auto 0 0; background: var(--red); transition: width 0.09s linear; }
+.speak-lang { font-family: var(--figures); font-style: italic; font-size: 13px; color: var(--ink-2); }
+.speak-note { margin: 0; font-size: 13px; color: var(--ink-3); }
+.speak-text { width: 100%; box-sizing: border-box; resize: vertical; padding: 9px 11px; border: 1px solid var(--line-2); background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; line-height: 1.4; border-radius: 0; }
+.speak-text:focus { outline: 0; border-color: var(--ink); }
+.speak-match { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.speak-match select { font: inherit; font-size: 13px; padding: 2px 6px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 0; }
+.speak-act { display: flex; gap: 6px; }
 
 /* ───────── compare + evolution ───────── */
 .cmp, .evo { position: fixed; z-index: 13; left: var(--pad); right: var(--pad); bottom: var(--pad); width: auto; max-width: 1180px; margin-inline: auto; padding: 4px; background: var(--panel); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(20px); transition: opacity 0.25s var(--ease), transform 0.3s var(--ease), visibility 0s 0.3s; }

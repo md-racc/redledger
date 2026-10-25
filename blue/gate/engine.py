@@ -15,7 +15,7 @@ from agentkit.models import GateRequest, GateResponse
 
 from .cache import VerdictCache
 from .llm import LLMGate
-from .rules import RuleHit, evaluate
+from .rules import RETIREABLE_RULE_IDS, RuleHit, evaluate
 
 TTL = 120
 MAX_ENTRIES = 100_000
@@ -126,10 +126,14 @@ def _reason(hits: list[RuleHit], verdict: str) -> str:
     return f"{prefix} — {'; '.join(h.detail for h in hits)}"
 
 
-async def _compute(req: GateRequest, key: str, binding: ActionBinding, dry_run: bool = False, extra_hits: tuple[RuleHit, ...] = ()) -> GateResponse:
+async def _compute(
+    req: GateRequest, key: str, binding: ActionBinding, dry_run: bool = False, extra_hits: tuple[RuleHit, ...] = (), retired: frozenset[str] = frozenset()
+) -> GateResponse:
     started = time.monotonic()
     try:
-        base_hits = evaluate(req)
+        # Only note-only rules can ever be retired; a block or hold rule always stands.
+        retired = retired & RETIREABLE_RULE_IDS
+        base_hits = [hit for hit in evaluate(req) if hit.id not in retired or hit.effect != "note"]
         hits = base_hits + list(extra_hits)
         effects = {hit.effect for hit in hits}
         base_effects = {hit.effect for hit in base_hits}
@@ -154,7 +158,7 @@ async def _compute(req: GateRequest, key: str, binding: ActionBinding, dry_run: 
         _pending.pop(key, None)
 
 
-async def decide(req: GateRequest, *, dry_run: bool = False, extra_hits: tuple[RuleHit, ...] = ()) -> GateResponse:
+async def decide(req: GateRequest, *, dry_run: bool = False, extra_hits: tuple[RuleHit, ...] = (), retired: frozenset[str] = frozenset()) -> GateResponse:
     key = namespace(req)
     binding = ActionBinding.from_request(req)
     cached = _cache.get(key, binding)
@@ -165,9 +169,7 @@ async def decide(req: GateRequest, *, dry_run: bool = False, extra_hits: tuple[R
         # Reject new admission, never evict a verdict promised for 120 seconds.
         if len(_pending) >= MAX_PENDING or _cache.size() + len(_pending) >= MAX_ENTRIES:
             raise HTTPException(503, "gate capacity unavailable; retry later with the same key")
-        work = (
-            _compute(req.model_copy(deep=True), key, binding, dry_run, extra_hits) if extra_hits else _compute(req.model_copy(deep=True), key, binding, dry_run)
-        )
+        work = _compute(req.model_copy(deep=True), key, binding, dry_run, extra_hits, retired)
         task = asyncio.create_task(work)
         _pending[key] = (binding, task)
     else:
@@ -177,5 +179,6 @@ async def decide(req: GateRequest, *, dry_run: bool = False, extra_hits: tuple[R
     return (await asyncio.shield(task)).model_copy(deep=True)
 
 
-def explain(req: GateRequest, *, extra_hits: tuple[RuleHit, ...] = ()) -> dict[str, Any]:
-    return {"hits": [asdict(hit) for hit in evaluate(req) + list(extra_hits)]}
+def explain(req: GateRequest, *, extra_hits: tuple[RuleHit, ...] = (), retired: frozenset[str] = frozenset()) -> dict[str, Any]:
+    retired = retired & RETIREABLE_RULE_IDS
+    return {"hits": [asdict(hit) for hit in evaluate(req) if hit.id not in retired or hit.effect != "note"] + [asdict(hit) for hit in extra_hits]}

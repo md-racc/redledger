@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { blueIdForRule, ROSTER_BY_ID } from "@/lib/arena/roster";
 import { clientId, useSync } from "@/lib/sync/client";
 import { liveClients } from "@/lib/sync/hub";
+import { useRole } from "@/lib/role";
 import type { ControllerMode } from "@/lib/types";
 import { avgLatency, confusion, ruleBoard, ruleName, schemeName, thoughts, toolRows, verdictCounts } from "./derive";
 import { concerns, eventLine, hhmmss, liveChecks, msgLine, TEAM_KEYS, teamEvents, trafficLine, type TeamKey } from "./raw";
@@ -35,6 +36,7 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
   useEffect(() => setMounted(true), []);
   const bs = useBackstage(WANT[team]);
   const sync = useSync(`backstage${team}`);
+  useRole(); // asks the server once; a viewer's console only watches (the operator controls below are for admins)
   const { state, events, episode, agg, now } = bs;
   const selected = sync.state.selected?.id ?? null;
 
@@ -187,13 +189,14 @@ function BlueState({ bs, selected }: { bs: BS; selected: string | null }) {
   const cm = confusion(bs.agg.confusion);
   const lat = avgLatency(bs.agg.verdicts);
   const think = thoughts(s, "blue", 3);
+  const admin = useRole() === "admin";
   return (
     <Sec title="BLUE STATE">
       <pre>{`verdicts ${counts.total}  allow ${counts.allow}  block ${counts.block}  review ${counts.escalate}   flags ${s.flags.length}   frozen ${Object.keys(s.frozenVendors).length}   gate latency ${lat == null ? "-" : `${Math.round(lat)}ms`}\nconfusion ${cm ? `true-block ${cm.trueBlock}  false-block ${cm.falseBlock}  missed ${cm.missed}  true-allow ${cm.trueAllow}` : "- (needs /fe/verdicts/confusion)"}`}</pre>
       {open.map((e) => (
         <div key={e.escalation_id} className="warn">
           {`OPEN ESCALATION ${e.escalation_id}: ${e.action} ${usd(e.amount)}  ${e.reason}  `}
-          <button onClick={() => void api.resolve(e.escalation_id, "approve").catch(() => {})}>approve</button> <button onClick={() => void api.resolve(e.escalation_id, "block").catch(() => {})}>block</button>
+          {admin && <><button onClick={() => void api.resolve(e.escalation_id, "approve").catch(() => {})}>approve</button> <button onClick={() => void api.resolve(e.escalation_id, "block").catch(() => {})}>block</button></>}
         </div>
       ))}
       <div className="dim">latest verdicts, newest first, each with its reason:</div>
@@ -227,11 +230,12 @@ function BattlefieldState({ bs }: { bs: BS }) {
   const [replays, setReplays] = useState<string[]>([]);
   const [replay, setReplay] = useState("");
   const live = bs.mode === "live";
+  const admin = useRole() === "admin";
   useEffect(() => {
-    if (!live) return;
+    if (!live || !admin) return;
     api.schemes().then((x) => { setSchemes(x); if (x[0]) setScheme((c) => (x.some((s: any) => s.id === c) ? c : x[0].id)); }).catch(() => {});
     api.replays().then((r) => { setReplays(r); setReplay((c) => c || r[0] || ""); }).catch(() => {});
-  }, [live]);
+  }, [live, admin]);
   const act = async (label: string, fn: () => Promise<unknown>) => {
     try { await fn(); setMsg(`${hhmmss(Date.now())} ${label}: ok`); } catch (e) { setMsg(`${hhmmss(Date.now())} ${label}: ${String(e instanceof Error ? e.message : e).slice(0, 160)}`); }
   };
@@ -247,7 +251,7 @@ function BattlefieldState({ bs }: { bs: BS }) {
           <div key={e.id}>{`${e.id.padEnd(28)} ${e.controller_mode.padEnd(8)} ${e.status.padEnd(9)} day ${Math.min(e.current_day, e.days)}/${e.days}  `}<button onClick={() => bs.pin(bs.pinned === e.id ? null : e.id)}>{bs.pinned === e.id ? "unpin" : "follow"}</button></div>
         ))}
       </Sec>
-      <Sec title="CONTROL PLANE (operator calls: they go through the proxy and show up in API TRAFFIC)">
+      {admin && <Sec title="CONTROL PLANE (operator calls: they go through the proxy and show up in API TRAFFIC)">
         {!live ? <div className="dim">needs a backend</div> : (
           <>
             <div>
@@ -272,7 +276,7 @@ function BattlefieldState({ bs }: { bs: BS }) {
             <div className="dim">{msg || "-"}</div>
           </>
         )}
-      </Sec>
+      </Sec>}
     </>
   );
 }

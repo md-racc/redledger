@@ -384,3 +384,27 @@ receipts under interruption, and concurrent `/gate` far inside its 8-second budg
 All runtime guards, the live `_droid_turn` hard stop outside the test subclass, and
 readiness/health remain unchanged: `ready:false`. CRS fixture acceptance and the interrupted
 live capture are still outstanding.
+
+## Live audit readiness lift, 2026-10-24
+
+The `_droid_turn` hard stop in `blue/audit/agent.py` and the `LIVE_BLOCKERS` list in
+`blue/audit/readiness.py` are retired. Each former blocker is resolved by merged evidence:
+
+| Blocker | Evidence |
+|---|---|
+| `blue_session_ids_unverified` | `AUDIT_TOOL_IDS` pinned from the observed `list_tools()` (#68) and exercised by both live sessions below; exact IDs matched. |
+| `sdk_invocation_binding_unverified` | Happy session bound exact SDK `tool_use_id`s as idempotency keys; receipts confirmed per write (#119, `ep_edd0d922b9a5`). |
+| `blue_owner_loop_safety_unverified` | Shared `run_on_turn_loop` + `TurnLock` (#92); interrupted session survived a mid-turn kill/restart with receipt state intact (`ep_677e52f4197f`, #127). |
+| `blue_narration_ownership_unverified` | Both sessions emitted blue-owned thinking/tool events under blue's episode/day on the shared path. |
+| `nonblocking_bridge_unverified` | `/gate` stayed responsive during live audit turns (p95 8 ms, max 69 ms sampled mid-audit). |
+| `live_audit_disabled` | This lift; `live_readiness()` now reports `ready=True` whenever the SDK is importable. |
+
+Operational notes that survive the lift:
+
+- Use `DROID_MODEL_BLUE=gpt-5.4-mini` for live runs. `gemini-3.8-flash` intermittently stalls
+  before the first stream event (2 of 7 sessions) and misses the 170 s audit budget cap on
+  most turns (findings 1-2 above); the cap is hardcoded in `audit/agent.py`.
+- A stalled or over-budget audit still ends as a truthful partial (gaps recorded, no blind
+  writes); that degradation path is unchanged and was exercised live.
+- `/health` never probes the SDK, so `droid_ok` there stays `false`; use the readiness CLI
+  (`python -m blue.audit.readiness`) for the availability-gated answer.

@@ -1,0 +1,1 @@
+- 2026-10-25T02:51Z · Ad · blue: Dockerfile fails the build if the Droid CLI or droid_sdk is missing (prod blue was live with droid_ok=false from a cached fallback layer); next: deploy and confirm droid_ok; blocked: none
