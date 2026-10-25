@@ -1,11 +1,12 @@
 # CRS employee identity integration
 
 This replaces B2's unsupported EIN/vendor lookup with approved fictional employee checks.
-It is **not a completed live demo**. Blue's live audit still refuses to stream or write until
-its owner-loop safety and authenticated invocation binding are verified. That safeguard is
-unchanged. DRY_RUN never calls CRS, even with credentials present, with one explicit exception:
+End-to-end acceptance **passed locally** against the live CRS sandbox on 2026-10-25
+(ep_0181eda1c921, see "Episode acceptance re-run" below); CRS does not run on prod. Blue's live
+audit guard was lifted separately in #157 (`SDK-READINESS.md`, "Live audit readiness lift").
+DRY_RUN never calls CRS, even with credentials present, with one explicit exception:
 exporting `CRS_LIVE=true` in the shell (acceptance-only, default off, never committed anywhere)
-lets the keyless audit call the sandbox provider. The live SDK audit guard is unchanged.
+lets the keyless audit call the sandbox provider.
 
 ## Data flow and safety
 
@@ -72,7 +73,7 @@ arguments, but blocked its owner-loop heartbeat and used a local, unverified inv
 separate real, list-only Session matched all seven IDs without streaming. #79 now isolates the
 turn loop; Blue's shared narration, TurnLock and canned cross-loop tests are covered in
 `SDK-READINESS.md`. These offline checks do not qualify authenticated SDK traffic or CRS access.
-Readiness remains false and the live guard remains intact.
+(Since then the live evidence in `SDK-READINESS.md` led #157 to lift the live guard.)
 
 | Remaining check | Owner |
 |---|---|
@@ -82,7 +83,7 @@ Readiness remains false and the live guard remains intact.
 | Clean/mismatch/step-up episodes, a later CRS-caused expense hold, and `billable:false` logs | M/operator with an authorized environment; unknown and step-up remain neutral |
 
 See `blue/SDK-READINESS.md` for the pinned IDs, list-only command, receipt tests and Ad handoff.
-CRS PR #64 and its prerequisites have merged, but live acceptance remains incomplete.
+CRS PR #64 and its prerequisites have merged; episode acceptance passed on 2026-10-25 (below).
 Bright Data C3 also requires the real-agent three-day shadow checkpoint in `INTEGRATIONS.md`.
 
 ## Sandbox probe evidence, 2026-10-24 (approved scope: P01/P12/P16 only)
@@ -120,5 +121,17 @@ routes and `/api/preparations`) never includes `flags`; only `_invoice_context` 
 Proposed fix is one symmetric query in `battlefield/app/api/green_writes.py`
 (`(entity_type='employee' AND entity_id=<employee>) OR (entity_type='expense' AND
 entity_id=<expense>)`). Once it lands, re-run the driver: P12's day-1 expense must block on
-`already_flagged_high` while P01's and P16's pay.
+`already_flagged_high` while P01's and P16's pay. **Landed as #139** (`_expense_context` now
+carries employee and expense flags, for the gated routes and `/api/preparations`).
+
+## Episode acceptance re-run, 2026-10-25 (approved scope: P01/P12/P16 only)
+
+M re-ran the driver against #139 (`crs_episode_acceptance.py --allow-provider-call
+--blue-external`; local stack at main `34fdbdf`, real blue, live CRS sandbox; #102). Episode
+ep_0181eda1c921, two-day enforce: P01/P12/P16 day-0 expenses paid (no flags yet); blue's audit
+flagged P12 (provider mismatch), P01/P16 flag-free; **P12's day-1 expense blocked with
+`already_flagged_high`** in `rules_fired`; P01/P16 day-1 expenses paid (no false positives); two
+audit reports posted; provider `/users/logs` showed 19 identity checks, **all `billable:false`**;
+`acceptance_passed: true`, exit 0. That completes the #102 sequence. The 3-day all-real shadow
+checkpoint is separate (#78).
 
