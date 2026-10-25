@@ -4,6 +4,7 @@
 // it works for the live socket, a script and the offline simulator alike, and so every card knows which agent in the
 // arena it is about (click the card, the camera goes to them).
 import type { RLEvent } from "../types";
+import { FAIL_SAFE_NOTE, FAIL_SAFE_TAG, failSafeLabel, isFailSafe } from "../verdictCause";
 import { blueIdForRule, redIdForScheme, ROSTER_BY_ID } from "./roster";
 
 export type CardTone = "red" | "blue" | "green" | "amber" | "ink";
@@ -47,6 +48,8 @@ export function cardFor(e: RLEvent): FeedCard | null {
     }
     case "gate.verdict": {
       if (p.verdict === "allow") return null;
+      // blue did not answer: the ledger's default held it, no guard caught anything (lib/verdictCause.ts)
+      if (isFailSafe(p)) return { ...base, tone: "ink", tag: FAIL_SAFE_TAG, head: failSafeLabel(p.verdict), sub: `${p.action}${money(p.amount) ? ` · ${money(p.amount)}` : ""} · ${FAIL_SAFE_NOTE}` };
       const rule = (p.rules_fired ?? [])[0] as string | undefined;
       const guard = rule ? blueIdForRule(rule) ?? undefined : undefined;
       const name = nameOf(guard, "Blue");
@@ -55,6 +58,7 @@ export function cardFor(e: RLEvent): FeedCard | null {
       return { ...base, tone: "blue", tag: p.enforced === false ? "WOULD BLOCK" : "BLOCK", head: `${name} ${p.enforced === false ? "would have stopped" : "stopped"} ${amt || "a payment"}`, sub: `${p.action} · ${pretty((p.rules_fired ?? []).join(" + ")) || p.reason}`, agentId: guard };
     }
     case "escalation.opened":
+      if (isFailSafe(p)) return { ...base, tone: "ink", tag: FAIL_SAFE_TAG, head: failSafeLabel("escalate"), sub: `${p.action}${money(p.amount) ? ` · ${money(p.amount)}` : ""} · a human decides; unanswered, it stays blocked` };
       return { ...base, tone: "amber", tag: "HUMAN", head: "Needs a human decision", sub: `${p.action}${money(p.amount) ? ` · ${money(p.amount)}` : ""} — ${p.reason}` };
     case "escalation.resolved":
       return p.decision === "approve"

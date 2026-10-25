@@ -14,6 +14,7 @@ import { liveClients } from "@/lib/sync/hub";
 import { RECORDING } from "@/lib/backstage/recording";
 import { useRole } from "@/lib/role";
 import type { ControllerMode } from "@/lib/types";
+import { FAIL_SAFE_NOTE, FAIL_SAFE_TAG, failSafeLabel, isFailSafe } from "@/lib/verdictCause";
 import { avgLatency, confusion, ruleBoard, ruleName, schemeName, thoughts, toolRows, verdictCounts } from "./derive";
 import { concerns, eventLine, hhmmss, liveChecks, msgLine, TEAM_KEYS, teamEvents, trafficLine, type TeamKey } from "./raw";
 import { useBackstage, type Want } from "./useBackstage";
@@ -177,7 +178,7 @@ function GreenState({ bs }: { bs: BS }) {
     <Sec title="GREEN STATE">
       <pre>{`AP open ${snap ? `${snap.ap?.open?.n} invoices ${usd(snap.ap?.open?.total)}` : "-"}   overdue ${snap ? `${snap.ap?.overdue?.n} ${usd(snap.ap?.overdue?.total)}` : "-"}   cash ${snap ? usd(snap.company?.cash_position) : "-"}\nprocessed ${s.score.legit_processed}   attempts gated ${counts.total}  (allow ${counts.allow}  block ${counts.block}  review ${counts.escalate})   false-positive cost ${usd(s.score.false_positive_cost)}`}</pre>
       {open.map((e) => <div key={e.escalation_id} className="warn">{`WAITING ON A HUMAN: ${e.action} ${usd(e.amount)}  ${e.reason}`}</div>)}
-      {mine.slice(-10).reverse().map((v) => <div key={v.verdict_id}>{`d${v.day} ${v.verdict.padEnd(8)} ${v.action.padEnd(22)} ${usd(v.amount).padStart(8)}  ${v.rules_fired.map(ruleName).join(" + ") || v.reason}`}</div>)}
+      {mine.slice(-10).reverse().map((v) => <div key={v.verdict_id} className={isFailSafe(v) ? "dim" : undefined}>{`d${v.day} ${v.verdict.padEnd(8)} ${v.action.padEnd(22)} ${usd(v.amount).padStart(8)}  ${isFailSafe(v) ? failSafeLabel(v.verdict) : v.rules_fired.map(ruleName).join(" + ") || v.reason}`}</div>)}
       {think.map((t) => <div key={t.key} className="dim">{`thinking d${t.day}: ${t.text.slice(0, 240)}`}</div>)}
       {tools.map((t) => <div key={t.id} className="dim">{`tool d${t.day} ${t.tool} ${t.ok === undefined ? "running" : t.ok ? "ok" : "cancelled"} ${t.summary.slice(0, 120)}`}</div>)}
     </Sec>
@@ -198,7 +199,7 @@ function BlueState({ bs, selected }: { bs: BS; selected: string | null }) {
       <pre>{`verdicts ${counts.total}  allow ${counts.allow}  block ${counts.block}  review ${counts.escalate}   flags ${s.flags.length}   frozen ${Object.keys(s.frozenVendors).length}   gate latency ${lat == null ? "-" : `${Math.round(lat)}ms`}\nconfusion ${cm ? `true-block ${cm.trueBlock}  false-block ${cm.falseBlock}  missed ${cm.missed}  true-allow ${cm.trueAllow}` : (admin ? "- (needs /fe/verdicts/confusion)" : "- (admins only: it needs the ground truth)")}`}</pre>
       {open.map((e) => (
         <div key={e.escalation_id} className="warn">
-          {`OPEN ESCALATION ${e.escalation_id}: ${e.action} ${usd(e.amount)}  ${e.reason}  `}
+          {`OPEN ESCALATION ${e.escalation_id}: ${e.action} ${usd(e.amount)}  ${isFailSafe(e) ? failSafeLabel("escalate") : e.reason}  `}
           {admin && <><button onClick={() => void api.resolve(e.escalation_id, "approve").catch(() => {})}>approve</button> <button onClick={() => void api.resolve(e.escalation_id, "block").catch(() => {})}>block</button></>}
         </div>
       ))}
@@ -206,6 +207,15 @@ function BlueState({ bs, selected }: { bs: BS; selected: string | null }) {
       {s.verdicts.length === 0 && <div className="dim">  none yet</div>}
       {s.verdicts.slice(-8).reverse().map((v) => {
         const hit = !!selected && (v.rules_fired ?? []).some((r) => (blueIdForRule(r) ?? `blue:${r}`) === selected);
+        if (isFailSafe(v)) {
+          // blue did not answer; the ledger's default decided. Muted, and never read as a rule's catch.
+          return (
+            <div key={v.verdict_id} className="dim">
+              <Line hl={false}>{`d${v.day} ${FAIL_SAFE_TAG.padEnd(9)} ${v.action.padEnd(20)} ${usd(v.amount).padStart(8)}  ${failSafeLabel(v.verdict)}`}</Line>
+              <Line hl={false}>{`   ${FAIL_SAFE_NOTE}`}</Line>
+            </div>
+          );
+        }
         return (
           <div key={v.verdict_id}>
             <Line hl={hit}>{`d${v.day} ${v.verdict.toUpperCase().padEnd(8)} ${v.action.padEnd(20)} ${usd(v.amount).padStart(8)}  ${(v.rules_fired ?? []).map(ruleName).join(" + ") || "no rule fired"}`}</Line>
