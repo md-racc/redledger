@@ -217,7 +217,7 @@ function feView(ep, what, sub, url) {
   }
   if (what === "verdicts") return by("gate.verdict").slice(-Number(url.searchParams.get("limit") ?? 100)).map((e, i) => ({ ...e.payload, day: e.day, latency_ms: 38 + ((i * 53) % 190), entity_origin: null }));
   if (what === "reports") return by("report.posted").map((e) => ({ id: e.payload.report_id, day: e.day, preview: `Day ${e.day} controller report` }));
-  if (what === "controls") return { ...controlsReport, episode: { ...controlsReport.episode, ...pub(ep) }, final: ep.status === "finished" };
+  if (what === "controls") return { ...controlsReport, episode: { ...controlsReport.episode, ...pub(ep) }, final: ep.status === "finished" || ep.status === "failed" };
   if (what === "escalations") return [...escalations.values()].filter((x) => x.episode_id === ep.id).map(({ resolve, ...x }) => x);
   return [];
 }

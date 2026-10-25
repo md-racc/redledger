@@ -123,6 +123,8 @@ export interface ControlsReport {
   to_attacker_accounts: number | null;
   /** paid to a real vendor or employee on a fraudulent document: an overpayment, usually recoverable; null for a replay */
   to_real_parties: number | null;
+  /** lost money no scheme row carries (a red payment with no attack, a revealed attack's frozen figures): sum(schemes.lost) + unattributed = lost */
+  unattributed: number;
   totals: { attempted: number; extracted: number; blocked: number; attacks: number; schemes: number; schemes_with_loss: number; controls_seen: number };
   gate: { allow: number; block: number; escalate: number; total: number; escalations: EscalationCounts };
   controls: ControlRow[];

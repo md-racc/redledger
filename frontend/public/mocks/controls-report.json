@@ -27,6 +27,7 @@
  "lost": 20350.37,
  "to_attacker_accounts": 18180.0,
  "to_real_parties": 2170.37,
+ "unattributed": 0.0,
  "totals": {
   "attempted": 27565.92,
   "extracted": 20350.37,

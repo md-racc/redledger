@@ -11,7 +11,7 @@ import {
   gapRecommendation,
   modelText,
   outcomeText,
-  pct,
+  ofAttempted,
   plural,
   reportDate,
   schemesByLoss,
@@ -144,7 +144,7 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
               {usd(r.lost)}
               <small>
                 {r.to_attacker_accounts === null || r.to_real_parties === null
-                  ? `${pct(r.lost, r.totals.attempted)} of attempted`
+                  ? ofAttempted(r.lost, r.totals.attempted).replace(/^ \((.*)\)$/, "$1")
                   : `${usd(r.to_attacker_accounts)} to attacker accounts · ${usd(r.to_real_parties)} to real parties`}
               </small>
             </dd>
@@ -274,6 +274,25 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              {r.unattributed !== 0 && (
+                <tr>
+                  <td colSpan={4}>Not attributed to a scheme</td>
+                  <td className="rr-num">{usd(r.unattributed)}</td>
+                  <td colSpan={5} className="rr-muted">
+                    fraudulent payments with no declared attack behind them
+                  </td>
+                </tr>
+              )}
+              <tr className="rr-total">
+                <td colSpan={3}>Total</td>
+                <td className="rr-num">{usd(r.totals.attempted)}</td>
+                <td className="rr-num">{usd(r.lost)}</td>
+                <td className="rr-num">{r.to_attacker_accounts === null ? "n/a" : usd(r.to_attacker_accounts)}</td>
+                <td className="rr-num">{r.to_real_parties === null ? "n/a" : usd(r.to_real_parties)}</td>
+                <td colSpan={3} />
+              </tr>
+            </tfoot>
           </table>
         ) : (
           <p className="rr-muted">The attacker made no attempts in this run.</p>

@@ -12,6 +12,7 @@ import {
   list,
   listSome,
   lostSentence,
+  ofAttempted,
   modelText,
   outcomeText,
   pct,
@@ -32,6 +33,7 @@ describe("the mock fixture", () => {
     expect(fixture.score.dollars_extracted).toBe(20350.37);
     expect([fixture.lost, fixture.to_attacker_accounts, fixture.to_real_parties]).toEqual([20350.37, 18180, 2170.37]);
     for (const s of fixture.schemes) expect((s.to_attacker_accounts ?? 0) + (s.to_real_parties ?? 0)).toBeCloseTo(s.lost, 2);
+    expect(fixture.schemes.reduce((n, s) => n + s.lost, 0) + fixture.unattributed).toBeCloseTo(fixture.lost, 2);
     expect(fixture.false_positives.cost).toBe(50);
     expect(fixture.false_positives.legit_blocked).toBe(1);
     const gaps = Object.fromEntries(fixture.gaps.map((g) => [g.scheme_id, g]));
@@ -53,6 +55,9 @@ describe("formatting", () => {
     expect(usd(undefined)).toBe("$0.00");
     expect(pct(20350.37, 27565.92)).toBe("74%");
     expect(pct(5, 0)).toBe("0%");
+    expect(ofAttempted(50, 200)).toBe(" (25% of attempted)");
+    expect(ofAttempted(300, 200)).toBe("");
+    expect(ofAttempted(5, 0)).toBe("");
     expect(list([])).toBe("");
     expect(list(["a"])).toBe("a");
     expect(list(["a", "b", "c"])).toBe("a, b and c");
@@ -95,7 +100,7 @@ describe("the assessment", () => {
 
   it("writes the executive summary from the data, one sentence per point", () => {
     const s = executiveSummary(fixture);
-    expect(s[0]).toBe("An adaptive attacker made 6 attempts across 6 schemes worth $27,565.92; $1,480.00 of it was stopped.");
+    expect(s[0]).toBe("The attacker made 6 attempts across 6 schemes worth $27,565.92; $1,480.00 of it was stopped.");
     expect(s[1]).toBe(
       "$20,350.37 lost to fraud (74% of attempted), of which $18,180.00 reached attacker-controlled accounts and $2,170.37 was paid to real vendors/employees on fraudulent documents (an overpayment, usually recoverable).",
     );
@@ -156,6 +161,14 @@ describe("the assessment", () => {
     const none = clone();
     none.lost = none.to_attacker_accounts = none.to_real_parties = 0;
     expect(lostSentence(none)).toBe("No money was lost to fraud.");
+    none.to_attacker_accounts = none.to_real_parties = null; // a replay with nothing lost says nothing about payee accounts
+    expect(lostSentence(none)).toBe("No money was lost to fraud.");
+    const over = clone();
+    over.totals.attempted = 100; // took more than it targeted: no share above 100%
+    expect(lostSentence(over)).toMatch(/^\$20,350\.37 lost to fraud, of which/);
+    const stray = clone();
+    stray.unattributed = 250.5;
+    expect(lostSentence(stray)).toMatch(/ \$250\.50 of it is not attributed to any scheme\.$/);
   });
 
   it("orders schemes worst first", () => {

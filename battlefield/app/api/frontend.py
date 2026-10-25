@@ -668,7 +668,7 @@ _EVIDENCE_CAP = 200
 
 
 def _r2(x: float) -> float:
-    return round(float(x), 2)
+    return round(float(x), 2) + 0.0  # + 0.0: never -0.0
 
 
 def _amount(x: Any) -> float:
@@ -733,7 +733,7 @@ async def _control_facts(episode_id: str) -> dict[str, Any]:
         for i in ch["stopped"] | ch["paid_invoices"]:
             mark(i, None)
 
-    legit = {
+    sim_items = {
         r["id"]: {"entity_type": r["t"], "amount": float(r["amount"]), "ended_blocked": r["status"] == "blocked"}
         for r in await db.fetch(
             "SELECT 'invoice' AS t, id, amount, status FROM invoices WHERE episode_id=$1 AND origin='sim' "
@@ -741,8 +741,13 @@ async def _control_facts(episode_id: str) -> dict[str, Any]:
             "UNION ALL SELECT 'vendor_change', id, 0::numeric, status FROM vendor_changes WHERE episode_id=$1 AND origin='sim'",
             episode_id,
         )
-        if r["id"] not in fraud
     }
+    # legit = sim items that are no part of an attack (for the control matrix's fraud/legit split). The false-positive
+    # pool is score.compute's own: every sim item except invoices stopped while a red swap was live (a diverted invoice
+    # stays in it), so false_positives agrees with the score's false_positive_cost and legit_blocked in every mode.
+    legit = {k: v for k, v in sim_items.items() if k not in fraud}
+    not_fp = {i for ch in all_changes for i in ch["stopped"]}
+    fp_pool = {k: v for k, v in sim_items.items() if not (v["entity_type"] == "invoice" and k in not_fp)}
     verdict_rows = await db.fetch(
         "SELECT id, day, action, entity_type, entity_id, amount, verdict, reason, rules_fired, enforced FROM verdicts WHERE episode_id=$1 ORDER BY created_at, id",
         episode_id,
@@ -818,6 +823,7 @@ async def _control_facts(episode_id: str) -> dict[str, Any]:
         "frozen": frozen,
         "reports": reports,
         "money": money,
+        "fp_pool": fp_pool,
     }
 
 
@@ -946,6 +952,11 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
         rows = [m for m in money if attack_ids is None or m["attack_id"] in attack_ids]
         return _r2(sum(m["amount"] for m in rows if m["to_attacker"])), _r2(sum(m["amount"] for m in rows if not m["to_attacker"]))
 
+    def parts(lost: float, attack_ids: set[str] | None) -> tuple[float | None, float | None]:
+        """(to attacker accounts, to real parties) of `lost`: the real-party part is the rest, so the two always add up."""
+        to_attacker = split(attack_ids)[0]
+        return (None, None) if to_attacker is None else (to_attacker, _r2(lost - to_attacker))
+
     side = {**{e: "legit" for e in legit}, **{e: "fraud" for e in fraud}}
 
     verdicts_on: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1021,7 +1032,7 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
         for a in atks:
             outcomes[a["outcome"]] = outcomes.get(a["outcome"], 0) + 1
         extracted = _r2(sum(a["amount_extracted"] for a in atks))
-        to_attacker, to_real = split({a["id"] for a in atks})
+        to_attacker, to_real = parts(extracted, {a["id"] for a in atks})
         frozen_here = sorted(ents & f["frozen"])
         row = {
             "scheme_id": scheme_id,
@@ -1081,7 +1092,7 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
 
     # ---- false positives: each legit item once, by its worst outcome (score.compute's rule) ----
     fp_items = []
-    for eid, item in legit.items():
+    for eid, item in f.get("fp_pool", legit).items():
         vs = verdicts_on.get(eid, [])
         stops = [v for v in vs if v["verdict"] != "allow"]
         blocked = (
@@ -1109,6 +1120,8 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
     fp_items.sort(key=lambda i: (-i["cost"], i["entity_id"]))
 
     status = ep.get("status")
+    lost = _r2(_amount(sc.get("dollars_extracted")))
+    lost_parts = parts(lost, None)
     gate = {k: sum(1 for v in f["verdicts"] if v["verdict"] == k) for k in ("allow", "block", "escalate")}
     gate["total"] = len(f["verdicts"])
     gate["escalations"] = {s: sum(1 for e in escalations.values() if e["status"] == s) for s in ("approved", "blocked", "timeout", "open")}
@@ -1121,9 +1134,12 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
         "source": f["source"],
         "score": sc,
         # money lost to fraud (= score.dollars_extracted) by where it landed; None for a replay (no payee accounts)
-        "lost": _r2(_amount(sc.get("dollars_extracted"))),
-        "to_attacker_accounts": split(None)[0],
-        "to_real_parties": split(None)[1],
+        "lost": lost,
+        "to_attacker_accounts": lost_parts[0],
+        "to_real_parties": lost_parts[1],
+        # lost money no scheme row accounts for (a red payment with no attack, or a revealed attack's frozen figures),
+        # so the scheme table reconciles: sum(schemes[].lost) + unattributed == lost
+        "unattributed": _r2(lost - sum(s["lost"] for s in schemes)),
         "totals": {
             "attempted": _r2(sum(a["target_amount"] for a in attacks)),
             "extracted": _r2(_amount(sc.get("dollars_extracted"))),

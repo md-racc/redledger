@@ -328,3 +328,41 @@ async def test_lost_money_is_split_by_where_it_landed(episode: str) -> None:
     assert (schemes["duplicate_invoice"]["to_attacker_accounts"], schemes["duplicate_invoice"]["to_real_parties"]) == (0, 500)
     for s in rep["schemes"]:
         assert round(s["to_attacker_accounts"] + s["to_real_parties"], 2) == s["lost"] == s["extracted"]
+    assert rep["unattributed"] == 0
+
+
+async def test_unattributed_red_payment_reconciles_the_scheme_table(episode: str) -> None:
+    """A red invoice paid before red declared any attack has no attack_id: it is lost money no scheme row carries."""
+    gv = await f.attack(episode, day=0, scheme_id="ghost_vendor", target_amount=1000.0)
+    ghost = await f.vendor(episode, origin="red", bank_account="ACCT-GHOST")
+    inv = await f.invoice(episode, ghost, amount=1000.0, origin="red", status="paid", attack_id=gv)
+    await f.payment(episode, inv, amount=1000.0, to_account="ACCT-GHOST", day=0, origin_of_source="red")
+    stray = await f.invoice(episode, ghost, amount=250.5, origin="red", status="paid")
+    await f.payment(episode, stray, amount=250.5, to_account="ACCT-GHOST", day=0, origin_of_source="red")
+    await db.execute("UPDATE episodes SET status='finished' WHERE id=$1", episode)
+    await score.resolve_attacks(episode, 1)
+    async with _client() as c:
+        rep = (await c.get(f"/api/fe/episodes/{episode}/controls", headers=f.auth())).json()
+    assert rep["lost"] == 1250.5 and rep["unattributed"] == 250.5
+    assert round(sum(s["lost"] for s in rep["schemes"]) + rep["unattributed"], 2) == rep["lost"]
+    assert (rep["to_attacker_accounts"], rep["to_real_parties"]) == (1250.5, 0)
+
+
+async def test_false_positives_agree_with_the_score_for_a_diverted_invoice_in_shadow(episode: str) -> None:
+    """Shadow: a would-have block on a legit invoice before the red swap went live; the invoice was then paid into the
+    swapped account. score.compute still charges it (it was not stopped while the swap was live), so the report must too."""
+    await db.execute("UPDATE episodes SET controller_mode='shadow', status='finished' WHERE id=$1", episode)
+    atk = await f.attack(episode, day=1, scheme_id="bank_swap", target_amount=900.0)
+    victim = await f.vendor(episode, bank_account="ACCT-RED")
+    await f.change(episode, victim, day=2, status="approved", resolved_day=2, new_value="ACCT-RED", attack_id=atk)
+    inv = await f.invoice(episode, victim, amount=900.0, status="paid", day=1)
+    await _verdict(episode, "invoice", inv, "block", ["near_threshold"], amount=900.0, day=1, enforced=False)
+    await f.payment(episode, inv, amount=900.0, to_account="ACCT-RED", day=3)
+    await score.resolve_attacks(episode, 4)
+    async with _client() as c:
+        rep = (await c.get(f"/api/fe/episodes/{episode}/controls", headers=f.auth())).json()
+    sc, fp = rep["score"], rep["false_positives"]
+    assert sc["legit_blocked"] == fp["legit_blocked"] == 1 and fp["legit_escalated"] == 0
+    assert round(sum(i["cost"] for i in fp["items"]), 2) == fp["cost"] == sc["false_positive_cost"] > 0
+    assert [i["entity_id"] for i in fp["items"]] == [inv] and fp["items"][0]["enforced"] is False
+    assert rep["lost"] == 900 and rep["to_attacker_accounts"] == 900 and rep["to_real_parties"] == 0

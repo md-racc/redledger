@@ -17,6 +17,11 @@ export function pct(part: number, whole: number): string {
   return `${Math.round((part / whole) * 100)}%`;
 }
 
+/** " (74% of attempted)", or "" when there is nothing attempted or the share would exceed 100% (the attacker took more than it targeted). */
+export function ofAttempted(part: number, attempted: number): string {
+  return attempted > 0 && part >= 0 && part <= attempted ? ` (${pct(part, attempted)} of attempted)` : "";
+}
+
 export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
 /** The first `max` items as a list, the rest counted: "a, b, c and 2 more". */
@@ -128,12 +133,13 @@ export function gapRecommendation(g: Gap): string {
 
 /** "$X lost to fraud (N% of attempted), of which $Y reached attacker-controlled accounts and $Z was paid to real vendors/employees on fraudulent documents." */
 export function lostSentence(r: ControlsReport): string {
-  const lost = `${usd(r.lost)} lost to fraud (${pct(r.lost, r.totals.attempted)} of attempted)`;
-  if (r.to_attacker_accounts === null || r.to_real_parties === null) return `${lost}; where it landed is not recorded for a replayed run.`;
   if (!r.lost) return "No money was lost to fraud.";
+  const lost = `${usd(r.lost)} lost to fraud${ofAttempted(r.lost, r.totals.attempted)}`;
+  if (r.to_attacker_accounts === null || r.to_real_parties === null) return `${lost}; where it landed is not recorded for a replayed run.`;
+  const unattributed = r.unattributed ? ` ${usd(r.unattributed)} of it is not attributed to any scheme.` : "";
   return (
     `${lost}, of which ${usd(r.to_attacker_accounts)} reached attacker-controlled accounts and ${usd(r.to_real_parties)} was paid to real ` +
-    `vendors/employees on fraudulent documents${r.to_real_parties ? " (an overpayment, usually recoverable)" : ""}.`
+    `vendors/employees on fraudulent documents${r.to_real_parties ? " (an overpayment, usually recoverable)" : ""}.${unattributed}`
   );
 }
 
@@ -144,7 +150,7 @@ export function executiveSummary(r: ControlsReport): string[] {
   if (!t.attacks) {
     out.push("The attacker made no attempts in this run, so no control was tested against fraud.");
   } else {
-    out.push(`An adaptive attacker made ${plural(t.attacks, "attempt")} across ${plural(t.schemes, "scheme")} worth ${usd(t.attempted)}; ${usd(t.blocked)} of it was stopped.`);
+    out.push(`The attacker made ${plural(t.attacks, "attempt")} across ${plural(t.schemes, "scheme")} worth ${usd(t.attempted)}; ${usd(t.blocked)} of it was stopped.`);
     out.push(lostSentence(r));
   }
   const worked = effectiveControls(r);
