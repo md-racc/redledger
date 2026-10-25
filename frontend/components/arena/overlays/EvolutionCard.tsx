@@ -1,5 +1,5 @@
 "use client";
-// "Then they learn": the lineage report (README §15) as a strip of generations. Each generation shows what red tried, what
+// "Then they learn": the lineage report (ARCHITECTURE.md, Evolution) as a strip of generations. Each generation shows what red tried, what
 // blue's rules caught, and what each agent rewrote in its playbook afterwards. Driven by the show's clock, or all at once in
 // free play. Pulses the agents a note is about in the arena. Owner: Dev R (Ad since 2026-10-25).
 // Which lineage: `?lineage=<id>`, else the pinned showcase lineage, else the newest finished one (lib/arena/lineage.ts).

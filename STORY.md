@@ -2,7 +2,7 @@
 
 **Every well-known accounts-payable fraud worked by fooling whoever approves the payment. Companies are now handing that job to AI agents. Red Ledger is the crash test: a live fraud agent attacks an AI AP clerk, and the control sits in the ledger, not in the agent's prompt.**
 
-This file is the one source for the Devpost text, the README, the video script and the judging pitch. Every number here is backed in [EVIDENCE.md](EVIDENCE.md). If a line changes here, it changes everywhere.
+This file is the one source for the Devpost text, the README and the judging pitch. Every number here is backed in [EVIDENCE.md](EVIDENCE.md). If a line changes here, it changes everywhere.
 
 ## The problem is old. The payer is new.
 
@@ -62,7 +62,6 @@ Five services and Postgres, hosted on a Vultr VM behind Cloudflare. Only the led
 - **Microsoft (Built for the Real World).** The problem costs US businesses $3B a year in BEC alone. The system is hosted, CI-gated, isolated per agent, publicly viewable, and has run live adversarial episodes on prod since October 24.
 - **CRS (identity and fraud).** Ghost employees are a real payroll fraud (a Puerto Rico case diverted $1.2M through two fictitious employees). Blue checks employee identity against the CRS sandbox. In a live prod run (ep_9cbc3362d44e), a flagged identity mismatch led the gate to block that employee's next expense.
 - **Armadin (security).** The attacker is an agent with an insider's view. It picks its schemes, adapts between generations, and found a gap the defenders missed. The isolation that keeps it honest is enforced in code: per-agent tokens, ground truth hidden from every agent, an audit trail for every refused call.
-- **Atlassian.** ⟦one line once we confirm the prize and its criteria⟧
 - **Most Technically Advanced.** A preparation protocol that lets an agent learn the verdict before it acts without a second source of truth. Ledger-side enforcement. Lineages of episodes where agents rewrite their playbooks from debriefs that reveal only resolved attacks, so ground truth never leaks during play.
 
-Sources for every case and statistic: [EVIDENCE.md](EVIDENCE.md#sources).
+Sources for every case and statistic: [EVIDENCE.md](EVIDENCE.md#9-sources).

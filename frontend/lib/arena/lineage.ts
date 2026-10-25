@@ -1,4 +1,4 @@
-// Evolution runs (README §15): shapes of GET /fe/lineages/{id}/report, a loader with a synthetic fallback, and the story
+// Evolution runs (ARCHITECTURE.md, Evolution): shapes of GET /fe/lineages/{id}/report, a loader with a synthetic fallback, and the story
 // beats the Evolution card plays. Owner: Dev R (Ad since 2026-10-25).
 import { ApiError, api } from "../api";
 import type { Score } from "../types";

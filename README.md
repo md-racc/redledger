@@ -19,7 +19,7 @@ Built for Cal Hacks 13.0. License: MIT (`LICENSE`).
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Services, data model, gate and preparation flow, agents, scoring, lineages |
 | [`FRONTEND.md`](FRONTEND.md) | The site: arena, backstage consoles, controls report, mock mode |
 | [`OPERATIONS.md`](OPERATIONS.md) | Running, environment variables, deploy, prod operations |
-| [`SUBMISSION.md`](SUBMISSION.md), [`SCRIPT.md`](SCRIPT.md), [`PITCH.md`](PITCH.md) | Devpost text, the 90-second video script, and the 5-minute judging talk |
+| [`SUBMISSION.md`](SUBMISSION.md), [`PITCH.md`](PITCH.md) | Devpost text and the 5-minute judging talk |
 | [`contracts/`](contracts/) | The machine-readable truth: `schema.sql`, `ledger-api.yaml`, `events.md`, `agent-service.md`, `CHANGELOG.md` (incl. Droid SDK Findings). Contracts win any disagreement with prose |
 | [`AGENTS.md`](AGENTS.md), [`GIT.md`](GIT.md) | Working agreement and git protocol, for humans and coding agents |
 | [`recordings/`](recordings/) | Operator event streams of real prod runs (indexed in `EVIDENCE.md`) |
@@ -192,7 +192,7 @@ tools, `timeout=TURN_TIMEOUT_SEC-10`, and credits logged per turn. No permission
 
 ```
 redledger/
-├── README.md STORY.md EVIDENCE.md ARCHITECTURE.md FRONTEND.md OPERATIONS.md SUBMISSION.md SCRIPT.md PITCH.md
+├── README.md STORY.md EVIDENCE.md ARCHITECTURE.md FRONTEND.md OPERATIONS.md SUBMISSION.md PITCH.md
 ├── AGENTS.md GIT.md CLAUDE.md DEVLOG.md (frozen history) LICENSE
 ├── docker-compose{,.dev,.mock,.prod}.yml  Makefile  .env.example  ruff.toml
 ├── .github/      CI (ci.yml: per-service tests, ownership-guard, contracts-guard) and deploy.yml

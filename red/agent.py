@@ -17,7 +17,7 @@ PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text()
 log = structlog.get_logger(__name__)
 
 # The frontend attack console leaves the judge's own words for red via battlefield `POST /inputs`
-# (payload kind below); they arrive in the next turn as `options.inputs` (README §16 extension point).
+# (payload kind below); they arrive in the next turn as `options.inputs` (README.md, Ledger API overview: extensions extension point).
 JUDGE_KIND = "custom_fraud_scheme"
 AGENT_SOURCES = frozenset({"red", "green", "blue"})
 

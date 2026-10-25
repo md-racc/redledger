@@ -17,8 +17,8 @@ uses Battlefield preparations, not a Green → Blue mirror (#80, Option P). Shar
 and `LedgerClient.prepare` landed in #84; preparation creation/consumption landed in #87/#89.
 The permission handler uses `preparation.py` for canonical decisions, but the pre-SDK
 `_droid_turn` hard guard still prevents live execution.
-[INTEGRATION.md](INTEGRATION.md) separates current prerequisites
-from the superseded handoff; [IDENTITY.md](IDENTITY.md) records identity evidence limits.
+The root [ARCHITECTURE.md](../ARCHITECTURE.md) (Green, Readiness evidence) records current prerequisites
+and identity evidence limits.
 
 ## Boundaries
 

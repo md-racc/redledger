@@ -942,7 +942,7 @@ paths:
         '200': { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Playbook' } } } } }
         '404': { description: "{error: 'not a lineage episode'}" }
 
-  # ---------- extension points (README §16) ----------
+  # ---------- extension points (README.md, Ledger API overview: extensions) ----------
   /state/{key}:
     get: { x-agents: [red, green, blue], security: [ { agentBearer: [] } ], parameters: [ { name: key, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: 'JSON value or {}' } } }
     put: { x-agents: [red, green, blue], security: [ { agentBearer: [] } ], parameters: [ { name: key, in: path, required: true, schema: { type: string } } ], requestBody: { content: { application/json: { schema: { type: object } } } }, responses: { '200': { description: ok } } }

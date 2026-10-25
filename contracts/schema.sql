@@ -350,7 +350,7 @@ CREATE TABLE IF NOT EXISTS debriefs (
 CREATE INDEX IF NOT EXISTS debriefs_lineage ON debriefs(lineage_id, generation, agent);
 CREATE INDEX IF NOT EXISTS debriefs_ep ON debriefs(episode_id, day);
 
--- ---------- extension points (core, owned by Ad; see README §16) ----------
+-- ---------- extension points (core, owned by Ad; see README.md, Ledger API overview: extensions) ----------
 
 -- Per-agent key/value memory across turns. No schema change needed to persist agent state.
 CREATE TABLE IF NOT EXISTS agent_state (

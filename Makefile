@@ -25,7 +25,7 @@ LOCAL_STACK_TOKEN = $(shell grep -E '^OPERATOR_TOKEN=' .local-stack/env 2>/dev/n
 TOKEN ?= $(if $(wildcard .local-stack/pids/battlefield),$(LOCAL_STACK_TOKEN),$(call env_get,OPERATOR_TOKEN))
 TOKEN := $(if $(TOKEN),$(TOKEN),change-me)
 AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
-# `make evolve` defaults follow the lineage config (ARCHITECTURE.md, Evolution: E-D8), not the episode
+# `make evolve` defaults follow the lineage config (ARCHITECTURE.md, Evolution), not the episode
 # targets': MODE/DAYS count only when given on the command line.
 LN_MODE = $(if $(filter command line,$(origin MODE)),$(MODE),enforce)
 LN_DAYS = $(if $(filter command line,$(origin DAYS)),$(DAYS),6)
