@@ -129,7 +129,7 @@ async def timeline(episode_id: str):
           (SELECT COUNT(*) FROM verdicts v WHERE v.episode_id=$1 AND v.day=d.day AND v.verdict='allow') AS verdict_allow,
           (SELECT COUNT(*) FROM verdicts v WHERE v.episode_id=$1 AND v.day=d.day AND v.verdict='block') AS verdict_block,
           (SELECT COUNT(*) FROM verdicts v WHERE v.episode_id=$1 AND v.day=d.day AND v.verdict='escalate') AS verdict_escalate,
-          (SELECT COALESCE(SUM(amount),0) FROM payments p WHERE p.episode_id=$1 AND p.paid_day<=d.day AND p.origin_of_source='red') AS extracted_cumulative,
+          (SELECT COALESCE(SUM(amount),0) FROM payments p WHERE p.episode_id=$1 AND p.paid_day<=d.day AND p.origin_of_source='red' AND NOT (p.id = ANY($3::text[]))) AS extracted_cumulative,
           (SELECT COALESCE(SUM(i.amount),0) FROM invoices i WHERE i.episode_id=$1 AND i.origin='red' AND i.status IN ('blocked','rejected') AND i.status_day<=d.day) AS blocked_cumulative,
           (SELECT COUNT(*) FROM attacks a WHERE a.episode_id=$1 AND a.day_launched=d.day) AS attacks_launched,
           (SELECT COUNT(*) FROM flags f WHERE f.episode_id=$1 AND f.day=d.day) AS flags_raised
@@ -137,6 +137,7 @@ async def timeline(episode_id: str):
         """,
         episode_id,
         ep["current_day"],
+        sorted(await score.misdirected_payments(episode_id)),  # bank_swap invoices paid to the real vendor: not extracted
     )
     return db.rows_to_list(rows)
 

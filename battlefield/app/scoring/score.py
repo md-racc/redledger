@@ -37,6 +37,43 @@ _SWAP_STOPPED_SQL = (
 )
 
 
+# Red invoices of a hijacked (non-red) vendor paid to an account red does not control. bank_swap files
+# a red invoice against the vendor's real PO alongside the bank change; if the swap was not in effect
+# when green paid it (change blocked, rejected, still pending, or approved only later), the money went
+# to the vendor's own account on file: the business overpaid a real vendor (recoverable), red got
+# nothing. $3 = the vendors with an attributed red bank_account change, $4 = their approved new_value.
+_MISDIRECTED_SQL = (
+    "SELECT p.id, p.invoice_id, p.amount FROM payments p JOIN invoices i ON i.id=p.invoice_id JOIN vendors v ON v.id=i.vendor_id "
+    "WHERE p.episode_id=$1 AND i.attack_id=$2 AND p.origin_of_source='red' AND v.origin <> 'red' "
+    "AND i.vendor_id = ANY($3::text[]) AND NOT (p.to_account = ANY($4::text[]))"
+)
+
+
+async def _misdirected(episode_id: str, attack_id: str, chs: list[dict[str, Any]]) -> dict[str, tuple[str, float]]:
+    """{payment_id: (invoice_id, amount)} of `attack_id`'s red-invoice payments that went to the
+    hijacked vendor's real account (see _MISDIRECTED_SQL). Not extracted. Empty for attacks with no
+    attributed red bank_account change: ghost_vendor / threshold_split / duplicate_invoice payments
+    are scored as before."""
+    bank = [ch for ch in chs if ch["field"] == "bank_account"]
+    if not bank:
+        return {}
+    vendors = sorted({ch["vendor_id"] for ch in bank})
+    red_accounts = sorted({ch["new_value"] for ch in bank if ch["status"] == "approved"})
+    rows = await db.fetch(_MISDIRECTED_SQL, episode_id, attack_id, vendors, red_accounts)
+    return {r["id"]: (r["invoice_id"], float(r["amount"])) for r in rows}
+
+
+async def misdirected_payments(episode_id: str) -> dict[str, float]:
+    """{payment_id: amount} of every red-invoice payment that is not extracted because it went to the
+    hijacked vendor's real account (score.compute subtracts these from dollars_extracted)."""
+    attacks = await db.fetch("SELECT id, day_launched, revealed_day FROM attacks WHERE episode_id=$1", episode_id)
+    _, by = await attributed_changes(episode_id, attacks)
+    out: dict[str, float] = {}
+    for aid, chs in by.items():
+        out.update({pid: amt for pid, (_, amt) in (await _misdirected(episode_id, aid, chs)).items()})
+    return out
+
+
 async def _linked_attacks(episode_id: str) -> set[str]:
     """Attacks that have at least one invoice/expense row linked via attack_id."""
     rows = await db.fetch(
@@ -203,7 +240,8 @@ async def resolve_attacks(episode_id: str, day: int) -> list[dict[str, Any]]:
     for aid, (a, rows, chs, ids) in (await attack_parts(episode_id, unrevealed)).items():
         entities = bool(rows or chs)
         swap_payments = {pid: amt for ch in chs for pid, amt in ch["payments"].items()}  # each payment once
-        extracted = sum(float(r["amount"]) for r in rows if r["status"] == "paid") + sum(swap_payments.values())
+        misdirected = {inv for inv, _ in (await _misdirected(episode_id, aid, chs)).values()}  # paid to the real vendor
+        extracted = sum(float(r["amount"]) for r in rows if r["status"] == "paid" and r["id"] not in misdirected) + sum(swap_payments.values())
         blocked = [r for r in rows if r["status"] in ("blocked", "rejected")] + [ch for ch in chs if ch["state"] == "blocked"]
         pending = [r for r in rows if r["status"] in ("pending", "matched", "approved")] + [ch for ch in chs if ch["state"] == "pending"]
 
@@ -276,11 +314,13 @@ async def compute(episode_id: str) -> dict[str, Any]:
     all_changes, red_changes = await attributed_changes(episode_id, attacks, as_of_reveal=True)
     swap_payments: dict[str, float] = {}
     swap_blocked: dict[str, float] = {}
-    for chs in red_changes.values():
+    misdirected: dict[str, float] = {}
+    for aid, chs in red_changes.items():
         for ch in chs:
             swap_payments.update(ch["payments"])
             swap_blocked.update(ch["blocked_invoices"])
-    extracted += sum(swap_payments.values())
+        misdirected.update({pid: amt for pid, (_, amt) in (await _misdirected(episode_id, aid, chs)).items()})
+    extracted += sum(swap_payments.values()) - sum(misdirected.values())
     blocked_amt += sum(swap_blocked.values())
     for a in attacks:
         chs = red_changes.get(a["id"], [])
