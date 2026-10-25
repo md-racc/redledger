@@ -75,7 +75,7 @@ Everything below ran on the live, hosted system (app.redledger.us) with red on F
 | Same run, controller **on** (enforce) | The ledger held the bank change for independent verification ("destination change overlaps open invoices"). **$0** lost (controls report). |
 | 5 generations × 8 days, red learning between generations | Red found that invoices split under the approval limit got paid, and shifted to them. Extraction rose from **$18.5k to $93.6k** a generation, and no control caught it. |
 | Red **and** blue's audit live, a fixed six-scheme plan, 6 days, before the split rule existed | **$18,526** lost with the controller on. $13,800 of it was one split invoice. |
-| After we added a gate rule for the split (#206): 3 generations × 4 days, red and blue's audit live | **$0** stolen in every generation. The split was caught 3 of 3 times. |
+| After we added a gate rule for the split (#206): 3 generations × 4 days, red and blue's audit live | **$0** stolen in every generation. Red's one split attempt was blocked (all 3 invoices), and red stopped splitting. |
 
 The most useful result was a control gap nobody on the team saw coming. Red found it on its own in a few
 simulated weeks, and the fix was a ledger rule, not a better prompt. What we don't claim:
