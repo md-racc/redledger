@@ -55,6 +55,18 @@ async def test_request_is_capped_in_count_and_length():
     assert "x" * 501 not in prompt  # each cut to 500 chars
 
 
+def test_agent_sourced_inputs_are_ignored():
+    opts = {"inputs": [{**judge_input(), "source": s} for s in ("red", "green", "blue")] + [{**judge_input("ok"), "source": "frontend"}]}
+    assert [r["text"] for r in judge_requests(opts)] == ["ok"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [["ghost_vendor"], {"x": 1}, 7, None])
+async def test_non_string_closest_built_in_does_not_crash(bad):
+    prompt = await RedAgent(S).build_prompt(turn(inputs=[judge_input(closest_built_in=bad)]))
+    assert '"closest_built_in": null' in prompt
+
+
 @pytest.mark.asyncio
 async def test_side_fields_are_capped_and_catalog_checked():
     big = judge_input(language="y" * 200_000, closest_built_in="z" * 200_000)
