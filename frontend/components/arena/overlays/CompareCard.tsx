@@ -3,7 +3,7 @@
 // up in sequence so a room can follow them. Owner: Dev R.
 import { useEffect, useState } from "react";
 import type { CompareSides } from "@/lib/arena/compare";
-import { enforceStory, loadLiveRuns, type LiveRun, type LiveRuns } from "@/lib/arena/liveRuns";
+import { enforceStory, loadLiveRuns, lostByDay, runScore, type LiveRun, type LiveRuns } from "@/lib/arena/liveRuns";
 import type { Score } from "@/lib/types";
 import { Raw } from "./Raw";
 
@@ -100,24 +100,29 @@ function RealRun() {
   if (data === undefined) return <div className="cmp-empty"><p>Loading the recorded runs…</p></div>;
   if (data === null) return <div className="cmp-empty"><p>The recorded live runs could not be read.</p></div>;
   const { off, enforce } = data.runs;
-  const kept = Math.max(0, off.score.dollars_extracted - enforce.score.dollars_extracted);
+  // money lost per the live controls report (#207 scoring), not the recordings' pre-#207 scoreboards (lib/arena/liveRuns.ts)
+  const offScore = runScore(off);
+  const onScore = runScore(enforce);
+  const kept = Math.max(0, offScore.dollars_extracted - onScore.dollars_extracted);
+  const notes = [off, enforce].map((r) => r.controls_report).filter((r) => !!r);
   return (
     <>
       <div className="cmp-cols">
-        <Column title="Controller off" tag="live red · recorded" score={off.score} tone="red" delay={100} />
+        <Column title="Controller off" tag="live red · recorded" score={offScore} tone="red" delay={100} />
         <div className="cmp-mid">
           <b>{usd(kept)}</b>
           <span>kept by the controller</span>
-          {enforce.score.dollars_extracted > 0 && <em>{usd(enforce.score.dollars_extracted)} still got through</em>}
+          {onScore.dollars_extracted > 0 && <em>{usd(onScore.dollars_extracted)} still got through</em>}
         </div>
-        <Column title="Controller on" tag="live red · recorded" score={enforce.score} tone="blue" delay={100} />
+        <Column title="Controller on" tag="live red · recorded" score={onScore} tone="blue" delay={100} />
       </div>
-      <div className="cmp-days" aria-label="Money stolen so far, day by day">
+      <div className="cmp-days" aria-label="Money lost so far, day by day (controls report)">
         <DayBars run={off} tone="red" label="off" />
         <DayBars run={enforce} tone="blue" label="on" />
       </div>
       <footer>
         Recorded on {data.where} on {data.recorded}: the same seed for {off.days} days, controller off and then on. {data.note} {enforceStory(enforce)}
+        {notes.length > 0 && <> Money lost is from the {notes[0]!.source}: it counts only what reached an account the attacker controls. {enforce.controls_report?.note}</>}
         <Raw data={data} />
       </footer>
     </>
@@ -125,12 +130,13 @@ function RealRun() {
 }
 
 function DayBars({ run, tone, label }: { run: LiveRun; tone: "red" | "blue"; label: string }) {
-  const max = Math.max(1, ...run.by_day.map((d) => d.extracted));
+  const days = lostByDay(run);
+  const max = Math.max(1, ...days.map((d) => d.lost));
   return (
     <div className={`cmp-daybars tone-${tone}`}>
-      <span>Stolen, {label}</span>
-      <div>{run.by_day.map((d) => <i key={d.day} style={{ height: `${Math.max(3, (d.extracted / max) * 100)}%` }} title={`day ${d.day}: ${usd(d.extracted)}`} />)}</div>
-      <b>{usd(run.score.dollars_extracted)}</b>
+      <span>Lost, {label}</span>
+      <div>{days.map((d) => <i key={d.day} style={{ height: `${Math.max(3, (d.lost / max) * 100)}%` }} title={`day ${d.day}: ${usd(d.lost)}`} />)}</div>
+      <b>{usd(runScore(run).dollars_extracted)}</b>
     </div>
   );
 }
