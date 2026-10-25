@@ -364,7 +364,7 @@ Hyphenate's thesis is agents that own finance work through to an outcome, resolv
 | 2–4 / 3–6 / 1–3 / 1–3 | daily POs / invoices / expenses / receipts | `legit_traffic.py:9-11` | " |
 | 3 days, 60%, 30 days | legit bank-change window, share with open invoices, minimum vendor age | `legit_traffic.py:39,41-42` | " |
 | 4 days, 1–2 days, > $1,000 | legit new-vendor window, first-invoice delay, first-invoice amount | `legit_traffic.py:18-21,43-44` | " |
-| $5,000 | `APPROVAL_THRESHOLD` (inclusive for green) | `battlefield/app/config.py:35`; `blue/gate/rules.py:31-35` | " |
+| $5,000 | `APPROVAL_THRESHOLD` (inclusive for green) | `APPROVAL_THRESHOLD` in `docker-compose.yml`; `blue/gate/rules.py:31-35` | " |
 | 95%, 7 days, $1,000, $2,500, 14 days, 110%, 115% / 5%, 3 paid, $0.05 | rule parameters | `blue/gate/rules.py` | " |
 | ≥ 5 paid, all with POs, amount > max paid | `no_po_from_po_vendor` after calibration | `blue/gate/rules.py:281-299`; #148 | 2026-10-25 |
 | sum ≥ T → block; ≥ 3 parts ≥ 0.95·T → review; expenses only | blue's `threshold_split` rule | `blue/gate/rules.py:327-368`; #173 | 2026-10-25 |

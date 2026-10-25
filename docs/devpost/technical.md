@@ -100,7 +100,7 @@ dollars stolen against dollars blocked against the cost of blocking honest work.
   a `contracts/CHANGELOG.md` line fails CI. The team extension trees `contracts/ext/{red,green,blue,fe}/` are exempt.
 - **Extension points instead of contract churn** (README §16). Each team gets `battlefield/extensions/<area>_*.py`,
   auto-mounted at `/api/x/<area>/...`, and `contracts/ext/<area>/*.sql` tables. A broken extension is logged and
-  skipped rather than taking battlefield down. Examples on main: `battlefield/extensions/blue_crs.py`, `fe_example.py`.
+  skipped rather than taking battlefield down. Example on main: `battlefield/extensions/blue_crs.py`.
 - **Other CI jobs.** `changes` path-filters the run. `python` runs ruff and pytest per service as a 5-way matrix
   against a `postgres:16-alpine` service container. `battlefield-timescale` runs the same battlefield suite on
   `timescale/timescaledb:latest-pg16` with `EXPECT_TIMESCALE=1`. `frontend` runs typecheck, lint and vitest.

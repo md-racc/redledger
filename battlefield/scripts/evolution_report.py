@@ -186,7 +186,9 @@ def render_md(rep: dict[str, Any]) -> str:
     md += [
         "- Learned: " + (", ".join(f"`{r['rule_id']}` (g{r['first_generation']})" for r in blue["learned_rules"]) or "none"),
         "- New after generation 1: " + (", ".join(f"`{r['rule_id']}` (g{r['first_generation']})" for r in blue["new_rules"]) or "none"),
-        "- Retired: " + (", ".join(f"`{r['rule_id']}` (last g{r['last_generation']})" for r in blue["retired_rules"]) or "none"),
+        # `retired_rules` (key kept for the frontend) is "fired before, silent in the latest headless
+        # generation", not blue retiring a rule: block/hold rules are never retireable (blue/gate/rules.py)
+        "- Not fired in latest generation: " + (", ".join(f"`{r['rule_id']}` (last g{r['last_generation']})" for r in blue["retired_rules"]) or "none"),
         "",
     ]
     md += ["## 5. Who beat whom", ""]

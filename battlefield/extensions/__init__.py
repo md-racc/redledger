@@ -14,7 +14,7 @@ Rules for an extension file:
   - Public (no-token) routes are allowed only in `fe_*` extensions and must be read-mostly
     and rate-tolerant; mark them with `@router.get(..., dependencies=[])` and say so in a comment.
 
-See `fe_example.py` for the shape. Delete it when the first real one lands.
+See `blue_crs.py` for a real example (operator-only routes plus its own `contracts/ext/blue/` table).
 """
 
 from __future__ import annotations

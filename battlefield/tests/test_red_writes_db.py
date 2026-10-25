@@ -103,3 +103,30 @@ async def test_attack_listings_order_same_day_by_created_at(episode: str) -> Non
     assert [a["id"] for a in red] == [a["id"] for a in op] == [a["id"] for a in fe] == expected
     assert [r["scheme_id"] for r in board] == schemes  # all tied at $0 extracted: launch order breaks the tie
     assert [a["scheme_id"] for a in cmp["a"]["attacks"]] == [a["scheme_id"] for a in cmp["b"]["attacks"]] == schemes
+
+
+async def test_red_amounts_must_be_positive_finite_and_due_days_non_negative(episode: str) -> None:
+    """A negative invoice would add cash when paid and score negative dollars extracted; a NaN one
+    persisted without its audit row and broke every later invoice read. Both are 422 now, nothing written."""
+    vid = await f.vendor(episode)
+    emp = await f.employee(episode)
+    inv = {"vendor_id": vid, "amount": 100, "invoice_number": "X-1"}
+    async with _client() as c:
+        bad = [
+            await c.post("/api/invoices", json={**inv, "amount": -25_000}, headers=_red(episode)),
+            await c.post("/api/invoices", json={**inv, "amount": 0}, headers=_red(episode)),
+            await c.post("/api/invoices", json={**inv, "due_in_days": -40}, headers=_red(episode)),
+            await c.post(
+                "/api/invoices",
+                content=f'{{"vendor_id": "{vid}", "amount": NaN, "invoice_number": "X-2"}}',
+                headers={**_red(episode), "Content-Type": "application/json"},
+            ),
+            await c.post("/api/expenses", json={"employee_id": emp, "amount": -50, "category": "travel"}, headers=_red(episode)),
+            await c.post("/api/attacks", json={**_atk("ghost_vendor", 100), "target_amount": -1}, headers=_red(episode)),
+        ]
+        ok = await c.post("/api/invoices", json=inv, headers=_red(episode))
+        listed = await c.get("/api/invoices", headers=_red(episode))
+    assert [r.status_code for r in bad] == [422] * len(bad)
+    assert ok.status_code == 201 and listed.status_code == 200
+    assert await db.fetchval("SELECT COUNT(*) FROM invoices WHERE episode_id=$1", episode) == 1
+    assert await db.fetchval("SELECT COUNT(*) FROM expenses WHERE episode_id=$1", episode) == 0

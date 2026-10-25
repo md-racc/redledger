@@ -90,6 +90,10 @@ Goal for this session: <fill in>
   money already left), and are excluded from the false-positive numbers; diverted payments are
   excluded from `legit_processed`. Blocked/rejected change or frozen vendor = blocked;
   change-only attacks stopped at the change get their target credited to `dollars_blocked`.
+  A red invoice of an attack with an attributed red `bank_account` change, on a non-red vendor,
+  paid to an account other than an approved change's `new_value` (the swap was not in effect, so
+  the money went to the real vendor's account on file) is not extracted (`score._misdirected`):
+  a blocked swap whose decoy invoice got paid resolves `blocked`, not `partial`.
   Detection only counts verdicts/flags on or after `day_launched`. Remaining limits: rows with
   NULL `attack_id` (legacy rows from before the column, or a change red made before declaring
   any attack that day) still use the old same-day heuristic (attacks launched on its

@@ -88,7 +88,8 @@ turn loop; Blue's shared narration, TurnLock and canned cross-loop tests are cov
 
 See `blue/SDK-READINESS.md` for the pinned IDs, list-only command, receipt tests and Ad handoff.
 CRS PR #64 and its prerequisites have merged; episode acceptance passed on 2026-10-25 (below).
-Bright Data C3 also requires the real-agent three-day shadow checkpoint in `INTEGRATIONS.md`.
+Bright Data C3 was **DROPPED** on 2026-10-25 (M, #78 closed): the real-agent shadow checkpoint it
+required will not run, and no Bright Data code or credentials are on main.
 
 ## Sandbox probe evidence, 2026-10-24 (approved scope: P01/P12/P16 only)
 

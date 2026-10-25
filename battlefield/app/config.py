@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     escalation_timeout_sec: int = Field(90, alias="ESCALATION_TIMEOUT_SEC")
     fp_penalty_rate: float = Field(0.02, alias="FP_PENALTY_RATE")
     fp_flat_penalty: float = Field(50.0, alias="FP_FLAT_PENALTY")
-    approval_threshold: float = Field(5000.0, alias="APPROVAL_THRESHOLD")  # the auto-approve line red aims under
     day_pause_sec: float = Field(0.0, alias="DAY_PAUSE_SEC")  # artificial pacing for demos
     max_credits_per_episode: float = Field(0.0, alias="MAX_CREDITS_PER_EPISODE")  # 0 = credit guard disabled
 
