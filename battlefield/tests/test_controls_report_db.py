@@ -2,7 +2,7 @@
 
 DB tests build a small enforce episode by hand (one scheme per gap reason, a false positive, an approved legit
 escalation, an audit flag) and check the report against it. The builder and the event gatherer are also tested
-without a database, on the recorded demo episode (docs/recordings), which is what the frontend mock fixture is made of.
+without a database, on the recorded demo episode (recordings), which is what the frontend mock fixture is made of.
 """
 
 from __future__ import annotations

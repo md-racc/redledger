@@ -1,4 +1,4 @@
-// Summarise the live-red recordings (docs/recordings, #136) into public/mocks/live-runs.json for the Compare card's "Real run" tab.
+// Summarise the live-red recordings (recordings, #136) into public/mocks/live-runs.json for the Compare card's "Real run" tab.
 //   node tools/gen-live-runs.mjs
 // Numbers only (final score, cumulative stolen/blocked per day, the attacks red launched): no agent text, no tool-call ids. Owner: Dev R.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const rec = join(here, "../../docs/recordings");
+const rec = join(here, "../../recordings");
 const out = join(here, "../public/mocks/live-runs.json");
 
 function summarize(file) {
@@ -33,7 +33,7 @@ const doc = {
   recorded: "2026-10-24",
   where: "our production server",
   note: "Red was live on Factory's Droid SDK (gpt-5.4-mini). Green and blue ran their full logic keyless, before blue's daily audit went live.",
-  source: "docs/recordings (#136)",
+  source: "recordings (#136)",
   runs: { off: summarize("demo-off-live.jsonl"), enforce: summarize("demo-enforce-live.jsonl") },
 };
 writeFileSync(out, `${JSON.stringify(doc, null, 1)}\n`);

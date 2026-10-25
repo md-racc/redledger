@@ -75,7 +75,7 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
     <div className="raw">
       <pre>
         {`redledger backstage :: ${team === "hub" ? "hub" : team.toUpperCase()}     laptop ${clientId()}     ${hhmmss(now)}\n`}
-        {`backend    ${bs.mode === "live" ? `LIVE  health ${bs.healthMs ?? "?"}ms` : bs.mode === "connecting" ? (bs.answer ? `REFUSED  ${bs.answer}` : "connecting") : bs.recording ? "REPLAY of the recorded live-red run (docs/recordings)" : "NO ANSWER (recorded loop)"}\n`}
+        {`backend    ${bs.mode === "live" ? `LIVE  health ${bs.healthMs ?? "?"}ms` : bs.mode === "connecting" ? (bs.answer ? `REFUSED  ${bs.answer}` : "connecting") : bs.recording ? "REPLAY of the recorded live-red run (recordings)" : "NO ANSWER (recorded loop)"}\n`}
         {`following  ${episode ? `${episode.id}  ${bs.pinned ? "[pinned]" : "[newest]"}  mode=${episode.controller_mode}  status=${episode.status}  day ${Math.min(episode.current_day, episode.days)}/${episode.days}` : "(no episode yet)"}\n`}
         {`events     ${events.length} held, ${bs.rate}/min${bs.feed ? ` via ${bs.feed.via === "polling" ? "REST (socket blocked)" : bs.feed.via}` : ""}      relay ${sync.link}, ${clients.length} laptop(s): ${clients.map((c) => `${c.id}`).join(" ") || "-"}`}
       </pre>
