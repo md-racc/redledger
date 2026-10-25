@@ -576,10 +576,10 @@ ownership guard allows exactly these paths for your prefix.
 
 Rules: extensions never write core tables (that's what the Ledger API is for); extension
 tables carry your prefix; a broken extension logs and is skipped, it cannot take battlefield
-down. `battlefield/extensions/fe_example.py` + `contracts/ext/fe/00_example.sql` show the shape
-end to end (a public POST that records a nudge, writes an `inputs` row for red or blue, and
-emits `x.fe.nudge`). That is the full skeleton of a crowd-participation page: the Next.js route
-lives in `frontend/`, the server side is one extension file.
+down. `battlefield/extensions/blue_crs.py` + `contracts/ext/blue/01_crs_profiles.sql` show the shape
+end to end: operator-only routes, the team's own table, reads of core tables. A public `fe_*` route
+that writes (e.g. a crowd page) must not write agent `inputs` without auth; the old `fe_example.py`
+did, and was removed.
 
 ---
 
