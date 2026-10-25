@@ -68,7 +68,7 @@ dollars stolen against dollars blocked against the cost of blocking honest work.
 | (a) | Technical complexity | Single enforcement point with per-key single flight, CAS state transitions, preparations claimed once under row locks, escalation holds that close exactly once, restart recovery, and tool-call identity recovered from SDK side channels | ON MAIN; the gate is LIVE on prod against live red (verdicts from blue's deterministic rules) | `battlefield/app/gate/gatekeeper.py`, `battlefield/app/api/green_writes.py`, `agentkit/agentkit/invocation.py`; #33, #39, #52, #84, #87, #89 |
 | (a) | Functionality (smooth live demo) | 90-second show, backstage consoles on three more laptops that join the active run (#146), judge-picked attacks, judge words typed or spoken that steer the attacker (#154, #165), approve/block on escalations, replay with recorded fallback | ON MAIN (frontend); prod runs the show from the recording by default (§6) | `frontend/docs/show-mode.md`, `frontend/docs/backstage.md`, `frontend/docs/pitch-script.md` (#132) |
 | (a) | Intentionality | Contracts-first design (`contracts/` beats code), enforced by CI; ownership by directory; every non-trivial PR independently verified before merge | ON MAIN | `AGENTS.md` §3 inv. 6, `.github/workflows/ci.yml`, `GIT.md` §4 |
-| (a) | Creativity | Adversarial co-evolution: lineages, debriefs, playbooks, after-action reviews | ON MAIN; recorded on prod with live red (`ln_f52a3df83c8d`, P1 done) | `battlefield/app/orchestrator/lineage.py`, `battlefield/app/evolution/*`; §10 |
+| (a) | Creativity | Adversarial co-evolution: lineages, debriefs, playbooks, after-action reviews | ON MAIN; recorded on prod with live red (`ln_f52a3df83c8d`, P1 done) and with red and blue's audit live (`ln_431bf702e8a0`, P9 done) | `battlefield/app/orchestrator/lineage.py`, `battlefield/app/evolution/*`; §10 |
 | (a) | Application | A finance controller that gates an autonomous clerk, measured against a live attacker | Red and blue's daily audit LIVE; green keyless on prod by decision | Finding 2026-10-24 (gpt-5.4-mini); #157; #78 |
 | (b) | Deployment | Image build with no secrets → approval-gated SSH roll → `.env` rendered from a GitHub Environment → compose pull/up → in-container health probe | LIVE (infra) | `.github/workflows/deploy.yml`, `deploy/render-env.sh`, README §17 |
 | (b) | Security | Public read-only site with a server-enforced viewer/admin split, origin IP lock, per-agent tokens and a 401 matrix, operator token kept server-side, HMAC single-use WS tickets, compose network isolation, `origin` hidden from agents; Cloudflare Access + origin JWT verification built and run until P7 | LIVE (read-only mode since 2026-10-25, IP lock, networks, per-agent tokens); origin JWT check ON MAIN, off on prod since P7 | `deploy/Caddyfile` (#47), `frontend/lib/access.ts` (#50), `battlefield/app/auth.py` (#109), `docker-compose.yml` (#15), #152, #159 |
@@ -472,8 +472,8 @@ the CHANGELOG:
 | P5 | Prod on the TimescaleDB image | Ad | NOT DOING for the hackathon unless it lands (#100: `migrate_data` takes an ACCESS EXCLUSIVE lock) | "TimescaleDB proven in CI; prod on Postgres 16" |
 | P6 | CRS live demo | M / Ad | PASSED on prod with blue's live audit (ep_9cbc3362d44e, #197); local acceptance earlier (ep_0181eda1c921); live at the table still to do | "Recorded on prod 2026-10-25 (ep_9cbc3362d44e); live at the table on request" |
 | P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
-| P8 | Invoice threshold-split control in blue | M (#175) | ASKED | "Red found a gap in invoice split detection; the expense version is shipped (#173)" |
-| P9 | Short live lineage after P8 to show blue closing the gap | Ad | PLANNED after P8 | Keep the P1 story: "the sandbox surfaced a real gap" |
+| P8 | Invoice threshold-split control in blue | M (#175) | DONE (#205/#206, on prod from deploy 15f08b4) | — |
+| P9 | Short live lineage after P8, red and blue live (`ln_431bf702e8a0`, 3 gens × 4 days, enforce; hyphenate.md §4.10) | Ad | DONE | Say: "Red found a gap (invoice splitting, 19/19 extracted); we shipped a control; in the next live lineage red's split was caught 3/3, it pivoted to other schemes, and extracted $0 across three generations." Keep the caveat next to it: red's fallback `duplicate_invoice` never pays, so the $0 is partly red's choice, not only blue's catches |
 | — | A recorded rollback rehearsal | Ad | not done | Don't claim "tested rollback"; say "documented rollback path" |
 
 ---
@@ -588,9 +588,9 @@ The site is public and read-only: anyone can watch, and only an admin, checked o
 - Verify your edge: an access proxy in front of an origin is only as good as the origin's refusal to talk to anyone else.
 
 **What's next**
-- Close the control gap our live five-generation lineage found: the attacker learned to split invoices across an
-  established vendor. The expense version of the split control shipped; the invoice version is next `[only if P8:
-  "shipped"]`, then a short live re-run `[only if P9]`.
+- Run longer live lineages against the split control we shipped after our live five-generation lineage found the
+  attacker splitting invoices across an established vendor. In the first short re-run red's split was caught 3/3 and
+  it pivoted to schemes that don't pay, so we haven't yet seen what it finds next.
 - Run the clerk live on the Droid SDK after its acceptance matrix.
 - Move prod to TimescaleDB.
 - Turn the scoreboard into a pre-deployment report a controller could hand an auditor.
@@ -658,7 +658,8 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 - "TimescaleDB hypertables and a continuous aggregate." Caveat: CI-proven; prod is plain Postgres 16 (P5).
 - "Agents learn across generations." Caveat: with live red on prod (`ln_f52a3df83c8d`), red adapted and blue's bounded
   learning didn't keep up. The closed-loop numbers (blue catches 5/5 in g3) are a keyless mock-agent lineage
-  (`ln_fbdfbd2d74cc`) and must be labelled mock.
+  (`ln_fbdfbd2d74cc`) and must be labelled mock. With red and blue live after P8 (`ln_431bf702e8a0`): "Red found a gap (invoice splitting, 19/19 extracted); we shipped a control; in the next live lineage red's split was caught 3/3, it pivoted to other schemes, and extracted $0 across three generations."
+  Say both caveats with it: red fell back to `duplicate_invoice`, which never pays because green holds duplicates whose PO is already consumed (red's ranking prefers uncaught failures over caught schemes), so the $0 comes partly from red picking schemes that don't pay, not only from blue's catches; and blue learned nothing ("Learned: none").
 - "Controller off vs. on, same crime, different ending." Caveat: on prod the show plays the mock recording, and the off
   act is a projection (`show-mode.md`). The live-red pair (#136) is $10,284.61 off vs. $1,824.22 enforce, not zero,
   and red's live choices differ between the two runs.
@@ -670,7 +671,8 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 ### Do NOT say
 - "Green is a live AI agent in production" or "three live agents." Not true (P4). Say red and blue's audit.
 - "Runs on TimescaleDB in production." Not true (P5).
-- "The agents sharpen each other" with the live attacker: in `ln_f52a3df83c8d` red got better and blue didn't.
+- "The agents sharpen each other" with the live attacker: in `ln_f52a3df83c8d` red got better and blue didn't; in
+  `ln_431bf702e8a0` red pivoted against a control we shipped, and blue learned nothing.
 - "Horizontally scalable." Battlefield must run as a single uvicorn worker. The turn guard, escalation waiters and WS
   ticket used-set are in-process (`battlefield/app/turns.py` docstring), and the frontend sync hub is one Node process
   (`backstage.md` "Limit").
@@ -756,6 +758,7 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 | Credit cap | 375,000 per episode on prod (`deploy/PROD-OPS.md` "Credit cap": 1.25 × 30 turns × 10k, from the older 6.7k–10k/turn measurement) | prod config; PROD-OPS | 2026-10-24 |
 | Live-red recordings | off: $10,284.61 extracted, 0/10 caught; enforce: $1,824.22 extracted, 1/10 caught, $100 FP; 26,230 / 24,449 red credits; seed 42, 10 days | `docs/recordings/README.md` (#136) | 2026-10-24 ~22:30Z |
 | Live-red lineage `ln_f52a3df83c8d` | 5 gens × 8 days, enforce, seeds 502–506; extracted $19,076 / $35,423 / $86,510 / $53,619 / $97,734; blocked $6,214 / $4,380 / $0 / $0 / $0; caught 3/7, 5/7, 2/8, 5/8, 1/8; red credits 20,402 / 20,744 / 22,831 / 22,974 / 22,313 (~109k) | lineage report (operator export, not committed) | 2026-10-24 |
+| P9 lineage `ln_431bf702e8a0` | 3 gens × 4 days, enforce, seeds 502–504, red and blue's audit live, green keyless, deploy 15f08b4; extracted $0 / $0 / $0; blocked $13,800 / $2,430 / $0; FP $100 / $50 / $0; caught 2/4, 1/4, 0/4; `invoice_threshold_split` 3 hits on red (g1); credits 27,877 / 29,576 / 27,525 | lineage report (operator export, not committed) | 2026-10-25 ~07:49Z |
 | Tests (functions at 53adcb7) | agentkit 126, battlefield 392, red 103, green 107, blue 183 (Python total 911); frontend 202 in 27 files | `grep` of `def test_` / `it(`/`test(` | 2026-10-25 |
 | Test pass counts in PRs (parametrized) | battlefield 555 (#151); blue 422 (#176); red 132 (#166); frontend 214 (#154) | PR bodies | 2026-10-25 |
 | Contract size | 64 API paths; 23 tables | `contracts/ledger-api.yaml`, `contracts/schema.sql` | main |

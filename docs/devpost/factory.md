@@ -375,7 +375,7 @@ Keyless runs are how four of five people develop (AGENTS.md §3.8), and how gree
 | P3 | Evolution view from real data | R (#117) | PARTIAL: the EvolutionCard loads the real report | "The evolution card shows the latest real lineage report" |
 | P4 | Agents live on Droid | M | Blue audit LIVE (#157); green NOT DOING (Ad's decision, #78) | "Red and blue live on Droid; green on the same harness, keyless" |
 | P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
-| P8 / P9 | Invoice split control (#175), then a short live lineage with red **and** blue live | M / Ad | ASKED / PLANNED after P8 | Keep the P1 story. `[only if P9]` Factory angle: "a lineage with two live Droid agents adapting against each other" |
+| P8 / P9 | Invoice split control (#205/#206), then a short live lineage with red **and** blue live | M / Ad | DONE / DONE (`ln_431bf702e8a0`, 3 gens × 4 days) | Factory angle: "a lineage with two live Droid agents, red and blue's audit": 27,877 / 29,576 / 27,525 credits per generation (~85k). Red adapted (its split was caught 3/3, it pivoted, $0 extracted); blue's controls held but it learned nothing new, so don't say "adapting against each other". Say: "Red found a gap (invoice splitting, 19/19 extracted); we shipped a control; in the next live lineage red's split was caught 3/3, it pivoted to other schemes, and extracted $0 across three generations." Keep the caveat next to it: red's fallback `duplicate_invoice` never pays, so the $0 is partly red's choice, not only blue's catches (hyphenate.md §4.10) |
 | — | Settle the open Finding on CANCEL comment delivery (OFF prompting is settled for blue's tools, #119) | M | open | Say CANCEL-comment delivery is untested (green's acceptance would settle it, and it isn't running) |
 | — | #174/#176 (`/audit` usage → credit guard, truthful `droid_ok`) on prod | Ad | merged; counts from the deploy containing 6640354 | For the smoke, quote `turn_usage` (3,806 / 4,109), not `prod-credits` (0) |
 | `NOT DOING` | Droid inside `/gate` (8 s synchronous budget; rules + bounded advisory instead); `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*` (AGENTS.md §5); `model="auto"`; retrying `gemini-3.8-flash` | | | |
@@ -399,7 +399,7 @@ each day (`/backstage/blue`), not the show itself.
 | Judge describes the attack (optional) | Laptop 1 attack console (typed or voice) → laptop 2 | The judge's words appear in red's prompt as quoted DATA and set the forced scheme's params (#165). A Droid agent taking free-form steering without widening its tool surface. Voice caveats: admin-only, never tested against the real ElevenLabs service (#154) |
 | End of the day | Laptop 4, `/backstage/blue` | Blue's live audit turn (Droid, `OFF`, strict identity) and the posted report. 3.4k–19k credits. The #193 recordings (before #195) show 0 flags; since #195 the live audit raised a CRS flag the gate enforced (ep_9cbc3362d44e). A flag on a given day isn't guaranteed: show the report |
 | Q&A, if a Factory judge asks | Laptop 2 / backstage battlefield | Same `tool_use_id` on the tool event and on the ledger write (`X-Tool-Use-Id`, `:2`, `:3`); `/health` shows red and blue `dry_run=false model=gpt-5.4-mini`, green `dry_run=true` (blue's `droid_ok` is truthful from the deploy containing 6640354; before #176 it always read false) |
-| Evolution beat | EvolutionCard | On prod with the backend up, the card loads the newest finished lineage, the live-red `ln_f52a3df83c8d` (`frontend/lib/arena/lineage.ts`). Factory angle: 40 live Droid turns across 5 generations, ~109k credits, red's playbook folded between generations with no model call. Offline it is the synthetic golden fixture, not a recording. R's close ("that learning card is a recorded live run", #145) matches when the backend is up |
+| Evolution beat | EvolutionCard | On prod with the backend up, the card loads the newest finished lineage, the live-red `ln_f52a3df83c8d` (`frontend/lib/arena/lineage.ts`). Factory angle: 40 live Droid turns across 5 generations, ~109k credits, red's playbook folded between generations with no model call. `?lineage=ln_431bf702e8a0` shows P9: red and blue's audit both live, 3 generations, ~85k credits. Offline it is the synthetic golden fixture, not a recording. R's close ("that learning card is a recorded live run", #145) matches when the backend is up |
 
 **Fallbacks.** If a red turn stalls, it fails cleanly with `turn.ended ok:false` within
 `TURN_TIMEOUT_SEC + 5` and the episode goes on (`contracts/agent-service.md`). Switch to a
@@ -451,7 +451,10 @@ identity for 3.4k–19k credits per audit. Before we switched the audit on, its 
 real local Ledger in authorized runs: every tool call had a permission request and exactly one event pair.
 Writes committed under the SDK's ID, and a same-key replay was refused. A write killed mid-flight left an
 honest `unknown` receipt with no duplicate. Gate p95 stayed at 8 ms during the live audit. A five-generation lineage ran on prod with the live attacker: 40 Droid
-turns, ~109k credits, ~2.7k per turn, and red's playbook updated between generations without a model call.
+turns, ~109k credits, ~2.7k per turn, and red's playbook updated between generations without a model call. A
+three-generation lineage then ran with the attacker and the controller's audit both live (~85k credits): red's
+invoice split was caught 3 of 3, it pivoted to other schemes, and it extracted $0 (partly because the schemes it fell
+back to don't pay).
 
 **What we learned.** Autonomy plus a permission handler is a real authorization surface for non-coding
 agents, as long as you can carry the call's identity end to end. Pin models, and measure credits per
@@ -459,8 +462,8 @@ turn, because fixed session overhead dominates small turns. Write down SDK behav
 don't guess.
 
 **What's next.** The clerk live on Droid after its acceptance matrix, which would also settle whether
-`CANCEL` comments reach the model. A lineage with the attacker and the controller both live `[only if P9: "we
-ran one"]`.
+`CANCEL` comments reach the model. Longer lineages with the attacker and the controller
+both live (we ran one short one).
 
 **Built with.** python, fastapi, factory-droid-sdk, droid-cli, mcp, gpt-5.4-mini, pydantic, httpx, structlog,
 postgresql, docker, caddy, cloudflare, next.js, typescript, three.js, react-three-fiber, tailwindcss.
@@ -495,7 +498,7 @@ reproducible Finding in the repo.
 - "Credits feed the credit guard" → for red, yes. For blue's audit only from the deploy containing 6640354 (#176). For the smoke episode quote `turn_usage` (3,806 / 4,109); `make prod-credits` shows blue as 0 there and `droid_ok` read false.
 - "Gate p95 8 ms" → measured on the local stack during a live blue audit (#119); the gate itself is rules, not Droid.
 - "OFF asks for every MCP call" → a recorded Finding: static binary read, then confirmed live for blue's tools (6 calls, 6 requests, #119). Green uses the same `OFF` policy but its tools weren't run live.
-- "Red learns between rounds" → red's playbook update is a deterministic fold of its own disclosed outcomes; the Droid model reads it as data. With live red on prod (`ln_f52a3df83c8d`) it re-weighted toward the scheme that paid (`threshold_split`); it invented no new schemes.
+- "Red learns between rounds" → red's playbook update is a deterministic fold of its own disclosed outcomes; the Droid model reads it as data. With live red on prod (`ln_f52a3df83c8d`) it re-weighted toward the scheme that paid (`threshold_split`); it invented no new schemes. In P9 (`ln_431bf702e8a0`) it moved off `threshold_split` once the split was caught and fell back to `duplicate_invoice`, which doesn't pay here.
 - Red's tool IDs → exact and checked against `list_tools()`, but derived from the tool list rather than pinned like green's and blue's.
 - Earlier gemini cost → ~6.7k credits/turn per the PR #9 Finding.
 
@@ -562,6 +565,7 @@ reproducible Finding in the repo.
 | 16 sessions / 50,000 credits | Green acceptance proposal ceiling (not run) | `green/SDK-ACCEPTANCE.md` | 2026-10-24 |
 | 375,000 | `MAX_CREDITS_PER_EPISODE` on prod (the `deploy/PROD-OPS.md:145` recommendation) | prod config | 2026-10-24 |
 | 20,402 / 20,744 / 22,831 / 22,974 / 22,313 (~109k); ~2.7k/turn | Red credits per generation, live-red lineage `ln_f52a3df83c8d` (5 × 8 days = 40 turns) | lineage report (operator export, not committed) | 2026-10-24 |
+| 27,877 / 29,576 / 27,525 (~85k) | Credits per generation, P9 lineage `ln_431bf702e8a0` (red and blue's audit live, 3 × 4 days) | lineage report (operator export, not committed) | 2026-10-25 |
 | 26,230 / 24,449 | Red credits, live-red off / enforce recordings (10 turns each) | `docs/recordings/README.md` (#136) | 2026-10-24 |
 | 136 | agentkit tests passed with droid-sdk installed | #84 | 2026-10-24 |
 | 0:00–1:28 | Show beats | `frontend/docs/show-mode.md` | main |

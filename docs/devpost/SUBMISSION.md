@@ -7,7 +7,7 @@ Placeholder tags (each says what goes in it and where it comes from):
 
 | Tag | Fill with | Source | If it isn't ready, replace with |
 |---|---|---|---|
-| `⟦GEN-…⟧` | numbers from the next lineage run (current main, after the blue fixes) | `make evolution-report LN=<id>` → `runs/<id>/report.md` | the dated 2026-10-24 numbers already in the text, and delete the "re-run" sentences |
+| `⟦GEN-…⟧` | filled 2026-10-25 from the P9 lineage `ln_431bf702e8a0`; none left | `make evolution-report LN=<id>` → `runs/<id>/report.md` | the dated 2026-10-24 numbers already in the text, and delete the "re-run" sentences |
 | `⟦CRS-LIVE⟧` | the live CRS table demo, if it happened (`make prod-crs-episode`) | whoever runs it | delete the sentence |
 
 Prize checkboxes to tick on Devpost: Hyphenate (Autonomous Systems for Finance), Factory (Best Use of the Droid SDK), Cal Hacks Most
@@ -45,7 +45,7 @@ A judge can attack live: type or say a fraud scheme in your own words, in any la
 - **Red live, choosing its own schemes** (2026-10-24, seed 42, 10 days): controller off, **$10,285** lost, all of it diverted to the attacker's account by one bank-detail swap; controller on, **$0** lost: the swap was escalated and blocked (one $1,824 fake invoice was still paid, but into the vendor's real account, so nothing reached the attacker), at $100 of false-positive cost.
 - **Red and blue's audit live, a fixed plan of six different schemes** (2026-10-25, seed 42, 6 days): controller off, **$23,681** lost ($23,335 of it to accounts the attacker controlled), 0 of 6 caught; controller on, **$18,526** lost ($18,180 to attacker accounts), 2 of 6 caught, $1,480 blocked, $50 false-positive cost. One split invoice was $13,800 of that. This is the harder test, and today's controls lose most of it. That's the point: the lab tells you which controls you'd be trusting and which ones aren't there.
 - **Closing the gaps it found** (keyless re-run of the same matrix with the real agent code, 5 seeds × 10 days, all eight schemes mixed): after we added three controls (invoice splitting across the approval threshold, a block on unverified new-vendor exposure, and human review of near-duplicate invoices), blue went from stopping **14%** of attempted fraud dollars to **85%**, and **$0** reached attacker-controlled accounts; what still gets through is overpayment to real vendors and employees. False-positive cost across the five runs: $824, mostly legitimate bank changes held for a human.
-- **Evolution:** in a 5-generation live-red lineage (2026-10-24, 8 days per generation), red found that invoices split under the approval threshold get paid and moved to them: 1 of 7 attacks in generation 1, 7 of 8 in generation 5, extraction from $19k to $98k, and no control caught it. ⟦GEN-RERUN: after the new controls, a ⟦GEN-N⟧-generation re-run on current main: red's tactic mix ⟦GEN-MIX⟧, extraction ⟦GEN-G1⟧ → ⟦GEN-GN⟧, blue's catches ⟦GEN-CAUGHT⟧, false-positive cost ⟦GEN-FP⟧ (lineage ⟦GEN-ID⟧).⟧
+- **Evolution:** in a 5-generation live-red lineage (2026-10-24, 8 days per generation), red found that invoices split under the approval threshold get paid and moved to them: 1 of 7 attacks in generation 1, 7 of 8 in generation 5, extraction from $19k to $98k, and no control caught it. We shipped an invoice split control, then ran a 3-generation live lineage with red and blue's audit both live (2026-10-25, 4 days per generation): red's split was caught 3 of 3, it pivoted to other schemes (bank swap, invoice over its PO, recurring drift, duplicate invoices), and it extracted **$0** across three generations, with $13,800 / $2,430 / $0 blocked and $100 / $50 / $0 of false-positive cost. Part of that $0 is red's own choice, not only blue's catches: it fell back to duplicate invoices, which never pay here because the clerk holds a duplicate whose PO is already used, and its memory prefers schemes that failed uncaught over schemes that were caught.
 - **Identity fraud with CRS** (2026-10-25, a recorded two-day production run): blue's live audit agent checked three fictional new hires against TransUnion identity verification through the CRS sandbox, flagged the one whose identity didn't match, and the gate blocked that person's next expense while the two clean hires were paid. ⟦CRS-LIVE⟧
 
 ## How it fits each track
@@ -92,7 +92,7 @@ Most of autonomous AP is deciding what not to touch: defer over-limit invoices, 
 
 ## What's next
 
-Rerun the live lineage against the new controls and see what red learns next. Tune the remaining false positives (a legitimate invoice caught next to an attacker's split at the same vendor). Put green on a live Droid session after its acceptance run. Add three-way match (receiving), approval routing above the threshold, and a "bring your own agent" mode: any AP agent that speaks our `/turn` contract can take green's seat and get graded.
+Run longer live lineages against the new controls: in the first short one red stopped splitting and fell back to schemes that don't pay, so we haven't yet seen what it finds next. Tune the remaining false positives (a legitimate invoice caught next to an attacker's split at the same vendor). Put green on a live Droid session after its acceptance run. Add three-way match (receiving), approval routing above the threshold, and a "bring your own agent" mode: any AP agent that speaks our `/turn` contract can take green's seat and get graded.
 
 --- PASTE ---
 
@@ -108,6 +108,7 @@ python, fastapi, pydantic, httpx, asyncpg, postgresql, timescaledb, factory-droi
 - $18,526 = ghost vendor $4,380 + the $13,800 split (both to red's own new vendor, so attacker accounts: $18,180) + the inflated expense $346.15 (a real employee); $23,335 of the off run's $23,681 reached attacker accounts (`/report/ep_d9b561111d60`, `/report/ep_89d1df6b012a`)
 - $23,681 / $18,526 / 2 of 6 / $1,480 / $50, and the $13,800 split: `/report/ep_89d1df6b012a`, `/report/ep_d9b561111d60` (#193 recordings)
 - Lineage 1/7 → 7/8, $19k → $98k: `ln_f52a3df83c8d`, `docs/devpost/hyphenate.md` §4.10
+- Re-run $0 / $0 / $0 extracted, $13,800 / $2,430 / $0 blocked, $100 / $50 / $0 FP, split caught 3 of 3 (`invoice_threshold_split`, g1), tactic mix: `ln_431bf702e8a0` (P9, deploy 15f08b4), `docs/devpost/hyphenate.md` §4.10
 - CRS: prod `ep_9cbc3362d44e` (#197, recording in `docs/recordings/`), local `ep_0181eda1c921` with 19 checks `billable:false`; `docs/devpost/crs.md` §0
 - ~11 s and ~2.6k credits per red turn: `contracts/CHANGELOG.md` Findings (`ep_568aef023d7c`); blue 3,454–18,723 per audit: #193 recordings
 - 14% → 85% stopped, $0 to attacker accounts, $824 FP: keyless matrix, baseline origin/main 553acdf vs #196 a112323 (seeds 42–46, 10 days, mixed 8 schemes, enforce), outputs in Ad's session scratchpad `out/` and `out-final/`

@@ -26,7 +26,7 @@ is Al's (red), M's (green, blue) and R's (frontend) to build on top.
   runtime-generated endpoints (§5). A genuinely new primitive is a small contracts PR.
 - Everything runs under `DRY_RUN=true`: agentkit's default `reflect()` and the mock agents'
   deterministic adaptation make `make mock-agents && make evolve GENS=3` produce a non-trivial
-  report with no keys. Real generations need live agents (§8); the live-red lineage `ln_f52a3df83c8d` ran on prod.
+  report with no keys. Real generations need live agents (§8); the live-red lineage `ln_f52a3df83c8d` ran on prod, and `ln_431bf702e8a0` ran there with red and blue's audit live.
 
 ## 1. Concepts
 
@@ -296,7 +296,8 @@ never required. Under `DRY_RUN` the report is fully deterministic.
   generation ≈ days × (red + green + blue turn latency); measure on the first live generation.
 - Real evolution needs live agents and a lineage `max_credits`. D15 is partly lifted: red and blue's
   audit run live on prod, and the live-red lineage `ln_f52a3df83c8d` (5 generations × 8 days, green and
-  blue keyless) is the first real one. Keyless, everything is still verified this way:
+  blue keyless) is the first real one; `ln_431bf702e8a0` (3 × 4 days, red and blue's audit live, green keyless)
+  followed after the invoice split control. Keyless, everything is still verified this way:
   agentkit default `reflect()` keeps playbooks; `battlefield/mock_agents` implement `/reflect`
   with deterministic adaptation (mock red avoids schemes blocked twice in the window and repeats
   extracted ones; mock blue tightens its near-threshold band after a miss) so a mock lineage shows
@@ -358,8 +359,8 @@ watches agents react within seconds. Already supported. On top:
 
 Follow-ups (not scheduled): `/reflect` credits are not persisted (after a restart the lineage cap
 re-counts only `turn.ended`); mailroom (E-D7) deferred. Done since: per-agent tokens (#108–#111) make
-own-only playbook access enforced rather than reliant on honest `X-Agent`, and a real lineage ran with
-live red (`ln_f52a3df83c8d`). Teammate work (T-red, T-blue, T-green, T-fe in §12)
+own-only playbook access enforced rather than reliant on honest `X-Agent`, and real lineages ran with
+live red (`ln_f52a3df83c8d`) and with red and blue's audit live (`ln_431bf702e8a0`). Teammate work (T-red, T-blue, T-green, T-fe in §12)
 builds on the merged routes.
 
 ## 12. Briefs for teammates (paste after your directory's AGENTS.md block)

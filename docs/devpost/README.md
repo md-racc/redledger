@@ -81,18 +81,27 @@ Not submitting, or drop the claim:
   3,985 / 5,318. The first attempt (ep_c2c98b2da583) failed because strict identity refused the model's streamed
   `raise_flag` calls; #195 fixed it. Earlier, M's local acceptance (ep_0181eda1c921, #102) proved the same chain with
   the keyless audit and 19 `billable:false` checks. One prod run, so say "one recorded run". See crs.md.
-- **`threshold_split` control: expense version shipped, invoice version still open.** #173 adds a blocking aggregate
-  `threshold_split` rule for **expenses only**. Red's scheme splits **invoices**, so the gap the live lineage found is
-  still open (P8, #175).
+- **`threshold_split` control: expense and invoice versions shipped.** #173 adds a blocking aggregate
+  `threshold_split` rule for expenses; #205/#206 add `invoice_threshold_split` for invoices (P8), live on prod from
+  deploy 15f08b4. The P9 lineage below caught red's one invoice split (3 of 3 hits).
 - **Closed information leaks:** red's `GET /attacks` now withholds unrevealed outcomes (#138 contract, #142 code), and
   replayed gate verdicts are bound to their day and enforcement mode (#147 contract, #151 code). See armadin.md §4.9.
 - **Live-red evolution (P1, done):** the live-red prod lineage `ln_f52a3df83c8d` (5 generations × 8 days, enforce,
   seeds 502–506, red live, green and blue keyless real code, ~109k red credits). It ran **before** blue's audit went
-  live and before #148 and #173; no lineage has run since. Red re-weighted its catalog toward
+  live and before #148 and #173; P9 (below) ran after P8. Red re-weighted its catalog toward
   `threshold_split` (launches 1 → 2 → 6 → 3 → 7, every one extracted) and extraction rose from $19,076 (g1) to
   $97,734 (g5). Blue switched on its four pre-written learned controls after g1 and widened its near-threshold band,
   but none of them ever fired on a split. Red invented no new schemes. That is a controls gap the sandbox found,
   and we say so. The report is an operator export, not committed.
+- **Live red and live blue after P8 (P9, done):** prod lineage `ln_431bf702e8a0`, 3 generations × 4 days, enforce, base seed 501 (seeds 502–504), red **and** blue's audit live on Droid (`gpt-5.4-mini`), green keyless; ran 2026-10-25 ~07:43–07:49Z on deploy 15f08b4, which includes P8 (#205/#206 `invoice_threshold_split`), #195 (live flags) and #207 (scoring fix). Credits per generation 27,877 / 29,576 / 27,525. Extracted $0 / $0 / $0; blocked
+  $13,800 / $2,430 / $0; FP cost $100 / $50 / $0; caught/launched 2/4, 1/4, 0/4. Red's mix: g1 `bank_swap` (blocked),
+  `threshold_split` (blocked), `duplicate_invoice` ×2 (pending); g2 `po_mismatch` (blocked), `amount_drift` (pending),
+  `duplicate_invoice` ×2 (pending); g3 `amount_drift` (pending), `duplicate_invoice` ×3 (pending). `invoice_threshold_split` fired 3 times in g1, all on red (precision 1.0); `over_po_amount` caught the g2 `po_mismatch`; `bank_change_with_open_invoices` fired 3 times in g1 (1 on red, 2 on legit items). Blue added no learned controls ("Learned: none"). The report's "Retired: invoice_threshold_split (last g1)" only means the rule didn't fire again because red stopped splitting; it is not retireable. The
+  line to say: "Red found a gap (invoice splitting, 19/19 extracted); we shipped a control; in the next live lineage red's split was caught 3/3, it pivoted to other schemes, and extracted $0 across three generations." Two caveats, said plainly: (1) red falls back to `duplicate_invoice`, which never pays because
+  green holds duplicates whose PO is consumed, and red's ranking prefers uncaught failures over caught schemes; (2) so
+  the $0 in all three generations comes partly from red picking non-paying schemes, not only from blue's catches. The
+  EvolutionCard is pinned to `ln_f52a3df83c8d`; `?lineage=ln_431bf702e8a0` shows P9. Report: operator export, not
+  committed.
 - **Mock-agent evolution (illustration only):** a keyless mock-agent lineage run (local), `ln_fbdfbd2d74cc`, shows what
   closing the loop looks like: red evades in generation 2, blue catches 5/5 in generation 3. Those are the **mock**
   agents (`battlefield/mock_agents/`), not M's blue or Al's red. Always label it mock.
@@ -134,7 +143,7 @@ Not submitting, or drop the claim:
 | P5 | Prod on the TimescaleDB image | Ad | NOT DOING for the hackathon unless it lands | "TimescaleDB proven in CI; prod on Postgres 16" |
 | P6 | CRS live demo | M / Ad | PASSED on prod with blue's live audit (ep_9cbc3362d44e, #197); local acceptance earlier (ep_0181eda1c921). Live at the table still to do | "Recorded on prod 2026-10-25 (ep_9cbc3362d44e); live at the table on request" |
 | P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
-| P8 | Invoice threshold-split control in blue | M (#175) | ASKED | "Red found a gap in invoice split detection; the expense version is shipped (#173)" |
-| P9 | Short live lineage after P8, to show blue closing the gap | Ad | PLANNED after P8 | Keep the P1 story: "the sandbox surfaced a real gap" |
+| P8 | Invoice threshold-split control in blue | M (#175) | DONE (#205/#206, on prod from deploy 15f08b4) | — |
+| P9 | Short live lineage after P8, red and blue live | Ad | DONE (`ln_431bf702e8a0`, 3 gens × 4 days, $0 extracted) | Say: "Red found a gap (invoice splitting, 19/19 extracted); we shipped a control; in the next live lineage red's split was caught 3/3, it pivoted to other schemes, and extracted $0 across three generations." Keep the caveat next to it: red's fallback `duplicate_invoice` never pays, so the $0 is partly red's choice, not only blue's catches |
 
 Before the pitch, re-check this table and say the version that's true on the day (R's close already does this).

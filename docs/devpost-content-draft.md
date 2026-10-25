@@ -48,7 +48,7 @@ Agents also **evolve**. Across generations of episodes, each agent gets debriefs
 **Results on our production deployment:**
 - Same company, same seed, 10 days, red live and choosing its own schemes (green and blue keyless): controller off, **$10,285** stolen. Controller on, **$1,824** stolen, at $100 of false-positive cost.
 - Red and the controller's audit both live, against a fixed plan of six different schemes over 6 days: controller off, **$23,681** stolen; controller on, **$20,350** stolen, 2 of 6 schemes caught, at $50 of false-positive cost. The split, drift and inflation schemes got through. That is the harder test, and the controls lose most of it today.
-- Over a 5-generation evolution run, the live attacker found that invoices split under the approval threshold get paid, and leaned on it harder every generation: 1 of 7 attacks in generation 1, 7 of 8 in generation 5, with extraction rising from $19k to $98k. No control caught it. The lab surfaced a real control gap, which is exactly what you'd want to learn before hiring the agent. `[only if P9]` After we added an invoice split control, a short live re-run showed the controller closing it.
+- Over a 5-generation evolution run, the live attacker found that invoices split under the approval threshold get paid, and leaned on it harder every generation: 1 of 7 attacks in generation 1, 7 of 8 in generation 5, with extraction rising from $19k to $98k. No control caught it. The lab surfaced a real control gap, which is exactly what you'd want to learn before hiring the agent. After we added an invoice split control, a 3-generation live re-run with red and the controller's audit both live caught red's split 3 of 3; red pivoted to other schemes and extracted $0 across three generations. Part of that $0 is red's own choice: it fell back to duplicate invoices, which never pay here, so it isn't only the controller's catches.
 - Separately, on our production deployment with the controller's audit live, in a recorded two-day run against the live CRS sandbox, blue's audit agent checked three fictional new hires, flagged the one whose identity didn't check out, and that person's next expense was blocked at the gate. The two clean identities were paid.
 
 ## How we built it
@@ -77,7 +77,7 @@ All three agents share one `agentkit` package around Factory's Droid SDK. Each h
 Most of autonomous AP is deciding what *not* to touch: defer over-limit invoices, defer invoices with no PO, never retry a blocked action. A good controller is one a human can argue with, so it gives reasons, not a score. And the fair way to grade a controller is in dollars on both sides: what it stopped, and what it cost.
 
 ## What's next
-Close the gap the live run found. The expense version of the split control is shipped; the invoice version is next `[only if P8: "and shipped"]`, then a re-run of the lineage to show it holds `[only if P9: "which showed it holding"]`. Put green, the clerk, on a live Droid session after its acceptance run. Add three-way match (receiving) and approval routing above the threshold.
+We closed the gap the live run found: both versions of the split control shipped, and a short live re-run caught red's one split. Next, run longer live lineages to see what red finds after that. Put green, the clerk, on a live Droid session after its acceptance run. Add three-way match (receiving) and approval routing above the threshold.
 ```
 
 ---
@@ -121,10 +121,11 @@ Optional, the team's call: *"We also used Claude Code (AI coding agents) heavily
 - **Voice:** #154 was never tested against the real ElevenLabs service. Record one real transcription on prod before submitting. If it fails, remove the "or say" wording and the ElevenLabs sentences, and swap the tag.
 - **CRS:** the About text says "on our production deployment" and "a recorded two-day run" because ep_9cbc3362d44e (#197) is one recorded prod run with the live audit. Don't widen it to "every run". Submitting to the CRS track: run `make prod-crs-episode` live at the table if anyone can; the recording is the fallback (devpost/crs.md §0).
 - **Blue's live flags:** the #193 recordings predate #195, so their live audits raised no flags (strict identity refused the streamed `raise_flag` calls). Since #195, ep_9cbc3362d44e shows a live flag the gate enforced. Don't say the live audit flagged anything in #193.
-- **`[only if P#]` markers:** resolve each one (P8 invoice split control, P9 re-run) against devpost/README.md before pasting.
+- **`[only if P#]` markers:** P8 (invoice split control) and P9 (live re-run, `ln_431bf702e8a0`) both landed; the markers in this draft are resolved.
 - **Sources for the numbers:**
   - off/on recordings: [`docs/recordings/README.md`](recordings/README.md) (#136 red live; #193 red and blue live, which also gives blue's per-audit credits and the 0-flag audits)
   - 5-generation live-red lineage `ln_f52a3df83c8d` and red's per-turn cost: [`devpost/factory.md`](devpost/factory.md) and [`devpost/hyphenate.md`](devpost/hyphenate.md) §10
+  - 3-generation re-run with red and blue live (P9, `ln_431bf702e8a0`, $0 extracted, split caught 3/3, and its caveats): [`devpost/hyphenate.md`](devpost/hyphenate.md) §4.10
   - blue's live audit credits: 3,806 and 4,109 in the 2-day smoke ep_f9c695b3144f (#78; [`devpost/factory.md`](devpost/factory.md) §10); 3,454–18,723 per audit in the #193 pair
   - CRS on prod with the live audit (ep_9cbc3362d44e, PASS): #197; [`recordings/crs-live-ep_9cbc3362d44e.jsonl`](recordings/crs-live-ep_9cbc3362d44e.jsonl); local acceptance (ep_0181eda1c921, 19 checks `billable:false`): #102; [`devpost/crs.md`](devpost/crs.md) §0
   - false-positive cost formula: README §4
