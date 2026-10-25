@@ -127,7 +127,7 @@ make episode MODE=enforce
 
 ## Extension points (grow without a contracts PR)
 
-See README §16. For `green/` specifically:
+See README.md (Ledger API overview, extensions). For `green/` specifically:
 - Memory across turns: `ctx.ledger().get_state("k")` / `put_state("k", {...})`.
 - Inputs: `req.options["inputs"]` is a list of messages left for you (judge, crowd, other agents). Read it in `build_prompt` / `dry_run_turn` if you want to react.
 - Custom events: `ctx.emitter().custom("name", {...})` emits `x.green.name`; the frontend stores it in `state.custom`.
@@ -164,7 +164,7 @@ paid/approved/blocked/rejected). Legit items you had blocked arrive only in the 
 
 ```
 You are working in the Red Ledger repo, directory `green/`, as Dev M's coding agent.
-Before any edit: read `green/AGENTS.md`, `GIT.md` §7, `README.md` §§0,1,3,5,6,7,16, and
+Before any edit: read `green/AGENTS.md`, `GIT.md` §7, `README.md`, `ARCHITECTURE.md`and
 `contracts/agent-service.md`, `contracts/events.md`. Confirm `git branch --show-current` starts with `green/`;
 if not, create `green/<topic>` from origin/main. Edit only inside `green/`,
 `battlefield/extensions/green_*.py`, `contracts/ext/green/`, and one new `devlog/` fragment per PR.

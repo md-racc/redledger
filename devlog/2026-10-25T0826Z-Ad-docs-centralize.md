@@ -1,0 +1,1 @@
+- 2026-10-25T08:26Z · Ad · docs: centralized ~130k words of sprawl into root STORY/PITCH/SUBMISSION/EVIDENCE/README/ARCHITECTURE/FRONTEND/OPERATIONS; STORY.md is the one source for Devpost, README, video and judging talk; supersedes #222; next: frontend demo fixes, Forge app decision, judging-hour run; blocked: none

@@ -43,14 +43,14 @@ likely to break someone else's day, so the bar is: contracts first, tests second
   `CARD_TYPES` in `api/frontend.py` if it should make a card.
 - `/api/fe` endpoints are read-only SQL. Dev R may PR new ones here with Ad as reviewer.
 
-## Extension points you host (README §16)
+## Extension points you host (README.md (Ledger API overview, extensions))
 
 `battlefield/extensions/` is loaded by `extensions.mount_all` at startup; `contracts/ext/*/*.sql`
 by `db.apply_schema` after the core. Core extension routes live in `app/api/extension_points.py`
 (`/state`, `/inputs`, `/fe/query`). The orchestrator drains `inputs` into `options.inputs` per
 turn. Keep these stable: they are what lets the other three work without you.
 
-## Lineages you run (README §15)
+## Lineages you run (ARCHITECTURE.md (Evolution))
 
 - `app/orchestrator/lineage.py` (generation loop, start/pause/resume under one lock + conditional
   status updates, restart recovery, demo reflection), `app/evolution/{debrief,review,report,export}.py`,
@@ -119,7 +119,7 @@ Goal for this session: <fill in>
   `amount × FP_PENALTY_RATE + FP_FLAT_PENALTY`; escalated but never blocked (approved or still open)
   costs `FP_FLAT_PENALTY`. Shadow verdicts score as "would-have" costs the same way, so
   off/shadow/enforce compare cleanly, and `legit_blocked` in shadow counts would-have blocks. Live
-  red-swap pay-time stops stay excluded. **Docs PR needed:** README §4's `false_positive_cost` line
+  red-swap pay-time stops stay excluded. **Docs PR needed:**  ARCHITECTURE.md's Scoring `false_positive_cost` line
   still says `(legit blocks + legit escalations) × FP_FLAT_PENALTY`.
 - Escalations (done): close exactly once (resolver, timeout or orphan sweep); a same-key replay
   joins the open escalation or reuses its decision; on startup open escalations are timed out
@@ -140,7 +140,7 @@ Goal for this session: <fill in>
   still completes. **In-process**, like the escalation waiters: battlefield must run as one
   uvicorn worker. Tests disable it by default (`conftest._no_turn_guard`; `turn_guard` re-enables).
   Gate checks are single-flight per (episode, X-Tool-Use-Id). Mock blue
-  escalates on demand with `MOCK_BLUE_ESCALATE`; drive it with `scripts/escalation_smoke.py`. **Docs PR needed:** README §11
+  escalates on demand with `MOCK_BLUE_ESCALATE`; drive it with `scripts/escalation_smoke.py`. **Docs PR needed:** OPERATIONS.md §2
   should list `MOCK_BLUE_ESCALATE` (mock only), and events.md could list `where: orchestrator`.
 - Replays (done): `POST /replays/{id}/play` creates a real `episodes` row `replay_<fixture>_<8hex>`
   (status `running`→`finished`/`failed`; seed/mode/days from the fixture's `episode.started`) and

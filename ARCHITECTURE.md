@@ -281,7 +281,7 @@ Live prod run, **ep_9cbc3362d44e** (seed 42, 2 days, `make prod-crs-episode`, #1
 audit called `crs_identity_check` both days, raised the HIGH flag on P12 (mismatch), and P12's
 day-1 expense was blocked (`expenses.approve`, `already_flagged_high`, enforced) while P01 and
 P16 were paid. Audit credits 3,985 and 5,318. Recording:
-`docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`.
+`recordings/crs-live-ep_9cbc3362d44e.jsonl`.
 
 ## Evolution
 

@@ -62,7 +62,7 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
 
 ## Changes
 
-- 2026-10-25 · Ad · ledger-api.yaml, schema.sql · comment-only: design-doc references now point to root ARCHITECTURE.md (docs centralization).
+- 2026-10-25 · Ad · ledger-api.yaml, schema.sql, agent-service.md · comment-only: design-doc references now point to root ARCHITECTURE.md (docs centralization).
 - 2026-10-25 · Ad · ledger-api.yaml · new operator read `GET /fe/episodes/{id}/controls` (controls assessment report; lost / to_attacker_accounts / to_real_parties split; no origin keys; viewers get it only once `final`). Additive, no existing shape changed; R's and M's areas consume it (pinged via #196).
 - 2026-10-25 · Ad · agent-service.md, agentkit/models.py · `POST /audit` response gains optional `usage` (same shape as a turn's), so blue's live Droid audit is charged against `MAX_CREDITS_PER_EPISODE` and lineage credit caps. Battlefield already reads `usage.factory_credits` from it; before this the field didn't exist and blue's live audits counted as 0 (prod ep_f9c695b3144f: ~3.8–4.1k credits per audit, recorded as 0) · Ad integrates; M notified
 - 2026-10-24 · Ad · agent-service.md, ledger-api.yaml · an idempotency key's gate verdict is replayed only on the same day and under the same enforcement it was judged with; otherwise 409 `stale verdict` (audited, never replayed). Closes A8's open replay gap: a shadow-mode block replayed as an enforced 403 after a mode switch, and an escalation decision could carry over to a later day · Ad integrates; M notified

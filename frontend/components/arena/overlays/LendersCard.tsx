@@ -1,6 +1,6 @@
 "use client";
 // "Why lenders care": what five large US lenders have said in public this month about outside AI agents in customer accounts, each line
-// with its source. Reads lib/arena/lenders.ts (docs/lenders.md has the same table with the caveats). Owner: Dev R.
+// with its source. Reads lib/arena/lenders.ts (root EVIDENCE.md, "Lenders on the record", has the same table with the caveats). Owner: Dev R.
 import { ALSO, AS_OF, AXIOS, DISCLAIMER, HEADLINE, LENDERS, TIE, type Source } from "@/lib/arena/lenders";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
