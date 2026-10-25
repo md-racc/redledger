@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
+import { companyName } from "@/lib/company";
 import { MOCK_MODELS, agentModels, isNotFinalAnswer, reportFilename } from "@/lib/report/summary";
 import type { AgentModel, ControlsReport } from "@/lib/report/types";
 import { ReportDocument } from "./ReportDocument";
@@ -16,7 +17,7 @@ const DRAFT_REFRESH_MS = 30_000;
 
 type State =
   | { kind: "loading" }
-  | { kind: "ready"; report: ControlsReport; models: AgentModel[] }
+  | { kind: "ready"; report: ControlsReport; models: AgentModel[]; company: string }
   | { kind: "pending" }
   | { kind: "missing" }
   | { kind: "error"; message: string };
@@ -35,11 +36,16 @@ export function ReportView({ ep }: { ep: string }) {
         if (MOCK) {
           const res = await fetch("/mocks/controls-report.json", { signal: ctl.signal });
           if (!res.ok) throw new Error(`mock fixture: ${res.status}`);
-          setState({ kind: "ready", report: (await res.json()) as ControlsReport, models: MOCK_MODELS });
+          setState({ kind: "ready", report: (await res.json()) as ControlsReport, models: MOCK_MODELS, company: companyName() });
           return;
         }
-        const [report, health] = await Promise.all([api.fe.controls(ep, ctl.signal), api.health(ctl.signal).catch(() => null)]);
-        setState({ kind: "ready", report, models: agentModels(health) });
+        // the run's snapshot names the company (battlefield seed/company.py); without it the report falls back to lib/company
+        const [report, health, snap] = await Promise.all([
+          api.fe.controls(ep, ctl.signal),
+          api.health(ctl.signal).catch(() => null),
+          api.fe.snapshot(ep).catch(() => null),
+        ]);
+        setState({ kind: "ready", report, models: agentModels(health), company: companyName(snap) });
         if (!report.final) again(DRAFT_REFRESH_MS);
       } catch (err) {
         if (ctl.signal.aborted) return;
@@ -91,7 +97,7 @@ export function ReportView({ ep }: { ep: string }) {
           </button>
         </span>
       </nav>
-      {state.kind === "ready" && <ReportDocument report={state.report} models={state.models} />}
+      {state.kind === "ready" && <ReportDocument report={state.report} models={state.models} company={state.company} />}
       {state.kind === "loading" && <Notice title="Loading the assessment…" />}
       {state.kind === "pending" && (
         <Notice title="Available when the run ends">

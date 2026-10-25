@@ -199,7 +199,7 @@ function feView(ep, what, sub, url) {
   const by = (t) => ev.filter((e) => e.type === t);
   if (what === "snapshot") {
     const open = ep.status === "finished" ? 0 : 14 - ep.current_day;
-    return { episode: pub(ep), company: { name: "Synthetic Co.", cash_position: 412033.12 - ep.score.dollars_extracted, employees_active: 40, vendors: { active: 61, frozen: by("vendor.frozen").length, new_this_episode: by("attack.launched").length }, paid_last_day: 18822.4 }, ap: { open: { n: open, total: open * 4380.5 }, overdue: { n: 2, total: 4100 } }, controls: { mode: ep.controller_mode, open_escalations: [...escalations.values()].filter((x) => x.episode_id === ep.id && x.status === "open").length }, exposure: { red_dollars_in_flight: 0 }, score: ep.score };
+    return { episode: pub(ep), company: { name: "Meridian Components", cash_position: 412033.12 - ep.score.dollars_extracted, employees_active: 40, vendors: { active: 61, frozen: by("vendor.frozen").length, new_this_episode: by("attack.launched").length }, paid_last_day: 18822.4 }, ap: { open: { n: open, total: open * 4380.5 }, overdue: { n: 2, total: 4100 } }, controls: { mode: ep.controller_mode, open_escalations: [...escalations.values()].filter((x) => x.episode_id === ep.id && x.status === "open").length }, exposure: { red_dollars_in_flight: 0 }, score: ep.score };
   }
   if (what === "timeline") {
     const days = [...new Set(by("day.ended").map((e) => e.day))];

@@ -229,14 +229,14 @@ async def red_turn(req: TurnRequest, ledger: LedgerClient, em: EventEmitter) -> 
             AttackCreate(scheme_id=scheme_id, display_name=scheme["display_name"], story=scheme["story"], params=declared, target_amount=amount)
         )
         v = await ledger.create_vendor(
-            {"name": "Acme Office Supply LLC", "ein": "47-1234567", "bank_account": "9988776655", "bank_routing": "021000021", "category": "office"}
+            {"name": "Kelbrook ESD Supply LLC", "ein": "47-1234567", "bank_account": "9988776655", "bank_routing": "021000021", "category": "office"}
         )
         await ledger.submit_invoice(
             {
                 "vendor_id": v["id"],
                 "amount": amount,
-                "invoice_number": f"AOS-{1000 + req.day}",
-                "line_items": [{"desc": "Office consumables", "amount": amount}],
+                "invoice_number": f"KES-{1000 + req.day}",
+                "line_items": [{"desc": "ESD shielding bags and reel boxes", "amount": amount}],
             }
         )
         return f"ghost vendor {v['name']} invoiced ${amount:,.2f} (attack {atk['id']})"

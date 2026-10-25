@@ -7,6 +7,7 @@
 //   1. live data     - derived below from the reducer state (attacks, verdicts, flags, frozen vendors)
 //   2. catalogs      - `catalogs.schemes` (GET /schemes) and `catalogs.vendors` (GET /fe/episodes/{ep}/vendors)
 //   3. host overrides - `<ArenaExperience agentDetails={{ "red:ghost_vendor": { story: "...", fields: { target: 1200 } } }} />`
+import { COMPANY } from "../company";
 import { BLUE_RULES, GREEN_ROSTER, RED_SCHEMES, TEAM_META, greenIdFor, ROSTER_BY_ID, blueIdForRule } from "./roster";
 import type { AgentDetailOverrides, AgentDetails, DetailField, DetailSection } from "./types";
 import type { Attack, UIState } from "../types";
@@ -132,7 +133,7 @@ function greenDetails(id: string, s: UIState, c: Catalogs, live: boolean): Agent
     id, team: "green", role: TEAM_META.green.singular,
     title: v?.name ?? spec.name,
     caption: v ? `vendor · ${v.id}` : `client slot · ${String(idx + 1).padStart(2, "0")}`,
-    story: v ? `${v.category ?? "Vendor"} counterparty of the company` : spec.blurb,
+    story: v ? `${v.category ?? "Vendor"} counterparty of ${COMPANY.name}` : spec.blurb,
     status: frozen ? { label: "frozen", tone: "bad" } : live ? { label: v?.status ?? "active", tone: "ok" } : null,
     placeholder: !v && !live,
     sections: [

@@ -24,7 +24,7 @@ likely to break someone else's day, so the bar is: contracts first, tests second
 | `app/orchestrator/legit_traffic.py` | per-day legit business (Dev M tunes via PR) |
 | `app/orchestrator/agents.py` | HTTP to red/green/blue |
 | `app/scoring/score.py` | attack outcome resolution + Score |
-| `seed/company.py` | Coastal Supply Co. generator (Dev M tunes via PR) |
+| `seed/company.py` | `COMPANY` (Meridian Components, an electronics components distributor) and its themed seed generator: vendor names and line items by kind (Dev M tunes via PR) |
 | `mock_agents/server.py` | stub red/green/blue; one app, `AGENT_NAME` selects |
 | `fixtures/episodes/*.jsonl` | recorded episodes; `sample-enforce-4d.jsonl` came from the scaffold smoke run |
 | `db/schema.sql` | build-time copy of `contracts/schema.sql` (gitignored) |

@@ -18,7 +18,7 @@ from .base import SchemeBase
 
 _VENDOR_NAMES = [
     "Summit Facilities Group LLC",
-    "Meridian Professional Services LLC",
+    "Ridgeline Test & Calibration LLC",
     "Keystone Facility Partners LLC",
     "Vanguard Advisory Group LLC",
     "Cornerstone Building Services LLC",

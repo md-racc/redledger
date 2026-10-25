@@ -31,6 +31,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from seed.company import COMPANY
+
 from .. import db
 from ..auth import bearer
 from ..config import settings
@@ -95,7 +97,7 @@ async def snapshot(episode_id: str):
     return {
         "episode": ep,
         "company": {
-            "name": "Coastal Supply Co.",
+            "name": COMPANY.name,
             "cash_position": round(cash, 2),
             "employees_active": employees,
             "vendors": db.row_to_dict(vendors),

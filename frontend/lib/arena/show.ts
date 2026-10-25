@@ -12,6 +12,8 @@
 // The director only decides *when*; everything it does to the world goes through `ShowHost`, so it runs under vitest with a
 // fake host and the React side (ArenaExperience) supplies the real one.
 
+import { COMPANY } from "../company";
+
 export type BeatId = "open" | "cast" | "arena" | "off" | "on" | "compare" | "evolve" | "yours";
 
 export interface Beat {
@@ -30,7 +32,7 @@ export const SHOW_SECONDS = 90;
 export const SHOW_BEATS: Beat[] = [
   { id: "open", label: "Open", at: 0, end: 6, captions: [] },
   { id: "cast", label: "The cast", at: 6, end: 22, captions: [] },
-  { id: "arena", label: "Arena", at: 22, end: 27, captions: [{ from: 0.4, to: 5, text: "One company, three agents, one ledger.", sub: "Red steals. Green pays the bills. Blue guards the gate." }] },
+  { id: "arena", label: "Arena", at: 22, end: 27, captions: [{ from: 0.4, to: 5, text: `${COMPANY.name}. Three agents, one ledger.`, sub: "Red steals. Green pays the bills. Blue guards the gate." }] },
   { id: "off", label: "Controller off", at: 27, end: 43, captions: [{ from: 0.4, to: 16, text: "Controller off. Fraud walks out.", sub: "Nothing checks a payment before it moves." }] },
   { id: "on", label: "Controller on", at: 43, end: 65, captions: [
     { from: 0.4, to: 12, text: "Rewind. Same seed. Controller on.", sub: "Blue checks every payment first." },

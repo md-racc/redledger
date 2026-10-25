@@ -1,0 +1,1 @@
+- 2026-10-25T09:08Z · Ad · chore: synthetic company is now Meridian Components (fictional electronics distributor): one COMPANY constant, themed vendor roster and line items (same numbers per seed), red ghost vendors, all three prompts, report/arena copy; next: verifier + deploy; blocked: none

@@ -23,7 +23,7 @@ class GhostVendor(SchemeBase):
         return {
             # default sits under blue's near_threshold band ([4750, 5000)) and green's $5k auto-pay line
             "target_amount": float(params.get("amount", 4380.0)),
-            "vendor_name": params.get("vendor_name", "Acme Office Supply LLC"),
+            "vendor_name": params.get("vendor_name", "Kelbrook ESD Supply LLC"),
             "category": params.get("category", "office"),
         }
 
@@ -35,8 +35,8 @@ class GhostVendor(SchemeBase):
             {
                 "vendor_id": v["id"],
                 "amount": plan["target_amount"],
-                "invoice_number": "AOS-1001",
-                "line_items": [{"desc": "Office consumables", "amount": plan["target_amount"]}],
+                "invoice_number": "KES-1001",
+                "line_items": [{"desc": "ESD shielding bags and reel boxes", "amount": plan["target_amount"]}],
             }
         )
         return f"{plan['vendor_name']} created and invoiced ${plan['target_amount']:,.2f}"

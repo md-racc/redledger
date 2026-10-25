@@ -1,6 +1,8 @@
 // Per-frame experience clock shared between the camera rig (writer) and the DOM overlays (readers).
 // Mutated every frame; overlays subscribe and write CSS variables directly, so React never re-renders at 60 Hz.
 
+import { COMPANY } from "../company";
+
 export interface Timeline {
   /** 0..1 progress of the auto-playing intro flight */
   intro: number;
@@ -38,7 +40,7 @@ export const SHOW_INTRO_SECONDS = 5.8;
 export const CHAPTERS = [
   { at: 0.0, no: "I", title: "The Palace", line: "Every dollar passes through this rotunda.", body: "A 1915 exhibition hall rebuilt in concrete, now the arena. Every dollar in the ledger passes through its rotunda." },
   { at: 0.2, no: "II", title: "The Guards", line: "Ten guards stand at the gate.", body: "Ten guards stand between the clerk and the ledger, one for each of blue's main rules. Click any of them." },
-  { at: 0.43, no: "III", title: "The Clients", line: "Twelve counterparties: paid, and robbed.", body: "The company's vendors and staff: the ones being paid, and the ones being robbed." },
+  { at: 0.43, no: "III", title: "The Clients", line: "Twelve counterparties: paid, and robbed.", body: `${COMPANY.name}' vendors and staff: the ones being paid, and the ones being robbed.` },
   { at: 0.71, no: "IV", title: "The Fraudsters", line: "Eight on the wall. All built.", body: "Eight fraudsters on the wall, a scheme built for each. One mission: get money out the door before the controller notices." },
   { at: 1.0, no: "V", title: "The Arena", line: "Everyone converges.", body: "Everyone converges on the rotunda floor. Run the episode and watch the ledger decide." },
 ] as const;

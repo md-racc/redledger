@@ -31,9 +31,9 @@ from typing import Any
 
 from faker import Faker
 
-from .. import db
+from seed.company import CATEGORIES, line_item, vendor_name
 
-CATEGORIES = ["office", "logistics", "it", "facilities", "professional", "marketing", "raw_materials"]
+from .. import db
 
 ESTABLISHED_AGE = 30  # days: bank-change candidates are at least this old, with no change this recent
 GENERIC_MIN_AGE = 7  # days: a newly onboarded vendor joins the generic PO/invoice traffic after this
@@ -66,12 +66,14 @@ EXPENSE_MEMOS = {
 }
 
 
-def _line_desc(text: random.Random, category: str | None, po_desc: str | None = None) -> str:
+def _line_desc(text: random.Random, category: str | None, po_desc: str | None = None, vendor: str | None = None) -> str:
+    """Mostly the themed item (seed.company.line_item); sometimes the terse category shapes, which red's rows use too."""
     cat = category or "services"
-    return text.choice([po_desc or cat, cat, "services", f"{cat} — monthly", f"{cat} — {text.choice(['order', 'service call', 'replenishment'])}"])
+    item = line_item(text, category, vendor) if category or vendor else po_desc or cat
+    return text.choice([po_desc or item, item, "services", f"{cat} — monthly", f"{cat} — {text.choice(['order', 'service call', 'replenishment'])}"])
 
 
-BANKS = ["First Harbor Bank", "Pacific Trust", "Meridian National", "Summit Federal", "Northgate Bank", "Bayview Credit Union"]
+BANKS = ["First Harbor Bank", "Pacific Trust", "Cascade National", "Summit Federal", "Northgate Bank", "Bayview Credit Union"]
 
 
 def _rng(seed: int, day: int, purpose: str) -> random.Random:
@@ -135,6 +137,7 @@ async def inject(episode_id: str, seed: int, day: int) -> dict[str, int]:
         return counts
 
     # 2-4 new POs
+    po_text = _rng(seed, day, "po_text")
     for _ in range(rng.randint(2, 4)):
         v = rng.choice(vendors)
         amount = round(rng.uniform(400, 12000), 2)
@@ -144,7 +147,7 @@ async def inject(episode_id: str, seed: int, day: int) -> dict[str, int]:
             episode_id,
             v["id"],
             amount,
-            _po_desc(rng, v),
+            _po_desc(rng, v, po_text),
             day,
         )
         counts["purchase_orders"] += 1
@@ -168,17 +171,19 @@ async def inject(episode_id: str, seed: int, day: int) -> dict[str, int]:
         )
     ]
     text = _rng(seed, day, "text")
+    by_id = {v["id"]: v for v in vendors}
     for _ in range(rng.randint(3, 6)):
         if open_pos and rng.random() < 0.8:
             po = open_pos.pop(rng.randrange(len(open_pos)))
             vid, po_id = po["vendor_id"], po["id"]
             amount = round(float(po["amount"]) * rng.uniform(0.97, 1.03), 2)  # small legit variance
-            desc = _line_desc(text, None, po["description"])
+            pv = by_id.get(vid, {})
+            desc = _line_desc(text, pv.get("category"), po["description"], pv.get("name"))
         else:
             v = rng.choice(vendors)
             vid, po_id = v["id"], None
             amount = round(rng.uniform(150, 2500), 2)
-            desc = _line_desc(text, v.get("category"))
+            desc = _line_desc(text, v.get("category"), vendor=v.get("name"))
         await db.execute(
             "INSERT INTO invoices (id, episode_id, vendor_id, po_id, amount, invoice_number, line_items, received_day, due_day, origin) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'sim')",
             db.new_id("inv"),
@@ -242,10 +247,8 @@ async def _onboard_vendor(episode_id: str, seed: int, day: int) -> None:
     fake = Faker()
     fake.seed_instance(f"legit:{seed}:{day}:new_vendor")
     taken = {r["name"] for r in await db.fetch("SELECT name FROM vendors WHERE episode_id=$1", episode_id)}
-    name = fake.company()
-    while name in taken:
-        name = fake.company()
-    category = rng.choice(CATEGORIES)
+    category = rng.choice(CATEGORIES)  # the first draw from rng, as before the theme
+    name = vendor_name(_rng(seed, day, "new_vendor_name"), category, taken)
     vid = db.new_id("ven")
     await db.execute(
         "INSERT INTO vendors (id, episode_id, name, ein, bank_account, bank_routing, address, category, created_day, origin, created_by) "
@@ -267,7 +270,7 @@ async def _onboard_vendor(episode_id: str, seed: int, day: int) -> None:
         episode_id,
         vid,
         round(rng.uniform(1500, 9000), 2),  # first engagement, above the $1,000 line the vendor-age rule watches
-        rng.choice([f"{category} — initial order", f"{category} — trial engagement", f"{category} — onboarding order"]),
+        f"{line_item(_rng(seed, day, 'new_vendor_text'), category, name)} — {rng.choice(['initial order', 'trial engagement', 'onboarding order'])}",
         day,
     )
 
@@ -300,7 +303,7 @@ async def _new_vendor_first_invoices(episode_id: str, seed: int, day: int) -> in
             r["po_id"],
             amount,
             f"{_initials(r['name'])}-{rng.randint(1000, 9999)}",
-            [{"desc": _line_desc(_rng(seed, day, f"first_invoice_text:{r['created_day']}"), r["category"]), "amount": amount}],
+            [{"desc": _line_desc(_rng(seed, day, f"first_invoice_text:{r['created_day']}"), r["category"], vendor=r["name"]), "amount": amount}],
             day,
             day + 30,
         )
@@ -345,6 +348,9 @@ async def _bank_change(episode_id: str, seed: int, day: int) -> bool:
     return True
 
 
-def _po_desc(rng: random.Random, v: dict[str, Any]) -> str:
+def _po_desc(rng: random.Random, v: dict[str, Any], text: random.Random) -> str:
+    """The same single draw from the day's `rng` as before the theme; the wording comes from `text`."""
     cat = v.get("category") or "services"
-    return rng.choice([f"{cat} — monthly", f"{cat} — project work", f"{cat} — replenishment", f"{cat} — Q4 order"])
+    terse = rng.choice([f"{cat} — monthly", f"{cat} — project work", f"{cat} — replenishment", f"{cat} — Q4 order"])
+    item = line_item(text, v.get("category"), v.get("name"))
+    return text.choice([item, item, terse])
