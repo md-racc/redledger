@@ -77,8 +77,8 @@ blocked step blocks here first.
 |---|---|---|---|---|---|---|
 | P1 | Devpost project created, repo linked, team joined | R | Devpost | project URL | shared with team | 10m |
 | P2 | MLH prize opt-in | R | MLH submission form | eligibility for every `MLH …` row | — | 5m |
-| P3 | CRS sandbox login | M | Sponsor account with ROLE_TU_TV; REST base `https://api-sandbox.stitchcredit.com/api` | `CRS_USERNAME` + `CRS_PASSWORD`; no API key required | local environment; prod secrets per `deploy/ENVIRONMENT.md` | 15m |
-| P4 | CRS employee profiles bound | M → Ad | create named synthetic employees and explicitly bind approved P01/P12/P16 profiles through the Blue operator extension | episode-scoped employee/profile bindings, not EINs or expected outcomes | `blue_crs_employee_profiles`; no core schema or seed edit required | 15m |
+| P3 | CRS sandbox login | M | Sponsor account with ROLE_TU_TV; REST base `https://api-sandbox.stitchcredit.com/api` | `CRS_USERNAME` + `CRS_PASSWORD`; no API key required | local environment; prod secrets per `deploy/ENVIRONMENT.md` (in use on prod: ep_9cbc3362d44e, #197) | 15m |
+| P4 | CRS employee profiles bound | M → Ad | create named synthetic employees and explicitly bind approved P01/P12/P16 profiles through the Blue operator extension | episode-scoped employee/profile bindings, not EINs or expected outcomes | `blue_crs_employee_profiles`; no core schema or seed edit required. On prod, `make prod-crs-episode` seeds (operator fixtures route) and binds them itself (#197) | 15m |
 | P5 | Atlassian account + demo site | whoever takes C1 | `forge login`, `forge site provision`, `forge register` | site URL, app id | `forge/manifest.yml`; `api.<domain>` added to its external-fetch permissions | 30m |
 | P6 | Node 22 or 24 + `@forge/cli@latest` (v14+) | same | local install | working `forge` CLI | — | 15m |
 | P7 | Cartesia key | R | Cartesia dashboard | `CARTESIA_API_KEY` | local `.env` | 10m |
@@ -104,7 +104,7 @@ text says. Blocked only by P1/P2.
 
 | A# | Prize | Value | Proof already in the repo | Submission must say |
 |---|---|---|---|---|
-| A1 | **Hyphenate** — Autonomous Systems for Finance | $8k / $5k / $3k | "realistic data" → `battlefield/seed/company.py` (90 seeded days); "limited access, a clean record of its work, knowing when to ask" → `AGENTS.md` §3 invariants 1, 5, 11, the `audit_log`, and the preparation → gate → escalation path (green prepares each money move, blue decides, a human resolves escalations; `contracts/ledger-api.yaml` `/preparations`); "something new" → the red agent plus **evolution**: lineages of episodes where agents get debriefs and after-action reviews and rewrite their playbooks (`docs/EVOLUTION-DESIGN.md`; `make evolve` / `make evolution-report`; a keyless 3-generation run shows red evading in generation 2 and blue learning rules that catch it in generation 3; the live-red lineage `ln_f52a3df83c8d`, 5 gens × 8 days `enforce`, had red converge on invoice `threshold_split` and lift extraction from $19,076 to $97,734 with no blue rule catching it, a real gap; blue's `threshold_split` rule (#173) now blocks the expense version, the invoice version is still open); 8 red schemes (#166) a judge can steer by voice or text (#154, #165); the CRS identity hold proven against the live sandbox on the local stack (ep_0181eda1c921); "the moment" → a `gate.verdict` block on a live bank swap | Answer "would you hire it, for which seats" with the gate, the audit log, the escalation path, then how it improves across generations — in that order |
+| A1 | **Hyphenate** — Autonomous Systems for Finance | $8k / $5k / $3k | "realistic data" → `battlefield/seed/company.py` (90 seeded days); "limited access, a clean record of its work, knowing when to ask" → `AGENTS.md` §3 invariants 1, 5, 11, the `audit_log`, and the preparation → gate → escalation path (green prepares each money move, blue decides, a human resolves escalations; `contracts/ledger-api.yaml` `/preparations`); "something new" → the red agent plus **evolution**: lineages of episodes where agents get debriefs and after-action reviews and rewrite their playbooks (`docs/EVOLUTION-DESIGN.md`; `make evolve` / `make evolution-report`; a keyless 3-generation run shows red evading in generation 2 and blue learning rules that catch it in generation 3; the live-red lineage `ln_f52a3df83c8d`, 5 gens × 8 days `enforce`, had red converge on invoice `threshold_split` and lift extraction from $19,076 to $97,734 with no blue rule catching it, a real gap; blue's `threshold_split` rule (#173) now blocks the expense version, the invoice version is still open); 8 red schemes (#166) a judge can steer by voice or text (#154, #165); the CRS identity hold proven against the live sandbox, first on the local stack (ep_0181eda1c921), then on prod with blue's live Droid audit raising the flag (ep_9cbc3362d44e, #197); "the moment" → a `gate.verdict` block on a live bank swap | Answer "would you hire it, for which seats" with the gate, the audit log, the escalation path, then how it improves across generations — in that order |
 | A2 | **Factory** — Droid SDK | $2000 + credits | Three `agentkit.DroidAgent` subclasses; **red and blue's daily audit run live on prod**. Red runs `gpt-5.4-mini`, reasoning `low` (~11 s and ~2.6k Factory credits per turn; moved off `gemini-3.8-flash` after it stalled live red turns, Finding in #118). Blue's audit runs on `gpt-5.4-mini` since #157 lifted its guard (`DRY_RUN_BLUE=false`, `DROID_MODEL_BLUE`; the image fails the build without the SDK since #169; smoke `ep_f9c695b3144f`, 2-day enforce, live audit both days at 3,806 and 4,109 credits from `turn_usage`; `/audit` reports `usage`, #174). Blue's `/gate` stays rules plus learned controls, not a Droid session (no gate LLM on prod). Spend is capped per episode (`MAX_CREDITS_PER_EPISODE`) and per lineage (`make prod-evolve ... MAX_CREDITS=`); `restrict_tools` with exact `<agent>-ledger___<tool>` ids, strict tool-use identity and `Autonomy.OFF` for green/blue, each turn on its own loop so the service stays responsive (#79, #84); `agent.thinking`/`tool_call`/`tool_result` rendered live. Green runs the same harness keyless on prod (`DRY_RUN_GREEN=true`), by Ad's decision for the pitch (#78; the green guard lift #160 stays a draft). Where each session runs and which tools it holds: `README.md` §6 "Where Droid runs" | Point judges at `README.md` §6 "Where Droid runs"; lead with a live episode, not a feature tour; say "red and blue live on Droid; green on the same harness, keyless", never that green runs live. Blue's `droid_ok` (always false) and per-episode audit credits (recorded as 0) were wrong before #176; from the deploy containing 6640354 both are truthful |
 | A3 | **Microsoft** — Grand Prize + Customer Impact | Surface laptops + FDE sessions | CI (per-service tests incl. Postgres, ownership and contracts guards), `.github/workflows/deploy.yml` with an approval gate, per-agent `DRY_RUN_RED/GREEN/BLUE` (red and blue's audit live, green keyless), replayable fixtures, a real VM behind Cloudflare, public read-only since 2026-10-25 (#152, #159; anyone watches, only admins act), `make prod-*` operations incl. recorded evolution runs | Lead with the deploy pipeline and replay, not the agents |
 | A4 | **Armadin** — Best Security Hack | AirPods | Pitch hook: an AI red-team agent attacking a defended agentic finance system (offensive agents vs. a gate), matching Armadin's agent-swarm offensive-security thesis. Criteria still "Coming soon!" (P9) | Submit regardless with the hook; re-check wording once P9 lands |
@@ -176,11 +176,19 @@ B1 before B2: B1 is an hour and unblocks A9; B2 is blocked on P3 and P4.
   P01/P16 day-1 expenses paid; 19 identity checks, all `billable:false`. It rests on #139 (the
   expense gate context carries employee and expense flags); #150 keeps episode evidence when the
   provider check fails.
-- *Live status:* the live-audit guard was lifted on merged evidence (#157) and blue's audit runs
-  on Droid on prod (`DRY_RUN_BLUE=false`), so its `crs_identity_check` tool is live code there.
-  It reaches the provider only for a new, active employee that an operator bound to a persona and
-  whose name matches it; seeded employees never qualify, so no prod CRS call has happened. The
-  live demo is from a laptop on the local stack, else the recorded run. Details: `blue/CRS.md`.
+- *Prod live-audit acceptance PASSED* (2026-10-25 ~05:40Z, #197). `make prod-crs-episode SEED=42
+  DAYS=2` created ep_9cbc3362d44e (enforce, seed 42, 2 days), seeded and bound the personas, and
+  stepped both days. Blue's live Droid audit (`gpt-5.4-mini`) called `crs_identity_check` on day 0
+  and day 1; the sandbox reported a mismatch for P12; the model raised the HIGH employee flag via
+  `raise_flag`; on day 1 the gate blocked P12's expense (`already_flagged_high`, enforced); P01's
+  and P16's expenses all paid; 2 reports; blue credits 3,985 / 5,318. The first attempt
+  (ep_c2c98b2da583) failed because strict identity refused the model's streamed `raise_flag` calls
+  (first event `{}`); #195 fixed it. Recording: `docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`.
+- *Live status:* blue's audit runs on Droid on prod (`DRY_RUN_BLUE=false`, #157). It reaches the
+  provider only for a new, active employee that an operator bound to a persona and whose name
+  matches it, so only `make prod-crs-episode` runs (or the same manual setup) call CRS; ordinary
+  prod episodes don't. The live demo is that command at the table, else the recording. Details:
+  `blue/CRS.md`.
 
 *Done when:* both PRs are squash-merged per `GIT.md` §4 and A9 is written. B1 merged (#98/#100);
 B2 merged and its acceptance passed (above).
@@ -192,7 +200,7 @@ with real agents) must be green first. **Status: not met as written.** Red and b
 live on prod (#157; smoke `ep_f9c695b3144f`, 2-day enforce), but green stays keyless by Ad's
 decision (#78; #160 stays a draft), and no 3-day `shadow` run with live agents is recorded. M
 proposed an overnight all-real shadow run in its place (#78), pending Ad's decision. CRS sandbox
-acceptance passed on its own (B2, ep_0181eda1c921); Bright Data live readiness is tracked
+acceptance passed on its own (B2: ep_0181eda1c921 locally, ep_9cbc3362d44e on prod); Bright Data live readiness is tracked
 separately. Neither is proven by that checkpoint. Each item ends the weekend either merged or marked
 **DROPPED** — that is part of the §0 deletion condition.
 

@@ -36,7 +36,7 @@ Finance teams are being asked to let AI agents pay bills. In accounts payable th
 Red Ledger runs a synthetic company, Coastal Supply Co. (60 vendors, 40 employees, 90 days of paid history), through simulated business days. Three agents share one ledger:
 
 - **Green, the AP clerk**, matches invoices to purchase orders, pays bills, approves vendor bank changes and reimburses expenses.
-- **Blue, the controller**, decides each of those actions before it happens: allow, block, or escalate to a human, with rule IDs and a plain-English reason. Once a day it also audits the books as a live agent on Factory's Droid SDK, flags and freezes suspicious vendors, and posts a report. Its audit can also check operator-bound new hires against TransUnion identity verification through the CRS sandbox (proven from our local stack).
+- **Blue, the controller**, decides each of those actions before it happens: allow, block, or escalate to a human, with rule IDs and a plain-English reason. Once a day it also audits the books as a live agent on Factory's Droid SDK, flags and freezes suspicious vendors, and posts a report. Its audit can also check operator-bound new hires against TransUnion identity verification through the CRS sandbox.
 - **Red, the fraud agent**, runs live on Factory's Droid SDK. It reads the books like an insider and picks from eight schemes: ghost vendors, bank-account swaps, duplicate invoices, threshold splits, ghost employees, inflated expenses, invoices over their purchase order, and creeping recurring amounts. It uses only the access a junior insider would have.
 
 A judge can steer the attack: type or say a fraud scheme in your own words, in any language. Red gets the words as quoted data and uses them to choose its scheme or tune it, but it can only ever run its own catalog.
@@ -48,7 +48,7 @@ Agents also **evolve**. Across generations of episodes, each agent gets debriefs
 **Results on our production deployment** (recorded with red live; green and blue ran keyless at the time):
 - Same company, same seed, 10 days: controller off, **$10,285** stolen. Controller on, **$1,824** stolen, at $100 of false-positive cost.
 - Over a 5-generation evolution run, the live attacker found that invoices split under the approval threshold get paid, and leaned on it harder every generation: 1 of 7 attacks in generation 1, 7 of 8 in generation 5, with extraction rising from $19k to $98k. No control caught it. The lab surfaced a real control gap, which is exactly what you'd want to learn before hiring the agent. `[only if P9]` After we added an invoice split control, a short live re-run showed the controller closing it.
-- Against the live CRS sandbox (from our local stack), a new hire whose identity didn't check out was flagged by the controller's audit, and their next expense was blocked at the gate. The two clean identities were paid. Every sandbox call was non-billable.
+- Separately, on our production deployment with the controller's audit live, in a recorded two-day run against the live CRS sandbox, blue's audit agent checked three fictional new hires, flagged the one whose identity didn't check out, and that person's next expense was blocked at the gate. The two clean identities were paid.
 
 ## How we built it
 Five services plus Postgres, deployed on a Vultr VM behind Cloudflare. The live site is public and read-only: anyone can watch, and only our admin laptops can start runs or launch attacks, enforced on the server. Only one service, `battlefield` (FastAPI), touches the database. It is the Ledger API, the clock, the gatekeeper and the scorekeeper. Agents reach it only over HTTP, with per-agent tokens and per-route permissions. Ground truth (which rows are fraud) lives in a hidden column stripped from every agent response, so scoring is honest.
@@ -63,7 +63,7 @@ All three agents share one `agentkit` package around Factory's Droid SDK. Each h
 - **Hiding ground truth while still letting agents learn** needed its own disclosure policy: only resolved attacks, inside a sliding window, every disclosure logged.
 - **On the live side,** one model stalled red's turns until our 170-second timeout. We measured credits per turn and switched models, for red and for blue's audit.
 - **Red-teaming our own range,** we found the attacker could read its attack outcomes before its debrief revealed them, and a stored gate verdict could be replayed on a later day or after a switch to enforcement. We closed both.
-- **Our first CRS run** showed the identity flag landing but never reaching the expense gate. We fixed the gate's evidence and re-ran it against the live sandbox until the block fired.
+- **Our first CRS run** showed the identity flag landing but never reaching the expense gate. We fixed the gate's evidence and re-ran it against the live sandbox until the block fired. On production, the live audit agent's first run failed because the model streams its tool arguments and our strict tool-call identity check refused the calls before they completed; we fixed that and the next run passed.
 
 ## Accomplishments that we're proud of
 - The controller fails closed: a timeout blocks, and an unreachable controller or missing evidence escalates.
@@ -118,12 +118,12 @@ Optional, the team's call: *"We also used Claude Code (AI coding agents) heavily
 - **The 90-second arena show replays a recording on prod**, because red is live. If the video uses it, label it "recorded on our production deployment". The live proof is Launch attack plus the backstage consoles.
 - **Live status:** red and blue's audit are live, green is keyless by decision (#78). Don't write "three live agents".
 - **Voice:** #154 was never tested against the real ElevenLabs service. Record one real transcription on prod before submitting. If it fails, remove the "or say" wording and the ElevenLabs sentences, and swap the tag.
-- **CRS:** the About text says "from our local stack" on purpose. Keep it unless CRS runs on prod. Submitting to the CRS track needs the live table demo (devpost/crs.md §0).
+- **CRS:** the About text says "on our production deployment" and "a recorded two-day run" because ep_9cbc3362d44e (#197) is one recorded prod run with the live audit. Don't widen it to "every run". Submitting to the CRS track: run `make prod-crs-episode` live at the table if anyone can; the recording is the fallback (devpost/crs.md §0).
 - **`[only if P#]` markers:** resolve each one (P8 invoice split control, P9 re-run) against devpost/README.md before pasting.
 - **Sources for the numbers:**
   - off/on recordings: [`docs/recordings/README.md`](recordings/README.md) (#136)
   - 5-generation live-red lineage `ln_f52a3df83c8d` and red's per-turn cost: [`devpost/factory.md`](devpost/factory.md) and [`devpost/hyphenate.md`](devpost/hyphenate.md) §10
   - blue's live audit credits (3,806 and 4,109, ep_f9c695b3144f): #78; [`devpost/factory.md`](devpost/factory.md) §10
-  - CRS acceptance (ep_0181eda1c921, 19 checks `billable:false`): #102; [`devpost/crs.md`](devpost/crs.md) §0
+  - CRS on prod with the live audit (ep_9cbc3362d44e, PASS): #197; [`recordings/crs-live-ep_9cbc3362d44e.jsonl`](recordings/crs-live-ep_9cbc3362d44e.jsonl); local acceptance (ep_0181eda1c921, 19 checks `billable:false`): #102; [`devpost/crs.md`](devpost/crs.md) §0
   - false-positive cost formula: README §4
 - **Website / "Try it out" link:** `https://app.redledger.us`. It is public and read-only (P7, live), so judges can open it on their own devices and watch; only the stage laptops signed in at `/admin` can start runs, launch attacks, use voice or resolve escalations.
