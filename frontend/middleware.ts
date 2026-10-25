@@ -1,8 +1,10 @@
 // Origin-side Cloudflare Access check for every page and every /api/bf/* call. Owner: Dev R.
 // See lib/access.ts for why (a foreign Cloudflare zone pointed at our origin IP skips Access).
 // CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_AUD set → a valid Access JWT is required; unset → bypass.
+// Then, for requests that pass: `/` on a red.* / blue.* host is rewritten to that team's dashboard (components/backstage/host.ts).
 import { NextResponse, type NextRequest } from "next/server";
 import { checkAccess, isJwksFailure } from "@/lib/access";
+import { dashboardFor } from "@/components/backstage/host";
 
 let warnedDisabled = false;
 let lastJwksWarn = 0;
@@ -25,6 +27,14 @@ export async function middleware(req: NextRequest): Promise<Response> {
           ? "access: only one of CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD is set; Cloudflare Access JWT check is DISABLED"
           : "access: CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD unset; Cloudflare Access JWT check is DISABLED",
       );
+    }
+    // red.<domain> / blue.<domain> at `/` → that team's dashboard (the side laptops on stage); every other path is untouched.
+    // Only after the Access check above: the rewrite never skips it.
+    const target = dashboardFor(req.headers.get("host"), req.nextUrl.pathname) ?? dashboardFor(req.headers.get("x-forwarded-host"), req.nextUrl.pathname);
+    if (target) {
+      const url = req.nextUrl.clone();
+      url.pathname = target;
+      return NextResponse.rewrite(url);
     }
     return NextResponse.next();
   }

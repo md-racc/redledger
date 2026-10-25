@@ -22,9 +22,10 @@ import { ScriptRunner } from "@/lib/arena/script";
 import { buildOnAct } from "@/lib/arena/showScripts";
 
 const MOCK_ONLY = process.env.NEXT_PUBLIC_MOCK === "true";
-const EVENT_CAP = 900;
+// thinking arrives as many small deltas: the dashboards group every event of a run by turn, so hold a whole live episode
+const EVENT_CAP = 8000;
 
-export interface EpisodeRow { id: string; seed: number; controller_mode: ControllerMode; days: number; status: string; current_day: number; created_at?: string }
+export interface EpisodeRow { id: string; seed: number; controller_mode: ControllerMode; days: number; status: string; current_day: number; created_at?: string; lineage_id?: string | null; generation?: number | null }
 export type Mode = "connecting" | "live" | "recorded";
 export type Want = "snapshot" | "apAging" | "timeline" | "confusion" | "verdicts" | "activity" | "reports" | "escalations";
 
@@ -52,6 +53,8 @@ export interface Backstage {
   agg: Agg;
   lineage: LineageReport | null;
   lineageSource: "live" | "recorded" | null;
+  /** the lineage of the run on stage, when the active run is an evolution run (lib/arena/useActiveRun.ts) */
+  activeRun: { episodeId: string | null; lineageId: string | null } | null;
   /** events per minute over the last minute */
   rate: number;
   /** wall clock, ticks once a second, for "3s ago" */
@@ -245,5 +248,5 @@ export function useBackstage(want: Want[] = []): Backstage {
     [mode, episode, state.episodeId, state.controllerMode, state.days, state.finished, state.currentDay],
   );
 
-  return { mode, health, episodes, episode: shown, pinned, pin, state, events, agg, lineage, lineageSource, rate, now, healthMs, lastEventAt: lastEvent.current, refresh };
+  return { mode, health, episodes, episode: shown, pinned, pin, state, events, agg, lineage, lineageSource, activeRun: active.run ?? null, rate, now, healthMs, lastEventAt: lastEvent.current, refresh };
 }
