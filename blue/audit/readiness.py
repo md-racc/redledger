@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
+import sys
 import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
@@ -39,6 +41,14 @@ class Readiness:
     sdk_available: bool
     reason_codes: tuple[str, ...]
     ready: bool = False
+
+
+def sdk_installed() -> bool:
+    """Is droid_sdk installed? A metadata lookup only: health never imports or probes the SDK."""
+    try:
+        return importlib.util.find_spec("droid_sdk") is not None
+    except (ImportError, ValueError):  # a stub without __spec__ in sys.modules (tests) still counts as installed
+        return sys.modules.get("droid_sdk") is not None
 
 
 def live_readiness(*, sdk_available: bool = False) -> Readiness:
