@@ -54,11 +54,26 @@ case "$n_agent_tokens" in
     ;;
   *) die "set all of AGENT_TOKEN_RED, AGENT_TOKEN_GREEN, AGENT_TOKEN_BLUE or none of them; refusing to write $out" ;;
 esac
-# A public deploy (DOMAIN set) must verify the Cloudflare Access JWT at the origin; blank values
-# would silently disable that check and reopen the Access bypass. Fail closed instead.
+# ADMIN_KEY gates every mutation through the frontend's operator proxy (frontend/AGENTS.md "Viewers and
+# admins"). When set it must be long and must not double as any token.
+if [ -n "${ADMIN_KEY:-}" ]; then
+  case "$ADMIN_KEY" in *[![:space:]]*) ;; *) die "ADMIN_KEY is whitespace only; refusing to write $out" ;; esac
+  [ "${#ADMIN_KEY}" -ge 32 ] || die "ADMIN_KEY is shorter than 32 characters; refusing to write $out"
+  for t in "${AGENT_TOKEN:-}" "${OPERATOR_TOKEN:-}" "${AGENT_TOKEN_RED:-}" "${AGENT_TOKEN_GREEN:-}" "${AGENT_TOKEN_BLUE:-}"; do
+    [ "$ADMIN_KEY" != "$t" ] || die "ADMIN_KEY equals a token; refusing to write $out"
+  done
+fi
+# A public deploy (DOMAIN set) must either verify the Cloudflare Access JWT at the origin (both CF_ACCESS_*
+# set) or run public read-only with ADMIN_KEY gating every mutation (both CF_ACCESS_* empty). A partial
+# Access config, or Access off without ADMIN_KEY, would leave the operator proxy open. Fail closed.
 if [ -n "${DOMAIN:-}" ]; then
-  [ -n "${CF_ACCESS_TEAM_DOMAIN:-}" ] || die "DOMAIN is set but CF_ACCESS_TEAM_DOMAIN is empty; refusing to write $out"
-  [ -n "${CF_ACCESS_AUD:-}" ] || die "DOMAIN is set but CF_ACCESS_AUD is empty; refusing to write $out"
+  if [ -n "${CF_ACCESS_TEAM_DOMAIN:-}" ] || [ -n "${CF_ACCESS_AUD:-}" ]; then
+    [ -n "${CF_ACCESS_TEAM_DOMAIN:-}" ] || die "DOMAIN is set but CF_ACCESS_TEAM_DOMAIN is empty; refusing to write $out"
+    [ -n "${CF_ACCESS_AUD:-}" ] || die "DOMAIN is set but CF_ACCESS_AUD is empty; refusing to write $out"
+  else
+    [ -n "${ADMIN_KEY:-}" ] || die "DOMAIN is set with Cloudflare Access off (CF_ACCESS_* empty) but ADMIN_KEY is empty; refusing to write $out"
+    printf 'render-env: warning: Cloudflare Access off; the site is public read-only and only ADMIN_KEY holders can act\n' >&2
+  fi
 fi
 
 # Defaults that depend on DOMAIN (set as a `production` environment variable).
@@ -129,6 +144,7 @@ emit DRY_RUN_GREEN "${DRY_RUN_GREEN:-${DRY_RUN:-false}}"
 emit DRY_RUN_BLUE "${DRY_RUN_BLUE:-${DRY_RUN:-false}}"
 emit CF_ACCESS_TEAM_DOMAIN "${CF_ACCESS_TEAM_DOMAIN:-}"
 emit CF_ACCESS_AUD "${CF_ACCESS_AUD:-}"
+emit ADMIN_KEY "${ADMIN_KEY:-}"
 
 # ---- non-secret defaults (match .env.example) ----
 emit EPISODE_DEFAULT_DAYS "${EPISODE_DEFAULT_DAYS:-10}"

@@ -207,7 +207,7 @@ async def create_preparation(request: Request, c: Caller = Depends(GREEN)):
             mark_blocked=block_marker(action, eid, c.day or 0),
         )
     except gate.IdempotencyConflictError as e:
-        return await _fail(c, action, audit_args, 409, {"error": gate.IDEMPOTENCY_CONFLICT, "verdict_id": e.verdict_id})
+        return await _fail(c, action, audit_args, 409, {"error": e.error, "verdict_id": e.verdict_id})
     result = out(prep)
     await audit.record(
         c, f"prepare:{action}", audit_args, {"preparation_id": result["preparation_id"], "effective": result["effective"]}, 200, result["verdict_id"]
