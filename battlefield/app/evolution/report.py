@@ -1,6 +1,6 @@
 """The evolution report and the lineage timeline. Owner: Dev Ad.
 
-docs/EVOLUTION-DESIGN.md §7. Both documents are derived from the database only, operator-only
+ARCHITECTURE.md (Evolution: Export and report). Both documents are derived from the database only, operator-only
 (`/api/fe/lineages/{id}/report|timeline`), and deterministic: rows are ordered explicitly, no
 timestamps appear, and playbook diffs are structural. They use ground truth (`origin`) for rule
 precision, which is fine here and nowhere an agent can read. Partial while the lineage runs.
