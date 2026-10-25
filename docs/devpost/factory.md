@@ -303,6 +303,12 @@ with Postgres and mock red/green, for a 1-day enforce episode. The checks use op
   `/gate` latency samples, were mapped blocker by blocker to merged evidence, and the hard guard came out. Prod
   switched `DRY_RUN_BLUE=false` on `gpt-5.4-mini`; smoke episode `ep_f9c695b3144f` finished live audits on both days at
   3,806 and 4,109 credits (#78). `gemini-3.8-flash` was ruled out for blue for the same stall as red (#118).
+- **Streamed arguments vs strict identity (#195).** The first prod CRS run (ep_c2c98b2da583) failed: `gpt-5.4-mini`
+  streams tool arguments and the first event carries `{}`, so strict identity refused blue's `raise_flag` calls.
+  #195 lets streamed arguments complete before identity binding. The re-run, ep_9cbc3362d44e
+  (`make prod-crs-episode SEED=42 DAYS=2`, #197), passed: the live audit called `crs_identity_check` on day 0 and
+  day 1, raised the CRS finding through `raise_flag`, and the gate blocked that employee's next expense
+  (`already_flagged_high`). Blue credits 3,985 / 5,318. One 2-day run (`docs/devpost/crs.md`).
 - Blue's `/gate` itself is not a Droid call. It is rules plus an optional bounded LLM advisory
   (`blue/gate/engine.py`, `blue/gate/llm.py`, 2.4 s deadline) and has an 8 s budget. Droid is used for
   the agentic audit, not the synchronous hot path.
@@ -484,7 +490,7 @@ reproducible Finding in the repo.
 
 **Say with this caveat**
 - "Green's permission handler gates payments through blue" → the handler is on main and tested, but green's live Droid turn is hard-guarded off. On prod, green runs keyless and the ledger gates its writes inline.
-- "Blue's Droid audit is live" → yes, on prod since #157; the detailed identity and replay evidence comes from authorized **local** runs (#119, #127). The prod smoke shows two completed audits and their credits, nothing more.
+- "Blue's Droid audit is live" → yes, on prod since #157; the detailed identity and replay evidence comes from authorized **local** runs (#119, #127). The prod smoke shows two completed audits and their credits; the prod CRS run (ep_9cbc3362d44e, #197) adds one live audit raising a flag that the gate enforced the next day, after the #195 fix.
 - "Credits feed the credit guard" → for red, yes. For blue's audit only from the deploy containing 6640354 (#176). For the smoke episode quote `turn_usage` (3,806 / 4,109); `make prod-credits` shows blue as 0 there and `droid_ok` read false.
 - "Gate p95 8 ms" → measured on the local stack during a live blue audit (#119); the gate itself is rules, not Droid.
 - "OFF asks for every MCP call" → a recorded Finding: static binary read, then confirmed live for blue's tools (6 calls, 6 requests, #119). Green uses the same `OFF` policy but its tools weren't run live.
@@ -537,6 +543,7 @@ reproducible Finding in the repo.
 | ~34 | Built-ins exposed when `restrict_tools` silently fails | Finding (Al) | 2026-10-24 |
 | 8 / 9 / 7 | Tool IDs red / green / blue | `red/tools.py`; `green/agent.py:21-31`; `blue/audit/agent.py:28-36` | main @ fb829e6 |
 | 3,806 / 4,109 credits | Blue live Droid audit on prod, day 0 / day 1, `gpt-5.4-mini`, ep_f9c695b3144f | #78 (03:48Z) | 2026-10-25 |
+| 3,985 / 5,318 credits | Blue live Droid audit on prod with CRS, day 0 / day 1, ep_9cbc3362d44e (PASS) | #197; `docs/recordings/crs-live-ep_9cbc3362d44e.jsonl` | 2026-10-25 ~05:40Z |
 | 8 | Red schemes | `red/schemes/__init__.py`; #166 | 2026-10-25 |
 | 3 × 500 chars | Judge requests quoted into red's prompt per turn | `red/agent.py`; #165 | 2026-10-25 |
 | 0.5.0 / 1.30.0 | droid-sdk / mcp versions observed | Findings; `blue/SDK-READINESS.md` | 2026-10-24 |
