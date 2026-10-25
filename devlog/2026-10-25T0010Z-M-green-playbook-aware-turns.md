@@ -1,0 +1,1 @@
+- 2026-10-25T0010Z · M · green: lineage turn prompts now include bounded playbook procedure reminders (keyless path unchanged, live guard untouched); next: independent verification + guard-lift draft after the budgeted Stage B acceptance (#78); blocked: green live run waits on D15 budget/runtime approval, CRS re-run waits on sandbox account re-enable
