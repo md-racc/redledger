@@ -4,12 +4,24 @@
       {
         "first_generation": 2,
         "rule_id": "learned:ghost_vendor"
+      },
+      {
+        "first_generation": 4,
+        "rule_id": "learned:split_sibling"
       }
     ],
     "new_rules": [
       {
+        "first_generation": 3,
+        "rule_id": "bank_change_with_open_invoices"
+      },
+      {
         "first_generation": 2,
         "rule_id": "learned:ghost_vendor"
+      },
+      {
+        "first_generation": 4,
+        "rule_id": "learned:split_sibling"
       },
       {
         "first_generation": 2,
@@ -22,12 +34,24 @@
     ],
     "retired_rules": [
       {
+        "last_generation": 3,
+        "rule_id": "bank_change_with_open_invoices"
+      },
+      {
         "last_generation": 1,
         "rule_id": "duplicate_amount_match"
       },
       {
+        "last_generation": 3,
+        "rule_id": "learned:ghost_vendor"
+      },
+      {
         "last_generation": 1,
         "rule_id": "near_threshold"
+      },
+      {
+        "last_generation": 2,
+        "rule_id": "pre_launch_rule"
       }
     ]
   },
@@ -237,6 +261,199 @@
       }
     },
     {
+      "blue_rules": [
+        {
+          "attacks_hit": 1,
+          "fired": 1,
+          "on_legit": 0,
+          "on_red": 1,
+          "precision": 1.0,
+          "recall": 0.33,
+          "rule_id": "bank_change_with_open_invoices"
+        },
+        {
+          "attacks_hit": 0,
+          "fired": 1,
+          "on_legit": 1,
+          "on_red": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "rule_id": "learned:ghost_vendor"
+        }
+      ],
+      "credits": 4.0,
+      "days": 3,
+      "demo": false,
+      "disclosures": {
+        "blue": {
+          "aar": 1,
+          "daily": 2,
+          "items": 6
+        },
+        "green": {
+          "aar": 1,
+          "daily": 2,
+          "items": 5
+        },
+        "red": {
+          "aar": 1,
+          "daily": 2,
+          "items": 5
+        }
+      },
+      "episode_id": "ep_rpt_g3",
+      "generation": 3,
+      "green": {
+        "actions": 3,
+        "fraud_paid": 9000.0,
+        "legit_blocked": 1,
+        "legit_processed": 0
+      },
+      "red_mix": {
+        "bank_swap": {
+          "amount_extracted": 0.0,
+          "launched": 1,
+          "outcomes": {
+            "blocked": 1
+          },
+          "target_amount": 2500.0
+        },
+        "evolved:split_v2": {
+          "amount_extracted": 9000.0,
+          "launched": 2,
+          "outcomes": {
+            "extracted": 2
+          },
+          "target_amount": 9000.0
+        }
+      },
+      "score": {
+        "attacks_caught": 1,
+        "attacks_launched": 3,
+        "detection_latency_days": 0.0,
+        "dollars_blocked": 2500.0,
+        "dollars_extracted": 9000.0,
+        "false_positive_cost": 60.0,
+        "legit_blocked": 1,
+        "legit_processed": 0
+      },
+      "seed": 45,
+      "status": "finished",
+      "who_beat_whom": {
+        "bank_swap": {
+          "attacks": 1,
+          "caught": 1,
+          "missed": 0,
+          "rules": {
+            "bank_change_with_open_invoices": 1
+          }
+        },
+        "evolved:split_v2": {
+          "attacks": 2,
+          "caught": 0,
+          "missed": 2,
+          "rules": {}
+        }
+      }
+    },
+    {
+      "blue_rules": [
+        {
+          "attacks_hit": 1,
+          "fired": 1,
+          "on_legit": 0,
+          "on_red": 1,
+          "precision": 1.0,
+          "recall": 0.33,
+          "rule_id": "learned:split_sibling"
+        },
+        {
+          "attacks_hit": 1,
+          "fired": 1,
+          "on_legit": 0,
+          "on_red": 1,
+          "precision": 1.0,
+          "recall": 0.33,
+          "rule_id": "vendor_age_lt_7d"
+        }
+      ],
+      "credits": 4.0,
+      "days": 3,
+      "demo": false,
+      "disclosures": {
+        "blue": {
+          "aar": 1,
+          "daily": 2,
+          "items": 6
+        },
+        "green": {
+          "aar": 1,
+          "daily": 2,
+          "items": 5
+        },
+        "red": {
+          "aar": 1,
+          "daily": 2,
+          "items": 5
+        }
+      },
+      "episode_id": "ep_rpt_g4",
+      "generation": 4,
+      "green": {
+        "actions": 3,
+        "fraud_paid": 15500.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "red_mix": {
+        "evolved:split_v2": {
+          "amount_extracted": 3000.0,
+          "launched": 2,
+          "outcomes": {
+            "blocked": 1,
+            "extracted": 1
+          },
+          "target_amount": 8000.0
+        },
+        "threshold_split": {
+          "amount_extracted": 12500.0,
+          "launched": 1,
+          "outcomes": {
+            "extracted": 1
+          },
+          "target_amount": 12500.0
+        }
+      },
+      "score": {
+        "attacks_caught": 1,
+        "attacks_launched": 3,
+        "detection_latency_days": 0.0,
+        "dollars_blocked": 5000.0,
+        "dollars_extracted": 15500.0,
+        "false_positive_cost": 0.0,
+        "legit_blocked": 0,
+        "legit_processed": 0
+      },
+      "seed": 46,
+      "status": "finished",
+      "who_beat_whom": {
+        "evolved:split_v2": {
+          "attacks": 2,
+          "caught": 1,
+          "missed": 1,
+          "rules": {
+            "learned:split_sibling": 1
+          }
+        },
+        "threshold_split": {
+          "attacks": 1,
+          "caught": 0,
+          "missed": 1,
+          "rules": {}
+        }
+      }
+    },
+    {
       "blue_rules": [],
       "credits": 0.0,
       "days": 3,
@@ -258,8 +475,8 @@
           "items": 1
         }
       },
-      "episode_id": "ep_rpt_g3",
-      "generation": 3,
+      "episode_id": "ep_rpt_g5",
+      "generation": 5,
       "green": {
         "actions": 0,
         "fraud_paid": 0.0,
@@ -287,7 +504,7 @@
     "config": {
       "controller_mode": "enforce",
       "days": 3,
-      "generations": 2,
+      "generations": 4,
       "headless": {
         "day_pause_sec": 0.0,
         "escalation_policy": "block",
@@ -297,9 +514,9 @@
       "reveal_days": 3,
       "reveal_generations": 2
     },
-    "current_generation": 3,
+    "current_generation": 5,
     "id": "ln_rpt_sample",
-    "name": "sample",
+    "name": "sample (synthetic)",
     "status": "finished"
   },
   "partial": false,
@@ -323,17 +540,19 @@
       {
         "content": {
           "learned": [
-            "ghost_vendor"
+            "learned:ghost_vendor"
           ],
-          "near_band": 0.95
+          "near_band": 0.95,
+          "retired": []
         },
         "day": null,
         "diff": {
           "added": {
             "learned": [
-              "ghost_vendor"
+              "learned:ghost_vendor"
             ],
-            "near_band": 0.95
+            "near_band": 0.95,
+            "retired": []
           },
           "changed": {},
           "removed": {}
@@ -344,6 +563,81 @@
         "rationale": "ghost_vendor got past me",
         "source": "reflect",
         "version": 1
+      },
+      {
+        "content": {
+          "learned": [
+            "learned:ghost_vendor",
+            "learned:split_sibling"
+          ],
+          "near_band": 0.9,
+          "retired": []
+        },
+        "day": null,
+        "diff": {
+          "added": {},
+          "changed": {
+            "learned": {
+              "from": [
+                "learned:ghost_vendor"
+              ],
+              "to": [
+                "learned:ghost_vendor",
+                "learned:split_sibling"
+              ]
+            },
+            "near_band": {
+              "from": 0.95,
+              "to": 0.9
+            }
+          },
+          "removed": {}
+        },
+        "episode_id": null,
+        "generation": 3,
+        "parent_version": 1,
+        "rationale": "split invoices got past me; switch on the sibling-split control",
+        "source": "reflect",
+        "version": 2
+      },
+      {
+        "content": {
+          "learned": [
+            "learned:split_sibling"
+          ],
+          "near_band": 0.9,
+          "retired": [
+            "learned:ghost_vendor"
+          ]
+        },
+        "day": null,
+        "diff": {
+          "added": {},
+          "changed": {
+            "learned": {
+              "from": [
+                "learned:ghost_vendor",
+                "learned:split_sibling"
+              ],
+              "to": [
+                "learned:split_sibling"
+              ]
+            },
+            "retired": {
+              "from": [],
+              "to": [
+                "learned:ghost_vendor"
+              ]
+            }
+          },
+          "removed": {}
+        },
+        "episode_id": null,
+        "generation": 4,
+        "parent_version": 2,
+        "rationale": "ghost_vendor control hit a legitimate vendor; retire it",
+        "source": "reflect",
+        "version": 3
       }
     ],
     "green": [
@@ -467,6 +761,238 @@
         "rationale": "ghost_vendor caught",
         "source": "reflect",
         "version": 3
+      },
+      {
+        "content": {
+          "avoid": [
+            "duplicate_invoice",
+            "ghost_vendor",
+            "bank_swap"
+          ],
+          "favour": {
+            "evolved:split_v2": 3
+          },
+          "observations": [
+            {
+              "caught": false,
+              "day": 0,
+              "generation": 3,
+              "outcome": "extracted",
+              "scheme": "evolved:split_v2"
+            },
+            {
+              "caught": true,
+              "day": 1,
+              "generation": 3,
+              "outcome": "blocked",
+              "scheme": "bank_swap"
+            },
+            {
+              "caught": false,
+              "day": 2,
+              "generation": 3,
+              "outcome": "extracted",
+              "scheme": "evolved:split_v2"
+            }
+          ]
+        },
+        "day": null,
+        "diff": {
+          "added": {
+            "observations": [
+              {
+                "caught": false,
+                "day": 0,
+                "generation": 3,
+                "outcome": "extracted",
+                "scheme": "evolved:split_v2"
+              },
+              {
+                "caught": true,
+                "day": 1,
+                "generation": 3,
+                "outcome": "blocked",
+                "scheme": "bank_swap"
+              },
+              {
+                "caught": false,
+                "day": 2,
+                "generation": 3,
+                "outcome": "extracted",
+                "scheme": "evolved:split_v2"
+              }
+            ]
+          },
+          "changed": {
+            "avoid": {
+              "from": [
+                "duplicate_invoice",
+                "ghost_vendor"
+              ],
+              "to": [
+                "duplicate_invoice",
+                "ghost_vendor",
+                "bank_swap"
+              ]
+            },
+            "favour.evolved:split_v2": {
+              "from": 1,
+              "to": 3
+            }
+          },
+          "removed": {}
+        },
+        "episode_id": null,
+        "generation": 3,
+        "parent_version": 3,
+        "rationale": "the split variant paid twice; bank swap was caught",
+        "source": "reflect",
+        "version": 4
+      },
+      {
+        "content": {
+          "avoid": [
+            "duplicate_invoice",
+            "ghost_vendor",
+            "bank_swap"
+          ],
+          "favour": {
+            "evolved:split_v2": 2,
+            "threshold_split": 2
+          },
+          "observations": [
+            {
+              "caught": false,
+              "day": 0,
+              "generation": 3,
+              "outcome": "extracted",
+              "scheme": "evolved:split_v2"
+            },
+            {
+              "caught": true,
+              "day": 1,
+              "generation": 3,
+              "outcome": "blocked",
+              "scheme": "bank_swap"
+            },
+            {
+              "caught": false,
+              "day": 2,
+              "generation": 3,
+              "outcome": "extracted",
+              "scheme": "evolved:split_v2"
+            },
+            {
+              "caught": true,
+              "day": 0,
+              "generation": 4,
+              "outcome": "blocked",
+              "scheme": "evolved:split_v2"
+            },
+            {
+              "caught": false,
+              "day": 1,
+              "generation": 4,
+              "outcome": "extracted",
+              "scheme": "threshold_split"
+            },
+            {
+              "caught": false,
+              "day": 2,
+              "generation": 4,
+              "outcome": "extracted",
+              "scheme": "evolved:split_v2"
+            }
+          ]
+        },
+        "day": null,
+        "diff": {
+          "added": {
+            "favour.threshold_split": 2
+          },
+          "changed": {
+            "favour.evolved:split_v2": {
+              "from": 3,
+              "to": 2
+            },
+            "observations": {
+              "from": [
+                {
+                  "caught": false,
+                  "day": 0,
+                  "generation": 3,
+                  "outcome": "extracted",
+                  "scheme": "evolved:split_v2"
+                },
+                {
+                  "caught": true,
+                  "day": 1,
+                  "generation": 3,
+                  "outcome": "blocked",
+                  "scheme": "bank_swap"
+                },
+                {
+                  "caught": false,
+                  "day": 2,
+                  "generation": 3,
+                  "outcome": "extracted",
+                  "scheme": "evolved:split_v2"
+                }
+              ],
+              "to": [
+                {
+                  "caught": false,
+                  "day": 0,
+                  "generation": 3,
+                  "outcome": "extracted",
+                  "scheme": "evolved:split_v2"
+                },
+                {
+                  "caught": true,
+                  "day": 1,
+                  "generation": 3,
+                  "outcome": "blocked",
+                  "scheme": "bank_swap"
+                },
+                {
+                  "caught": false,
+                  "day": 2,
+                  "generation": 3,
+                  "outcome": "extracted",
+                  "scheme": "evolved:split_v2"
+                },
+                {
+                  "caught": true,
+                  "day": 0,
+                  "generation": 4,
+                  "outcome": "blocked",
+                  "scheme": "evolved:split_v2"
+                },
+                {
+                  "caught": false,
+                  "day": 1,
+                  "generation": 4,
+                  "outcome": "extracted",
+                  "scheme": "threshold_split"
+                },
+                {
+                  "caught": false,
+                  "day": 2,
+                  "generation": 4,
+                  "outcome": "extracted",
+                  "scheme": "evolved:split_v2"
+                }
+              ]
+            }
+          },
+          "removed": {}
+        },
+        "episode_id": null,
+        "generation": 4,
+        "parent_version": 4,
+        "rationale": "the sibling-split control caught one split; go back to plain threshold splits too",
+        "source": "reflect",
+        "version": 5
       }
     ]
   },
@@ -491,20 +1017,30 @@
         "generation": 2
       },
       {
-        "factory_credits": 0.0,
+        "factory_credits": 4.0,
         "generation": 3
+      },
+      {
+        "factory_credits": 4.0,
+        "generation": 4
+      },
+      {
+        "factory_credits": 0.0,
+        "generation": 5
       }
     ],
     "days": 3,
     "demo_generations": [
-      3
+      5
     ],
-    "generations": 2,
+    "generations": 4,
     "git_sha": null,
     "models": null,
     "seeds": [
       43,
       44,
+      45,
+      46,
       50
     ]
   }
