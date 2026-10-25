@@ -49,6 +49,9 @@ const SHOW_DAYS = 4;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** A scheme in the judge's own words: spoken or typed, in any language. */
+export interface Spoken { text: string; language: string | null }
+
 /** One finished run, kept for the compare card. */
 export interface RunRecord {
   episodeId: string;
@@ -96,8 +99,9 @@ export interface Feed {
   clearRuns: () => void;
   setPaused: (p: boolean) => void;
   setController: (mode: ControllerMode) => Promise<void>;
-  /** a judge-picked attack: forced on a live backend, played out locally without one */
-  launchAttack: (schemeId: string) => Promise<void>;
+  /** a judge-picked attack: forced on a live backend, played out locally without one. `spoken` is the judge's own description of it:
+   *  red is told in those words, and `schemeId` is the closest built-in scheme that battlefield can be forced to run */
+  launchAttack: (schemeId: string, spoken?: Spoken) => Promise<void>;
   resolveEscalation: (escalationId: string, decision: "approve" | "block") => Promise<void>;
   /** subscribe to every event as it is applied */
   subscribe: (fn: (e: RLEvent) => void) => () => void;
@@ -423,13 +427,19 @@ export function useFeed(): Feed {
   }, [emit]);
 
   /** A live sandbox: a paused episode the judge drives. Each attack is forced for red's next turn and the day is stepped at once. */
-  const sandboxAttack = useCallback(async (schemeId: string) => {
+  const tellRed = useCallback(async (ep: string, schemeId: string, spoken?: Spoken) => {
+    if (!spoken) return;
+    await api.sendInput(ep, "red", { kind: "custom_fraud_scheme", text: spoken.text, language: spoken.language, closest_built_in: schemeId });
+  }, []);
+
+  const sandboxAttack = useCallback(async (schemeId: string, spoken?: Spoken) => {
     setRunning(true);
     starting.current++;
     try {
       if (liveKind.current !== "sandbox" || !episode.current || live.current.state.finished) {
         const busy = liveKind.current === "attached" ? null : await findBusy();
         if (busy && (await attach(busy))) {
+          await tellRed(episode.current!, schemeId, spoken);
           await api.forceAttack(episode.current!, schemeId);
           setNote(`attack queued on the run in progress: ${schemeId} · red picks it up on its next turn`);
           return;
@@ -443,11 +453,13 @@ export function useFeed(): Feed {
         setNote(`live sandbox · ${ep.id} · every attack steps one business day`);
         api.schemes().then((schemes) => setCatalogs((c) => ({ ...c, schemes }))).catch(() => {});
       }
+      await tellRed(episode.current!, schemeId, spoken);
       await api.forceAttack(episode.current!, schemeId);
       try { await api.step(episode.current!); } catch (e) {
         const found = parseActiveRun(e);
         if (!found || !(await attach(found))) throw e;
         // the judge's attack goes into the run that is going: red picks it up on its next turn
+        await tellRed(episode.current!, schemeId, spoken);
         await api.forceAttack(episode.current!, schemeId);
         setNote(`attack queued on the run in progress: ${schemeId} · red picks it up on its next turn`);
       }
@@ -455,20 +467,27 @@ export function useFeed(): Feed {
       starting.current--;
       setRunning(false);
     }
-  }, [attach, findBusy, pushLive, reset]);
+  }, [attach, findBusy, pushLive, reset, tellRed]);
 
-  const launchAttack = useCallback(async (schemeId: string) => {
+  const launchAttack = useCallback(async (schemeId: string, spoken?: Spoken) => {
     if (!MOCK_ONLY && !isAdmin()) return; // only admins change the sim
     const backendUp = live.current.backend.state === "live";
-    publish("launch", { scheme: schemeId, name: RED_SCHEMES.find((s) => s.key === schemeId)?.name ?? schemeId, mode: live.current.state.controllerMode, route: backendUp ? "backend" : "local" });
+    const builtIn = RED_SCHEMES.find((s) => s.key === schemeId)?.name ?? schemeId;
+    // the other laptops see what was said (the relay keeps strings short), and which built-in scheme it was matched to
+    publish("launch", { scheme: schemeId, name: spoken ? spoken.text.slice(0, 120) : builtIn, via: spoken ? "voice" : "button", lang: spoken?.language ?? "", mode: live.current.state.controllerMode, route: backendUp ? "backend" : "local" });
     // a continuous live run: the scheme is queued for red's next turn
     if (live.current.source === "live" && episode.current && (liveKind.current === "run" || liveKind.current === "attached")) {
+      await tellRed(episode.current, schemeId, spoken);
       await api.forceAttack(episode.current, schemeId);
-      setNote(`attack queued: ${schemeId} · red picks it up on its next turn`);
+      setNote(spoken ? `red has your words · queued the closest built-in scheme: ${builtIn} · red picks it up on its next turn` : `attack queued: ${schemeId} · red picks it up on its next turn`);
       return;
     }
     if (backendUp && liveKind.current !== "act") {
-      try { await sandboxAttack(schemeId); return; } catch (e) {
+      try {
+        await sandboxAttack(schemeId, spoken);
+        if (spoken) setNote((n) => `${n} · red has your words, running the closest built-in scheme: ${builtIn}`);
+        return;
+      } catch (e) {
         if (!(e instanceof TypeError)) throw e; // a rejected call is the backend's answer: show it; a network failure falls through to local play
         setBackend(OFFLINE);
         setNote("backend unreachable · attacks play out locally");
@@ -480,6 +499,7 @@ export function useFeed(): Feed {
     if (fresh) reset();
     setSource((x) => (x === "idle" || x === "live" ? "mock" : x));
     if (fresh) setNote("sandbox · attacks you launch play out locally");
+    if (spoken) setNote(`offline · playing the closest built-in scheme to what you said: ${builtIn}`);
     const mode = fresh ? live.current.mode : s.controllerMode;
     const items = [];
     const id = `sandbox_${Date.now()}`;
@@ -494,7 +514,7 @@ export function useFeed(): Feed {
     const shift = fresh ? 300 : 0;
     const r = newRunner([...items, ...a.items.map((it) => ({ ...it, at: it.at + shift }))]);
     runners.current = [...runners.current, r];
-  }, [newRunner, reset, sandboxAttack]);
+  }, [newRunner, reset, sandboxAttack, tellRed]);
 
   const resolveEscalation = useCallback(async (escalationId: string, decision: "approve" | "block") => {
     const esc = live.current.state.escalations[escalationId];
