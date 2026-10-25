@@ -1,0 +1,1 @@
+- 2026-10-25T06:01Z · Ad · battlefield: make local-stack falls back to DROID_MODEL/DROID_REASONING when the per-agent var is unset (root cause of #191: agents started with an empty model); next: none; blocked: none

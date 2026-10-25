@@ -1,6 +1,6 @@
 # docs/devpost — track docs for the Devpost submission and the pitch
 
-Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6. Written for R (Devpost + pitch). Ad keeps them current.
+Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6 (CRS lines updated ~05:45Z, main @ e440119). Written for R (Devpost + pitch). Ad keeps them current.
 
 Each file is one prize track. Each has the same ten sections: prize snapshot, our angle, a criteria → evidence
 matrix, what we have in detail, what's planned, demo beats, paste-ready Devpost copy, a claims ledger
@@ -15,11 +15,13 @@ real agents). The old "R should reword" notes in these docs are resolved by #145
 | 2 | [factory.md](factory.md) | Factory: Best Use of the Droid SDK | $2,000 + credits |
 | 3 | [technical.md](technical.md) | Cal Hacks Most Technically Advanced; Microsoft Built for the Real World / Customer Impact | NuPhy Air60 HE each; $3,800 + Surface each |
 | 4 | [armadin.md](armadin.md) | Armadin: Best Security Hack | $996 + Apple headphones (criteria pending) |
-| 5 | [crs.md](crs.md) | CRS Financial Intelligence Challenge: submit to **Best Identity / Fraud Innovation** (optionally Most Unexpected Use) | $1,000 / $500 / interviews (Identity / Fraud is an interview) |
+| 5 | [crs.md](crs.md) | CRS Financial Intelligence Challenge: submit to **Best Identity / Fraud Innovation** and **Best Financial AI Agent** (optionally Most Unexpected Use) | $1,000 / $500 / interviews (Identity / Fraud is an interview) |
 
-CRS is in the submit list now: the end-to-end acceptance passed against the live CRS sandbox (ep_0181eda1c921, #102).
-The verdict is **GO, conditional on a live laptop demo at the CRS table**, because the challenge's only rule is "show
-it working live" and no CRS call has run on prod. If nobody can run the laptop demo, drop CRS (crs.md §0).
+CRS is in the submit list: on 2026-10-25 `make prod-crs-episode SEED=42 DAYS=2` (#197) **passed on prod** with blue's
+live Droid audit (ep_9cbc3362d44e): the model called the CRS check, raised the hold on P12, and the gate blocked P12's
+next expense while P01's and P16's paid. Verdict: **GO for Best Identity / Fraud Innovation and Best Financial AI
+Agent**. The challenge's only rule is "show it working live", so run that command live at the CRS table; the
+recording (`docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`) is the fallback (crs.md §0).
 
 Rank 6 has no doc because the claims are one-liners. Paste them as-is:
 
@@ -65,10 +67,13 @@ Not submitting, or drop the claim:
   in any language, transcribed by ElevenLabs speech-to-text (key wired in #162/#163). Voice is admin-only on the site,
   maps the words to the closest of five built-in schemes by keyword (`frontend/lib/voice/intent.ts`), and #154 was
   never tested against the real ElevenLabs service. Try one real recording on prod before relying on it.
-- **CRS (P6): end-to-end acceptance PASSED** against the live CRS sandbox from a local stack (M, ep_0181eda1c921,
-  #102 at 00:09Z): P12's identity mismatch raised a high flag and blocked P12's next expense
-  (`already_flagged_high`); P01/P16 paid; 19 identity checks, all `billable:false`. That run used blue's keyless audit
-  with `CRS_LIVE=true`. No CRS call has run on prod (it needs operator-bound persona employees). See crs.md.
+- **CRS (P6): PASSED on prod with the live audit** (ep_9cbc3362d44e, enforce, seed 42, 2 days, ~05:40Z;
+  `make prod-crs-episode`, #197). Blue's live Droid audit (`gpt-5.4-mini`) called `crs_identity_check` on day 0 and
+  day 1; the sandbox reported a mismatch for P12; the model raised the HIGH employee flag via `raise_flag`; on day 1
+  the gate blocked P12's expense (`already_flagged_high`, enforced); P01's and P16's expenses all paid; blue credits
+  3,985 / 5,318. The first attempt (ep_c2c98b2da583) failed because strict identity refused the model's streamed
+  `raise_flag` calls; #195 fixed it. Earlier, M's local acceptance (ep_0181eda1c921, #102) proved the same chain with
+  the keyless audit and 19 `billable:false` checks. One prod run, so say "one recorded run". See crs.md.
 - **`threshold_split` control: expense version shipped, invoice version still open.** #173 adds a blocking aggregate
   `threshold_split` rule for **expenses only**. Red's scheme splits **invoices**, so the gap the live lineage found is
   still open (P8, #175).
@@ -110,7 +115,7 @@ Not submitting, or drop the claim:
 | P3 | Evolution view in the frontend from real data | R (#117) | PARTIAL: the EvolutionCard loads the real report | "The evolution card shows the latest real lineage report" |
 | P4 | Agents live on Droid | M | Blue audit LIVE; green NOT DOING (Ad's decision, #78) | "Red and blue live on Droid; green on the same harness, keyless" |
 | P5 | Prod on the TimescaleDB image | Ad | NOT DOING for the hackathon unless it lands | "TimescaleDB proven in CI; prod on Postgres 16" |
-| P6 | CRS live demo | M | Acceptance PASSED locally (ep_0181eda1c921); the table demo from a laptop is pending | "Recorded acceptance run ep_0181eda1c921; live at the table on request" |
+| P6 | CRS live demo | M / Ad | PASSED on prod with blue's live audit (ep_9cbc3362d44e, #197); local acceptance earlier (ep_0181eda1c921). Live at the table still to do | "Recorded on prod 2026-10-25 (ep_9cbc3362d44e); live at the table on request" |
 | P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
 | P8 | Invoice threshold-split control in blue | M (#175) | ASKED | "Red found a gap in invoice split detection; the expense version is shipped (#173)" |
 | P9 | Short live lineage after P8, to show blue closing the gap | Ad | PLANNED after P8 | Keep the P1 story: "the sandbox surfaced a real gap" |
