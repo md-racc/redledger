@@ -8,13 +8,18 @@ defined in `contracts/events.md`; the code wins over this file.
 
 | Route | What it is |
 |---|---|
-| `/` | The 3D arena: a flight over the Palace of Fine Arts, a five-chapter scroll tour of the three teams, then the rotunda where 30 agent figures act out the run. The HUD holds the money tiles, the controller toggle, the attack console, escalation cards and the Compare / Evolution / Report / Lenders cards. `S` (or `?show=1`) plays the 90-second show and `?pitch=1` starts pitch mode on a live episode. The show runbook is in `OPERATIONS.md`. |
-| `/ops` | A plain data-path page: reducer state from the socket or the fixture, with admin-only controls. It's useful for debugging, not for the stage. |
-| `/backstage`, `/backstage/[team]` | Raw consoles for the other laptops (`red`, `green`, `blue`, `battlefield`), all monospace with no styling. They're evidence that the backend is running, not a dashboard. Nothing links to them. |
-| `/report/[ep]` | The printable controls assessment for one run, built from `GET /fe/episodes/{ep}/controls` (`components/report/`). Viewers see it only once the run is final. |
-| `/admin` | The admin login, which posts `ADMIN_KEY`. Nothing links to it. |
+| `/` | The 3D arena: a flight over the Palace of Fine Arts, a five-chapter scroll tour of the three teams, then the rotunda where 30 agent figures act out the run. The HUD holds money tiles, the controller toggle, the attack console, escalations and the Compare / Evolution / Report / Lenders cards. Show runbook: `OPERATIONS.md`. |
+| `/ops` | Plain data-path page (reducer state, admin-only controls) for debugging. |
+| `/backstage`, `/backstage/[team]` | Unstyled raw consoles (`red`, `green`, `blue`, `battlefield`) for the other laptops. Unlinked. |
+| `/report/[ep]` | Printable controls assessment from `GET /fe/episodes/{ep}/controls`; viewers see it once the run is final. Mock mode renders `public/mocks/controls-report.json`. |
+| `/admin` | Admin login (`ADMIN_KEY`). Unlinked. |
 
 Every window joins the active run on load (`lib/arena/useActiveRun.ts`) and never creates one for a viewer.
+
+URL switches: `?q=0..3` (render quality), `?show=1|live|recorded` (start the show, optionally forcing its source),
+`?pitch=1` and `?seed=` (pitch mode), `?lineage=<id>` (Evolution card), `?replay=1` (door consoles replay), `?demo=1` (ambient
+made-up attacks that never touch the scoreboard). Keys in the arena: `S` show (`space` pause, `←`/`→` jump, `esc` leave), `P` pitch
+mode, `B` backstage (admins), `Esc` closes the dossier and arrows step through a team.
 
 ## Data flow
 
@@ -39,36 +44,25 @@ public/mocks/*.jsonl ───────► lib/mock.ts ───────�
 - **REST fallback (#212).** When two socket attempts in a row deliver nothing (a venue network drops the upgrade, the dev
   server has no `/api/ws`), `lib/ws.ts` polls `GET /events?after_id=` through the proxy every 1.5 s until a socket frame
   arrives. Refusals (400/401/403/404) aren't worked around. Status lines say "via REST (socket blocked)".
-- **Reducer.** `lib/reducer.ts` folds every event into `UIState` and is idempotent on catch-up (it skips ids it has already
-  seen). The socket, the REST fallback, fixture replay and the show all feed the same function. Event-derived state lives
-  only there. Two zustand stores hold UI-local state: `lib/arena/store.ts` (stage, panel, hover and selection, auto-cam) and
+- **Reducer.** `lib/reducer.ts` folds every event into `UIState`, idempotent on catch-up; every source feeds it and
+  event-derived state lives only there. Two zustand stores hold UI-local state: `lib/arena/store.ts` (stage, panel, hover and selection, auto-cam) and
   `lib/role.ts` (viewer or admin).
 - **Scores.** Live scores come only from `score.updated`. A few files compute projected or offline numbers, labelled as such
   in the UI (for example the Compare card's controller-off projection in `lib/arena/compare.ts` and the no-backend attack
   script in `lib/arena/localAttack.ts`).
 - **Replay.** `POST /replays/{id}/play` re-emits a fixture as a real, persisted episode with id `replay_<fixture>_<8hex>`. Its
   events are in `/api/events` like any other, and the frames carry no `replay` flag (`RLEvent.replay` is optional and unset).
-- **Mock mode.** With `NEXT_PUBLIC_MOCK=true` (a build-time switch read by `lib/arena/useFeed.ts` and `app/ops/page.tsx`), the
-  app replays `public/mocks/sample.jsonl` with no backend and no other env. Without mock mode, "Run episode" goes live when a
-  battlefield answers and otherwise says so and replays the sample.
-- **Viewers and admins.** The site is public and read-only. Anyone is a **viewer**. A browser that logged in at `/admin` with
-  `ADMIN_KEY` is an **admin**, holding the `rl_admin` cookie (HttpOnly, SameSite=Strict, 7 days, HMAC-keyed by `ADMIN_KEY`).
-  This is enforced on the server in `lib/admin.ts`:
-  - For viewers, the proxy forwards GET/HEAD only (`403 {"error":"viewer"}` otherwise) and rate-limits them per address
-    (`lib/ratelimit.ts`). A viewer's ws-ticket must name an episode.
-  - The proxy refuses viewers the reads that reveal which rows are red's (`OPERATOR_ONLY` in `lib/proxy.ts`):
-    `/attacks*`, `/audit_log`, `/state*`, `/fe/compare`, `/fe/episodes/{ep}/attacks`, `.../entities/*`, `.../state/*`,
-    `.../verdicts/rules|confusion` and `/lineages/{id}/export`.
-  - The proxy strips `origin`, `entity_origin` and `origin_of_source` from every other JSON answer a viewer gets
-    (`stripGroundTruth`). `/fe/episodes/{ep}/controls` reaches viewers only once `final` is true.
-  - `/api/sync` and `POST /api/voice/transcribe` are admin-only.
-  - With `ADMIN_KEY` unset, everyone is admin under `next dev`. In production nobody is, and a key shorter than 32
-    characters counts as unset.
-
-  The UI reads `useRole()` and disables what a viewer can't do.
-- **Cloudflare Access (optional).** When both `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set, `middleware.ts` (with
-  `lib/access.ts`) requires a valid Access JWT on every request and returns `403 {"error":"forbidden"}` otherwise. Both are blank
-  on prod, local and CI, so the check is off.
+- **Mock mode.** `NEXT_PUBLIC_MOCK=true` (build time; read by `useFeed.ts` and `app/ops/page.tsx`) replays
+  `public/mocks/sample.jsonl` with no backend. Otherwise "Run episode" goes live, or says so and replays the sample.
+- **Viewers and admins** (`lib/admin.ts`). The site is public and read-only: anyone is a viewer; a browser logged in at
+  `/admin` holds the `rl_admin` cookie (HttpOnly, SameSite=Strict, 7 days, HMAC-keyed by `ADMIN_KEY`) and is an admin. For
+  viewers the proxy forwards GET/HEAD only (`403 {"error":"viewer"}`), rate-limits per address, requires the ws-ticket to name an
+  episode, refuses the reads that reveal red's rows (`OPERATOR_ONLY` in `lib/proxy.ts`, marked "admin" in the API table) and strips
+  `origin`, `entity_origin` and `origin_of_source` from all other JSON. `/api/sync` and `/api/voice/transcribe` are admin-only.
+  With `ADMIN_KEY` unset everyone is admin under `next dev` and nobody in production (under 32 characters counts as unset). The UI
+  reads `useRole()`.
+- **Cloudflare Access (optional).** With `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` set, `middleware.ts` requires an Access JWT
+  (`403` otherwise). Both are blank on prod, local and CI.
 
 ## Key components
 
@@ -77,12 +71,9 @@ public/mocks/*.jsonl ───────► lib/mock.ts ───────�
 (`converge`, `disperse`, `select`, `run`, `show`, `pitch`). The `<Canvas>` holds the Palace, `ArenaWorld` (sim loop, 30 figures),
 `CameraRig`, `Picking` and post-processing; DOM overlays sit above it.
 
-Per-frame data bypasses React: `lib/arena/sim.ts`, `timeline.ts`, `popBus.ts` and the `figures` map feed overlays that write
-CSS variables directly.
-
-The Palace is two meshopt/KTX2 glb files (`public/models/palace-arch.glb`, 4.6 MB, and `palace-ground.glb`, 2.0 MB) with the
-Basis transcoder in `public/basis/`. They are albedo only, and `Atmosphere.tsx` lights them. Coordinates are metres, with the
-origin at the centre of the rotunda floor and the lagoon toward −Z.
+Per-frame data bypasses React (`sim.ts`, `timeline.ts`, `popBus.ts`, the `figures` map feed overlays that write CSS variables).
+The Palace is two meshopt/KTX2 glb files in `public/models/` (6.6 MB, albedo only, lit by `Atmosphere.tsx`) plus the Basis
+transcoder in `public/basis/`; coordinates are metres from the rotunda floor centre, lagoon toward −Z.
 
 Pathfinding is A\* on a 1 m grid (`lib/arena/nav.ts`); columns are circles agents are pushed out of. `lib/arena/siteData.ts` is
 generated by `tools/gen-site-data.py` (not part of the build), and a stand-in palace is built from it if the glb fails.
@@ -92,11 +83,9 @@ credit are in `frontend/public/models/ATTRIBUTION.md`.
 
 **Agents and events.** The 30 figures are defined in `lib/arena/roster.ts`:
 
-- **8 fraudsters**, `red:<scheme_id>`, one per built scheme.
-- **10 guards**, `blue:<rule_id>`, one per gate rule. Aliases cover the mock blue's ids, and an unknown rule still maps to a
-  stable guard.
-- **12 clients**, `green:client_01..12`, bound to entities by a stable hash. The top 12 vendors by spend fill these slots when
-  the vendor read answers.
+- **8 fraudsters**, `red:<scheme_id>`, one per scheme.
+- **10 guards**, `blue:<rule_id>`, one per gate rule; an unknown rule still maps to a stable guard.
+- **12 clients**, `green:client_01..12`, bound to entities by stable hash; the top 12 vendors by spend fill them when known.
 
 Figures are built in code (`components/arena/figures.ts`): a team base plus a role kit per scheme, rule or client trade.
 
@@ -117,8 +106,7 @@ Money, mode and escalations come from reducer state. The escalation card says in
 - **Arena.** Orbit controls take over (zoom off, so the wheel still scrolls back up); selecting an agent dollies in to 26 m.
 - **Auto-cam.** `lib/arena/cinema.ts` cuts in on each fraud scene and eases back out; it yields to drags and selection.
 - **Portrait screens** widen the lens and pull the camera back; under 760 px the HUD has a phone layout.
-- **Editing.** Waypoints are the `INTRO` and `RAIL` arrays in `CameraRig.tsx`. If you move one, move its chapter `at` in
-  `timeline.ts` and the banner window in `LabelLayer.tsx` too.
+- **Editing.** Moving an `INTRO`/`RAIL` waypoint means moving its chapter `at` (`timeline.ts`) and banner window (`LabelLayer.tsx`).
 
 **Dossier modal.** Clicking an agent, or picking it in the HUD roster, opens `components/arena/overlays/AgentModal.tsx`, with
 content from `lib/arena/details.ts`. `Picking.tsx` raycasts each figure's pick cylinder (falling back to the nearest head within
@@ -137,6 +125,29 @@ board, flags, freezes, escalations). Its confusion matrix is the one place the U
 **Backdrop.** `components/arena/Backdrop.tsx` draws the ledger crown (72 bars on an arc, one wedge per day: allowed, blocked,
 stolen, tallied from the reducer in `lib/arena/ledgerStats.ts`) plus distant skyline, searchlights and motes.
 
+**The 90-second show** (`lib/arena/show.ts`). Eight beats, numbered I–VIII on the progress bar: open (flight and title, 0:00),
+cast (tour at film speed, 0:06), arena (converge, 0:22), off (controller off, money walks out, 0:27), on (same seed, controller
+on, one case for a human, 0:43), compare (1:05), evolve (1:15), yours (attack console opens, 1:28). `ShowDirector` decides only
+*when*; every effect goes through a `ShowHost` interface (scroll, act start, panels, captions), so `show.test.ts` runs it against a
+fake host; `components/arena/useShow.ts` is the React side. It drives the tour with `window.scrollTo`.
+
+Source (`wantLive`): **live** when `/health` shows every agent keyless; each act creates an episode (seed 42, 4 days) and steps
+it on the show's clock, blocking escalations unanswered after 4.8 s. Otherwise **recorded**: `public/mocks/sample.jsonl` re-cut by `lib/arena/showScripts.ts`, whose controller-off act is a labelled projection.
+With live (paid) agents it defaults to recorded. Battlefield allows one active run (a second start answers `409` with the active
+`episode_id`/`lineage_id`, parsed by `lib/arena/activeRun.ts`): *Run episode* and *Launch attack* then join that run and follow a
+lineage generation by generation, while the show, which needs its own two episodes, plays from the recording.
+
+**Pitch mode** (`P`, `?pitch=1`, or the admin *Live pitch* button): a short flight, then it joins the running run or (admin only)
+creates a live enforce episode and starts it. Captions come only from real events (`lib/arena/narration.ts`); an admin's screen
+blocks an escalation after 40 s; `episode.ended` links `/report/[ep]`. With no backend it replays the prod recording
+`public/mocks/pitch-fallback.jsonl` under a RECORDED badge. Show and pitch mode never run together.
+
+**Focus and pacing.** `lib/arena/focus.ts` keeps whoever is in an interaction (fraudster, client and guard in a scene, a guard that
+just acted or holds an escalation, the selection) lit and dims everyone else, with a screen-space spotlight (`.spot`) and a dimmed
+HUD. Live events go through `lib/arena/pacer.ts` so a day's burst plays one beat at a time; there is no commentary panel.
+The top bar's badge (`lib/arena/provenance.ts`) says LIVE, RECORDED, SHOW or REPLAY and shows each agent as `live` (model named) or
+`keyless`. Every card has a **raw** toggle for the JSON it was built from.
+
 **Evolution card.** `components/arena/overlays/EvolutionCard.tsx` shows the lineage report as a strip of generations: what red
 tried, what blue caught, and what each agent rewrote in its playbook. It's paced by the show's clock, or shown all at once in
 free play. `lib/arena/lineage.ts` picks the source (#215):
@@ -149,14 +160,14 @@ free play. `lib/arena/lineage.ts` picks the source (#215):
 **Compare card.** `components/arena/overlays/CompareCard.tsx` puts the controller-off run beside the controller-on run, with
 the numbers counting up in sequence. The pair comes from the runs finished this session (`lib/arena/compare.ts`). When there is
 no real controller-off run, the off side is a labelled projection: the same attacks with nothing gating them.
-`GET /fe/compare` is the backend version and is admin-only.
+A **Real run** tab shows the two recorded live-red runs (seed 42, 10 days) from
+`public/mocks/live-runs.json`. `GET /fe/compare` is the backend version and is admin-only.
 
 **Report card and controls report.** The HUD's Report card shows blue's end-of-day markdown (`report.posted` →
 `GET /reports/{id}`), rendered by the safe reader in `lib/markdown.ts`. With no backend it shows a summary built from the day's
 events (`lib/arena/report.ts`). `/report/[ep]` is the full controls assessment (`components/report/`, `lib/report/`).
 
-**Lenders card.** `LendersCard.tsx` shows what five large US lenders have said about outside AI agents, each line sourced
-(`lib/arena/lenders.ts`, checked against `frontend/docs/lenders.md`).
+**Lenders card.** Sourced public statements from five US lenders (`lib/arena/lenders.ts`).
 
 **Backstage consoles.** Each console in `components/backstage/` prints a header, seven `[ OK ]`/`[FAIL]` live checks
 (`raw.ts`, including whether events arrive by websocket or REST fallback), the demo screen's selection, every proxied API call,
@@ -166,20 +177,20 @@ from `after_id=0`, and switches to the recorded loop only when the backend is re
 The laptops share one in-memory relay (`lib/sync/hub.ts`, `POST /api/sync`, `GET /api/sync/stream` SSE with a polling fallback).
 It's admin-only, and it holds only as long as there is exactly one `frontend` replica.
 
-Keys: `1`–`4` switch team, `0` lists consoles, `A`/`Esc` returns to the arena; in the arena an admin opens backstage with `B`.
+Console keys: `1`–`4` team, `0` list, `A`/`Esc` arena.
+
 The door hosts `red.<site>` and `blue.<site>` are rewritten to `/backstage/red` and `/backstage/blue` (`next.config.ts`,
 `lib/backstage/alias.ts`), and `gate.ts` makes them a 404 for anyone who isn't an admin. With no battlefield, or with
-`?replay=1`, these consoles replay `public/mocks/demo-enforce-live.jsonl`. A test keeps that file identical to its source in
-`docs/recordings`.
+`?replay=1`, these consoles replay `public/mocks/demo-enforce-live.jsonl` (a test keeps it identical to `docs/recordings`). Real
+door hostnames need a DNS record each, a `deploy/Caddyfile` route to `frontend` like `app.`, and Access coverage if Access is on;
+`*.localhost` works without any of that. An admin logs in once at `/admin` on each door host (the cookie is per host).
 
 **Voice (ElevenLabs speech-to-text, admin-only).** In the attack console, an admin can speak or type a fraud scheme in any
 language:
 
-1. The browser records 16 kHz mono WAV (`lib/voice/recorder.ts`, `wav.ts`). Recording stops itself after 1.6 s of quiet
-   (`lib/voice/vad.ts`) or at 45 s.
+1. The browser records 16 kHz mono WAV (`lib/voice/`), stopping after 1.6 s of quiet or at 45 s.
 2. `POST /api/voice/transcribe` sends the audio to ElevenLabs Scribe, which returns `{text, language}`.
-3. `lib/voice/intent.ts` keyword-matches the text against red's eight schemes in about a dozen languages. It isn't an LLM or a
-   translator, and the console offers a dropdown to change the match.
+3. `lib/voice/intent.ts` keyword-matches red's eight schemes in about a dozen languages (not an LLM); a dropdown can change it.
 4. Launching sends `POST /inputs {target: red, payload: {kind: "custom_fraud_scheme", text, language, closest_built_in}}`,
    then `POST /episodes/{id}/attack {scheme_id}`.
 
@@ -188,6 +199,10 @@ catalog, so don't claim that red invents a scheme from the words.
 
 A viewer gets `403` before the key is touched; audio is capped at 3 MB and 20 requests a minute per process, and isn't stored.
 Without `ELEVENLABS_API_KEY`, typing still works.
+
+**Where things are.** `app/` routes and `app/api/{bf,admin,sync,voice,whoami}`; `components/arena/` (scene, `use{Show,Pitch,Voice}`,
+`overlays/`), `components/{backstage,report,admin}/`; `lib/` (`reducer`, `ws`, `wsurl`, `api`, `proxy`, `admin`, `role`, `mock`),
+`lib/arena/` (sim, director, show, feed, cards' logic), `lib/{voice,sync,backstage,report}/`; `tools/`; `public/{mocks,models,basis}/`.
 
 ## Battlefield /fe API used by the site
 
@@ -254,14 +269,37 @@ Never put a token in a `NEXT_PUBLIC_*` variable; those are inlined into the bund
 **Fixtures** (`public/mocks/`): `sample.jsonl` (mock mode), `demo-enforce-live.jsonl` (door consoles), `pitch-fallback.jsonl`,
 `lineage-report.json` (Evolution sample), `controls-report.json` (report sample), `live-runs.json` (recorded real runs).
 
-**Tests** are vitest, colocated as `*.test.ts(x)`. Some read `frontend/docs/lenders.md`, `pitch-script.md`, `sponsors.md`,
-`docs/recordings/` and `public/mocks/`, so keep those paths.
+**Tests** are vitest with no browser or GPU, colocated as `*.test.ts(x)`; the visual path is checked by hand. Map: `lib/arena/`
+(`sim` nav and scenes, `director` event mapping and dossier, `pacing`, `show`, `showScripts`, `localAttack`, `compare`, `lineage`,
+`liveRuns`, `report`, `provenance`, `pitch`, `narration`), `lib/backstage/` (door hosts, admin 404, recording copy), `lib/voice/`,
+`lib/sync/`, `components/backstage/`, and `lib/{reducer,proxy,access,admin,ratelimit,ws,wsurl,markdown,pitch}.test.ts`. Some
+read `frontend/docs/lenders.md`, `pitch-script.md`, `sponsors.md`, `docs/recordings/` and `public/mocks/`, so keep those paths.
+
+**Debug handles.** `window.redledger` → `converge()`, `disperse()`, `select(id)`, `run(mode)`, `show()`, `pitch()`, `debug()`
+(spotlight and auto-cam state). `window.__arena` (set by `Picking.tsx`) → `project(id)`, `ids()`, `pos(id)`, `gl`, `scene`, `camera`.
+
+**Regenerating.** `node tools/gen-live-runs.mjs` rebuilds `public/mocks/live-runs.json` from `docs/recordings/*.jsonl` (numbers
+only; `liveRuns.test.ts` catches drift). `python -I tools/gen-site-data.py <site_local.json> <gate5 manifest.json> >
+lib/arena/siteData.ts` rebuilds the site data from the Palace project; then `npm test` checks every spawn is still reachable.
+
+**Dependencies and type.** `three`, `@react-three/fiber` 9, `drei` 10, `@react-three/postprocessing`, `three-mesh-bvh`,
+`zustand`; Next 15.5, React 19. Fonts (`next/font/google`, fetched at build): Cinzel capitals, Bodoni Moda money and titles, Jost
+text. `app/arena.css`: ivory on warm black; colour is information (red fraud, blue controller, green client, gold a decision).
+
+**Troubleshooting.**
+
+| Symptom | Likely cause |
+|---|---|
+| Stand-in palace, or the loader hangs | `public/models/*.glb` or `public/basis/` missing or failing to decode (console names it) |
+| Agents don't move | Page hidden or throttled, or `converge()` never ran |
+| "backend offline", 502s on first Run | `BATTLEFIELD_URL`/`OPERATOR_TOKEN` unset or battlefield down; the recording plays on purpose |
+| Dome never opens | Material names no longer match `HIDE_IN_ARENA`, or `CUT_Y` is above the columns |
+| Backstage laptops don't see the arena | More than one `frontend` process splits the relay; check the `relay` live check |
+| Low frame rate | Try `?q=1` |
 
 ## Performance notes
 
-- **Quality ladder.** `lib/arena/quality.ts` defines levels 3 to 0, applied in `Scene.tsx`. Each level reduces pixel ratio
-  (1.5 down to 1), shadow size and refresh rate (every 2nd, 3rd or 6th frame, then off) and the post chain (full chain, then
-  bloom plus tone mapping, then none). Phones and coarse pointers start at 2.
+- **Quality ladder.** `lib/arena/quality.ts` levels 3–0 step down pixel ratio, shadows and the post chain; phones start at 2.
 - **Overrides.** `?q=0..3` pins a level. Without it, `lib/arena/governor.ts` steps down after 4 s under 24 fps and back up at
   most twice after 10 s at 52 fps or more. It ignores the first 6 s and any long hitch. `document.documentElement.dataset.quality`
   shows the current level.
