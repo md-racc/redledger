@@ -100,7 +100,7 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .hud > * { pointer-events: auto; }
 
 /* a double rule frames anything that holds information: a thin line inside the border, 3px in */
-.panel, .hud-score, .roster, .escalation, .dossier, .threat, .cmp, .evo, .show-caption > div { box-shadow: inset 0 0 0 3px var(--panel), inset 0 0 0 4px var(--line-2); }
+.panel, .hud-score, .roster, .escalation, .dossier, .threat, .cmp, .evo, .rep, .show-caption > div { box-shadow: inset 0 0 0 3px var(--panel), inset 0 0 0 4px var(--line-2); }
 
 /* the top strip: brand, state, tools */
 .hud-top { position: absolute; left: 0; right: 0; top: 0; height: var(--bar); display: flex; align-items: stretch; justify-content: space-between; background: rgba(11, 10, 8, 0.97); border-bottom: 1px solid var(--line-2); pointer-events: auto; }
@@ -311,12 +311,12 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .speak-act { display: flex; gap: 6px; }
 
 /* ───────── compare + evolution ───────── */
-.cmp, .evo { position: fixed; z-index: 13; left: var(--pad); right: var(--pad); bottom: var(--pad); width: auto; max-width: 1180px; margin-inline: auto; padding: 4px; background: var(--panel); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(20px); transition: opacity 0.25s var(--ease), transform 0.3s var(--ease), visibility 0s 0.3s; }
-.cmp.is-open, .evo.is-open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; transition-delay: 0s; }
-.cmp header, .evo header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
+.cmp, .evo, .rep { position: fixed; z-index: 13; left: var(--pad); right: var(--pad); bottom: var(--pad); width: auto; max-width: 1180px; margin-inline: auto; padding: 4px; background: var(--panel); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(20px); transition: opacity 0.25s var(--ease), transform 0.3s var(--ease), visibility 0s 0.3s; }
+.cmp.is-open, .evo.is-open, .rep.is-open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; transition-delay: 0s; }
+.cmp header, .evo header, .rep header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
 .cmp-kicker { font-family: var(--caps); font-weight: 600; font-size: 11px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink); }
-.cmp header .icon-btn, .evo header .icon-btn { margin-left: auto; width: 28px; height: 28px; }
-.cmp footer, .evo footer { padding: 11px 16px; border-top: 1px solid var(--line-2); font-size: 13px; line-height: 1.5; color: var(--ink-3); }
+.cmp header .icon-btn, .evo header .icon-btn, .rep header .icon-btn { margin-left: auto; width: 28px; height: 28px; }
+.cmp footer, .evo footer, .rep footer { padding: 11px 16px; border-top: 1px solid var(--line-2); font-size: 13px; line-height: 1.5; color: var(--ink-3); }
 .cmp-cols { display: grid; grid-template-columns: 1fr minmax(180px, 0.45fr) 1fr; }
 .cmp-col { padding: 16px 18px 12px; opacity: 0; animation: cmpin 0.4s var(--ease) forwards; }
 .cmp-col.is-red { box-shadow: inset 0 2px 0 var(--red); }
@@ -418,3 +418,36 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
   .dossier, .faction-label, .hud, .cmp, .evo, .threat { transition-duration: 0.01s; }
   .btn .dot, .ph i, .scroll-hint i, .led-checking { animation: none; }
 }
+
+/* ---- the report card, the raw toggle, the dossier's reasoning, the provenance badge ---- */
+.rep-days { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
+.rep-days button { font-family: var(--caps); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 5px 10px; border: 1px solid var(--line-2); background: transparent; color: var(--ink-2); border-radius: 0; cursor: pointer; }
+.rep-days button:hover, .rep-days button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.rep-body { padding: 8px 16px 12px; max-height: min(46vh, 420px); overflow: auto; scrollbar-width: thin; }
+.md { font-size: 14px; line-height: 1.55; color: var(--ink-2); max-width: 74ch; }
+.md h3, .md h4 { margin: 12px 0 6px; font-family: var(--caps); font-weight: 600; font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink); }
+.md h3:first-child, .md h4:first-child { margin-top: 2px; }
+.md p { margin: 0 0 8px; }
+.md ul, .md ol { margin: 0 0 8px; padding-left: 1.3em; }
+.md ul { list-style: disc; } .md ol { list-style: decimal; }
+.md li::marker { color: var(--ink-3); }
+.md li { margin: 2px 0; }
+.md b { color: var(--ink); font-weight: 600; }
+.md code, .md pre { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 12.5px; }
+.md code { padding: 0 4px; background: var(--panel-2); }
+.md pre { margin: 0 0 8px; padding: 8px 10px; background: var(--panel-2); overflow: auto; white-space: pre-wrap; }
+.md hr { border: 0; border-top: 1px solid var(--line-2); margin: 10px 0; }
+.md table { border-collapse: collapse; margin: 0 0 8px; font-size: 13px; }
+.md th, .md td { border: 1px solid var(--line-2); padding: 4px 9px; text-align: left; }
+.md th { font-family: var(--caps); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+.raw-toggle { margin-top: 6px; font-size: 12px; color: var(--ink-3); }
+.raw-toggle summary { cursor: pointer; width: max-content; font-family: var(--caps); font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+.raw-toggle summary:hover { color: var(--ink); }
+.raw-toggle pre { margin: 6px 0 0; padding: 8px 10px; max-height: 220px; overflow: auto; background: var(--panel-2); font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.4; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; }
+.dossier-think { margin: 0 0 6px; }
+.dossier-think summary { cursor: pointer; font-family: var(--caps); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); }
+.dossier-think p { margin: 6px 0 4px; font-family: var(--figures); font-style: italic; font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+.stat.badge-live b { color: var(--green); } .stat.badge-recorded b, .stat.badge-replay b { color: var(--amber); } .stat.badge-show b { color: var(--blue); }
+.stat-agents { max-width: 46ch; overflow: hidden; text-overflow: ellipsis; }
+.stat-agents b { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1280px) { .stat-agents { display: none; } }

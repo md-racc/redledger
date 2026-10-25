@@ -38,6 +38,13 @@ A row whose value is missing renders the dashed `○ <source>` pill. The source 
 should come from, so a placeholder is a to-do that names its own data. `placeholder data` shows in the header while nothing
 real has been merged yet.
 
+### What the team is thinking
+
+Under the sections the dossier shows **what this team's agent has been thinking**: the newest two days of `agent.thinking`, folded per day by the
+reducer (`lib/arena/thinking.ts`), the newest open. A figure in the arena speaks for its team's agent (red, green or blue). With no
+`agent.thinking` yet (the mock-agent recording has none) it shows the usual dashed placeholder naming `agent.thinking`. A **raw** toggle at the
+bottom opens the JSON the dossier was built from.
+
 ## Where values come from (three layers, later wins)
 
 1. **Derived from the event stream** (`buildDetails(id, state, …)` reads `UIState` from the reducer): attempts, targeted,

@@ -6,8 +6,10 @@ import { buildDetails, formatValue, type Catalogs } from "@/lib/arena/details";
 import { bridge } from "@/lib/arena/bridge";
 import { rosterOf, ROSTER_BY_ID, TEAM_META } from "@/lib/arena/roster";
 import { useArena } from "@/lib/arena/store";
+import { clip, thoughtsOf } from "@/lib/arena/thinking";
 import type { AgentDetailOverrides, DetailField } from "@/lib/arena/types";
 import type { UIState } from "@/lib/types";
+import { Raw } from "./Raw";
 
 interface Props {
   state: UIState;
@@ -66,6 +68,8 @@ export function AgentModal({ state, catalogs, overrides }: Props) {
   }, [shown, open]);
 
   const details = useMemo(() => (shown ? buildDetails(shown, state, catalogs, overrides) : null), [shown, state, catalogs, overrides]);
+  // what this agent's team has been thinking: a figure in the arena speaks for its team's agent (agent.thinking, folded per day by the reducer)
+  const thoughts = useMemo(() => (details ? thoughtsOf(state, details.team) : []), [state, details]);
   if (!shown || !details) return null;
 
   const meta = TEAM_META[details.team];
@@ -108,6 +112,20 @@ export function AgentModal({ state, catalogs, overrides }: Props) {
               </dl>
             </section>
           ))}
+          <section className="dossier-sec">
+            <h3>What {details.team} is thinking</h3>
+            {thoughts.length === 0 ? (
+              <dl><div className="row"><dt>Latest reasoning</dt><dd><span className="ph" title="Awaiting agent.thinking"><i /><em>agent.thinking</em></span></dd></div></dl>
+            ) : (
+              thoughts.slice(0, 2).map((t, i) => (
+                <details key={t.day} className="dossier-think" open={i === 0}>
+                  <summary>Day {t.day}</summary>
+                  <p>{clip(t.text, 900)}</p>
+                </details>
+              ))
+            )}
+          </section>
+          <Raw data={{ id: shown, team: details.team, title: details.title, sections: details.sections }} />
         </div>
         <footer className="dossier-foot">
           <span>esc to close</span>

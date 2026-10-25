@@ -24,6 +24,7 @@ import { CompareCard } from "./overlays/CompareCard";
 import { EvolutionCard } from "./overlays/EvolutionCard";
 import { Hud } from "./overlays/Hud";
 import { LabelLayer } from "./overlays/LabelLayer";
+import { ReportCard } from "./overlays/ReportCard";
 import { Loader } from "./overlays/Loader";
 import { PopLayer } from "./overlays/PopLayer";
 import { ShowBar } from "./overlays/ShowBar";
@@ -148,7 +149,7 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // a card (compare, evolution) belongs to the arena: scrolling back up to the tour closes it
+  // a card (compare, evolution, report) belongs to the arena: scrolling back up to the tour closes it
   useEffect(() => {
     if (stage !== "arena" && panel && !inShow) setPanel(null);
   }, [stage, panel, inShow, setPanel]);
@@ -191,6 +192,7 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
       <Hud feed={feed} show={show} />
       <CompareCard sides={sides} open={panel === "compare"} onClose={() => setPanel(null)} />
       <EvolutionCard open={panel === "evolve"} driven={inShow} preferLive={feed.backend.state === "live"} onClose={() => setPanel(null)} />
+      <ReportCard state={feed.state} live={feed.source === "live"} open={panel === "report"} onClose={() => setPanel(null)} />
       <ShowBar show={show} />
       <AgentModal state={feed.state} catalogs={feed.catalogs} overrides={agentDetails} />
       <LabelLayer />

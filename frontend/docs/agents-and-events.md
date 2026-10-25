@@ -21,8 +21,8 @@ Id = `red:<scheme_id>`, the string in `attack.launched.payload.scheme_id`.
 | `red:po_mismatch` | PO Mismatch | an invoice billed well above its purchase order |
 | `red:amount_drift` | Amount Drift | a recurring vendor's invoices climb a little every month |
 
-The first four stories are the ones in the mock catalog; the last four are placeholders until Al's scheme classes land.
-Once `GET /schemes` answers, its `display_name` and `story` replace these.
+All eight schemes are built (`red/schemes/__init__.py`, #166) and are the eight in the roster; a test (`lib/voice/intent.test.ts`) keeps
+the voice matcher's eight the same. Once `GET /schemes` answers, its `display_name` and `story` replace these.
 
 ### Blue: 10 guards (one per gate rule)
 

@@ -64,8 +64,11 @@ over the interaction) darkens the rest of the frame. The HUD dims with it. It ea
 | **Launch attack** | the attack console. Live: `POST /episodes/{id}/attack` (queued for red's next turn); with no running episode a paused *sandbox* episode is created and each click forces the scheme and steps one day. Offline: `lib/arena/localAttack.ts` plays it from the mock agents' rules |
 | **Controller off / shadow / enforce** | `PATCH /episodes/{id}/controller`; the HUD shows the mode |
 | **Approve / Block** | an open escalation, against its clock. Approve it and that invoice goes through |
-| **Compare** | off vs on from the runs this session finished (or the run in flight vs its projection) |
+| **Compare** | off vs on from the runs this session finished (or the run in flight vs its projection). |
 | **Evolution** | `GET /lineages` + `/fe/lineages/{id}/report`, or the recorded report (`public/mocks/lineage-report.json`) |
+| **Report** | the end-of-day report: a chip per day that has one (`report.posted`). With a live backend it is blue's own text (`GET /reports/{id}`), drawn by a small markdown reader (`lib/markdown.ts`, no HTML injected). With a recording there is no text to fetch, so it shows a tally built from that day's events and says so |
+| **raw** (on every card) | a small toggle that opens the JSON the card is built from: the escalation, the evolution report, the report, the dossier |
+| **Source / Agents** (top bar) | an honest badge, LIVE, RECORDED, SHOW or REPLAY, and each agent's own `/health`: `live` (a real model, named) or `keyless` (canned turns) (`lib/arena/provenance.ts`). Hover for what it means |
 | **Click an agent** (or pick one in the roster) | the camera goes to them and the dossier opens; the same selection shows on the backstage laptops |
 
 There is no running commentary panel: the scene is the feed. Live events pass through a pacer (`lib/arena/pacer.ts`) so a day's burst is shown one beat at a time, and the agents involved are lit (see focus above). `lib/arena/headlines.ts` still holds the plain-English wording and the money formatter.
@@ -76,5 +79,5 @@ Everything the presenter does is also published to the other laptops (`lib/sync`
 
 `lib/arena/`: `show.ts` (script + director), `showClock.ts`, `script.ts` (timed event scripts with holds for a human),
 `showScripts.ts` (the recorded run re-cut, baseline projection, escalation), `useFeed.ts` (live + recorded feed, acts, sandbox),
-`pacer.ts`, `localAttack.ts`, `headlines.ts`, `compare.ts`, `lineage.ts`, `focus.ts`.
-`components/arena/`: `useShow.ts`, `overlays/{ShowBar,ThreatConsole,CompareCard,EvolutionCard}.tsx`.
+`pacer.ts`, `localAttack.ts`, `headlines.ts`, `compare.ts`, `lineage.ts`, `report.ts`, `provenance.ts`, `focus.ts`.
+`components/arena/`: `useShow.ts`, `overlays/{ShowBar,ThreatConsole,CompareCard,EvolutionCard,ReportCard,Markdown,Raw}.tsx`.
