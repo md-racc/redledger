@@ -107,7 +107,7 @@ export function Hud({ feed, show, pitch }: { feed: Feed; show: ShowController; p
       )}
 
       <section className="hud-score" aria-label={last?.score ? `Final score of the last run, ${last.episodeId}` : "Scoreboard"} title={last?.score ? `Final score of the last run (${last.episodeId})` : undefined}>
-        <Tile label="Stolen"value={money(score.dollars_extracted)} tone="red" />
+        <Tile label="Stolen" value={money(score.dollars_extracted)} tone="red" />
         <Tile label="Blocked" value={money(score.dollars_blocked)} tone="blue" />
         <Tile label="False-positive cost" value={money(score.false_positive_cost)} tone="amber" />
         <Tile label="Caught" value={`${score.attacks_caught}/${score.attacks_launched}`} tone="green" />

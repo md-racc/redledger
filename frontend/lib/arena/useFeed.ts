@@ -35,6 +35,7 @@ import { RED_SCHEMES } from "./roster";
 import { publish } from "../sync/client";
 import { ScriptRunner } from "./script";
 import { buildOffAct, buildOnAct, decisionEvent, finalScoreOf, projectBaseline } from "./showScripts";
+import { plannedEpisode, RUN_DAYS, SANDBOX_DAYS } from "./demoPlan";
 import { buildPitchFallback, canApprove, PITCH_FALLBACK, pitchEpisode, planPitch, willAutoBlock, type RecordingInfo } from "./pitch";
 
 const MOCK_ONLY = process.env.NEXT_PUBLIC_MOCK === "true";
@@ -418,7 +419,7 @@ export function useFeed(): Feed {
         const busy = await findBusy();
         if (busy && (await attach(busy))) return; // another run is going: watch it instead of starting one
         try {
-          const ep = await api.createEpisode({ controller_mode: mode, seed: SHOW_SEED, days: 5 });
+          const ep = await api.createEpisode(plannedEpisode(mode, SHOW_SEED, RUN_DAYS));
           episode.current = ep.id;
           liveKind.current = "run";
           cancel.current = connect(ep.id, pushLive);
@@ -482,7 +483,7 @@ export function useFeed(): Feed {
           return;
         }
         reset();
-        const ep = await api.createEpisode({ controller_mode: live.current.mode, seed: SHOW_SEED, days: 30 });
+        const ep = await api.createEpisode(plannedEpisode(live.current.mode, SHOW_SEED, SANDBOX_DAYS));
         episode.current = ep.id;
         liveKind.current = "sandbox";
         cancel.current = connect(ep.id, pushLive);
