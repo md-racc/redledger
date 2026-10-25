@@ -67,6 +67,16 @@ async def _invoice_context(inv: dict[str, Any]) -> dict[str, Any]:
         ),
         hide=True,
     )
+    pending = db.rows_to_list(
+        await db.fetch(
+            "SELECT * FROM invoices WHERE episode_id=$1 AND vendor_id=$2 AND status IN ('pending','matched','approved') AND id<>$3 "
+            "ORDER BY received_day DESC, id LIMIT 20",
+            ep,
+            inv["vendor_id"],
+            inv["id"],
+        ),
+        hide=True,
+    )
     pos = db.rows_to_list(
         await db.fetch("SELECT * FROM purchase_orders WHERE episode_id=$1 AND vendor_id=$2 ORDER BY created_day DESC LIMIT 12", ep, inv["vendor_id"]), hide=True
     )
@@ -84,6 +94,7 @@ async def _invoice_context(inv: dict[str, Any]) -> dict[str, Any]:
         "po": po,
         "vendor_recent_changes": changes,
         "vendor_paid_invoices": paid,
+        "vendor_open_invoices": pending,
         "vendor_purchase_orders": pos,
         "flags": flags,
     }

@@ -1,0 +1,1 @@
+- 2026-10-25T04:43Z · Ad · battlefield: invoice gate context carries the vendor's other open invoices (vendor_open_invoices) so blue can catch same-vendor invoice splitting (#179); next: M's invoice threshold_split rule; blocked: none

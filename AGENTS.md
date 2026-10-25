@@ -102,11 +102,14 @@ Branching, commits, PRs, and the coding-agent git rules are in `GIT.md`. Short v
     - No system prompt mentions `origin`, `attack_id`, scoring, or the other agents' existence
       beyond what the role implies.
     Enforced in code: `GET /api/events`, `/api/ws`, `/api/fe/*` and every control-plane route
-    reject `AGENT_TOKEN` (invariant 12), so an agent can't reach them at all. Not enforced:
-    blue's `audit_log` filter, red not reading reports/flags; a reviewer checks every agent's
-    tool list for those. Filtering `audit_log` server-side is a candidate contracts change.
-12. **Two tokens, chosen by `X-Agent`.** A request with `X-Agent` presents `AGENT_TOKEN`; a
-    request without it presents `OPERATOR_TOKEN`. The wrong one for the role is a 401, so an
+    reject `AGENT_TOKEN` (invariant 12), so an agent can't reach them at all. `GET /api/audit_log`
+    is blue-only and, for any agent caller, returns green/blue rows only, never `attacks.*`,
+    playbook or token-refusal rows (`battlefield/app/api/reads.py`, #31); `GET /api/flags` is
+    green/blue-only. Not enforced: red not reading a report (`GET /api/reports/{id}` accepts any
+    caller); a reviewer checks every agent's tool list for that.
+12. **Two tokens, chosen by `X-Agent`.** A request with `X-Agent` presents `AGENT_TOKEN` (that
+    agent's own `AGENT_TOKEN_<AGENT>` when set; another agent's → 401, #108/#109); a request
+    without it presents `OPERATOR_TOKEN`. The wrong one for the role is a 401, so an
     agent cannot make an operator call and the frontend cannot act as an agent. Agents hold only
     `AGENT_TOKEN` (via `agentkit.AgentSettings`; `INTERNAL_TOKEN` is a legacy fallback). The
     browser holds neither: REST goes through the frontend server's `/api/bf/*` proxy, and the
@@ -159,11 +162,12 @@ redact=fn)` redacts `agent.tool_call` arguments on every narration path.
 - Green: `Autonomy.OFF`, strict identity, so every tool call raises a permission request; the
   handler prepares the action (`LedgerClient.prepare`) and answers `PROCEED_ONCE` on
   `effective: allow`, `CANCEL` with the contract's cause otherwise (`contracts/agent-service.md`,
-  Green). Whether every MCP call at `OFF` raises a request is still an open Finding; if it doesn't,
-  record it in `contracts/CHANGELOG.md` and rely on ledger-side enforcement alone.
+  Green). That every MCP call at `OFF` raises a request is a recorded Finding (`contracts/CHANGELOG.md`,
+  static read of the CLI, then a live blue audit at `OFF`: 6 calls, 6 requests, #119); should it
+  ever stop holding, record that there and rely on ledger-side enforcement alone.
 - Blue audit: `Autonomy.OFF`, strict identity, permission handler always `PROCEED_ONCE` (D11, #90);
   the live-audit guard is lifted (#157), so the audit runs on Droid whenever `DRY_RUN_BLUE=false`.
-  Prod keeps `DRY_RUN_BLUE=true` until Ad flips it between runs; set it explicitly, because an unset
+  Prod runs it live (`DRY_RUN_BLUE=false`) since 2026-10-25; set it explicitly, because an unset
   `DRY_RUN_BLUE` follows the global `DRY_RUN`.
 - Never return `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*` from any handler. They disable the gate.
 - Handlers may be async and may do I/O. They must not start a turn on the same session.

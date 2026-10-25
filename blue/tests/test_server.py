@@ -91,3 +91,20 @@ async def test_partial_audit_response_does_not_fabricate_report_success(service)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://blue", headers={"Authorization": "Bearer test-agent"}) as client:
         result = (await client.post("/audit", json={"episode_id": "ep", "day": 5})).json()
         assert result["ok"] is False and result["report_posted"] is False and result["flags_raised"] == 0
+
+
+async def test_audit_returns_the_turns_usage_for_battlefield_to_charge(runtime, monkeypatch):
+    # contracts #174: battlefield charges usage.factory_credits from /audit against the episode's credit cap
+    from agentkit.models import TurnResponse, Usage
+
+    prototype, _, _ = runtime(FakeLedger(vendors=[vendor(created_day=5)], invoices=[invoice(amount=4920)]))
+    app = make_agent_app(AuditAgent, settings=prototype.s, extra_routes=extra)
+
+    async def spent(self, req):
+        return TurnResponse(ok=True, summary="audited", usage=Usage(factory_credits=3806.0))
+
+    monkeypatch.setattr(AuditAgent, "run_turn", spent)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://blue", headers={"Authorization": "Bearer test-agent"}) as client:
+        response = await client.post("/audit", json={"episode_id": "ep", "day": 5})
+    assert response.status_code == 200
+    assert response.json()["usage"]["factory_credits"] == 3806.0

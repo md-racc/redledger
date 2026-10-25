@@ -60,7 +60,10 @@ turn. Keep these stable: they are what lets the other three work without you.
   scored as of `revealed_day`. Any change here needs a contracts PR and a verifier.
 - Headless generations: escalations auto-block after the lineage's `headless.escalation_timeout_sec`
   (gatekeeper infers headless from the lineage being running or paused; demos need a finished lineage).
-- Known gaps: `/reflect` credits not persisted across restarts; one shared `AGENT_TOKEN`.
+- Known gap: `/reflect` credits not persisted across restarts (`_reflect_spent` is in-memory).
+  Per-agent tokens are live (#108–#111): each `X-Agent` must present its own
+  `AGENT_TOKEN_<AGENT>`; the shared `AGENT_TOKEN` is only the fallback, with a `token_separation`
+  startup warning (`app/config.py`).
 
 ## Paste this to your coding agent as its first message
 

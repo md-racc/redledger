@@ -371,3 +371,49 @@ async def test_expense_context_carries_the_employee_and_expense_flags(pg: None, 
     assert {fl["id"] for fl in flags} == {emp_flag, exp_flag}
     assert {(fl["entity_type"], fl["entity_id"], fl["severity"]) for fl in flags} == {("employee", emp, "high"), ("expense", ex, "high")}
     assert all(not (set(fl) & db.HIDDEN_COLUMNS) for fl in flags)  # invariant 4: no origin (or other provenance) reaches blue
+
+
+# ---------- blue's invoice context carries the vendor's other open invoices (threshold_split) ----------
+@pytest.mark.parametrize(
+    ("via", "action", "status"),
+    [("route", "approve", "matched"), ("route", "pay", "approved"), ("preparation", "pay", "approved")],
+)
+async def test_invoice_context_carries_the_vendors_other_open_invoices(pg: None, context_blue: list, via: str, action: str, status: str) -> None:
+    ep = await _episode("enforce")
+    v, other_v = await f.vendor(ep), await f.vendor(ep)
+    a = await f.invoice(ep, v, amount=4900.0, status=status, origin="red", attack_id=await f.attack(ep, scheme_id="threshold_split"))
+    b = await f.invoice(ep, v, amount=4800.0, status="pending", origin="red")
+    m = await f.invoice(ep, v, amount=4700.0, status="matched", day=1)
+    c_ = await f.invoice(ep, v, amount=4850.0, status="approved", day=2)
+    await f.invoice(ep, v, status="paid")  # settled: lives in vendor_paid_invoices, not here
+    await f.invoice(ep, v, status="rejected")
+    await f.invoice(ep, v, status="blocked")
+    await f.invoice(ep, other_v, status="pending")  # another vendor's open invoice stays out
+    other_ep = await _episode("enforce")
+    await f.invoice(other_ep, v, status="pending")  # same vendor id, another episode: stays out
+    key = f"tu_{uuid.uuid4().hex}"
+    async with _client() as c:
+        if via == "route":
+            r = await c.post(f"/api/invoices/{a}/{action}", headers=_green(ep, key))
+        else:
+            r = await c.post("/api/preparations", json={"action": f"invoices.{action}", "entity_id": a, "args": {}}, headers=_green(ep, key))
+    assert r.status_code == 200, r.text
+    (context,) = context_blue
+    open_invoices = context["vendor_open_invoices"]
+    assert [i["id"] for i in open_invoices] == [c_, m, b]  # received_day DESC; the judged invoice excluded
+    assert {(i["vendor_id"], i["episode_id"], i["status"]) for i in open_invoices} == {(v, ep, "pending"), (v, ep, "matched"), (v, ep, "approved")}
+    assert sum(float(i["amount"]) for i in open_invoices) == 14_350.0
+    assert all(not (set(i) & db.HIDDEN_COLUMNS) for i in open_invoices)  # invariant 4: no origin/attack_id reaches blue
+    assert {"invoice_number", "amount", "received_day", "po_id"} <= set(open_invoices[0])
+
+
+async def test_invoice_context_open_invoices_are_capped_at_twenty(pg: None, context_blue: list) -> None:
+    ep = await _episode("enforce")
+    v = await f.vendor(ep)
+    a = await f.invoice(ep, v, status="approved")
+    newest = [await f.invoice(ep, v, status="pending", day=d) for d in range(25)][::-1][:20]
+    async with _client() as c:
+        r = await c.post(f"/api/invoices/{a}/pay", headers=_green(ep, f"tu_{uuid.uuid4().hex}"))
+    assert r.status_code == 200, r.text
+    (context,) = context_blue
+    assert [i["id"] for i in context["vendor_open_invoices"]] == newest
