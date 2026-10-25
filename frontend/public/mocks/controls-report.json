@@ -1,0 +1,552 @@
+{
+ "episode": {
+  "id": "ep_d9b561111d60",
+  "seed": 42,
+  "controller_mode": "enforce",
+  "days": 6,
+  "status": "finished",
+  "current_day": 6,
+  "lineage_id": null,
+  "generation": null,
+  "created_at": "2026-10-25T04:59:09.327805+00:00",
+  "started_at": "2026-10-25T04:59:09.327805+00:00",
+  "finished_at": "2026-10-25T05:04:59.773269+00:00"
+ },
+ "final": true,
+ "source": "fixture",
+ "score": {
+  "legit_blocked": 1,
+  "attacks_caught": 2,
+  "dollars_blocked": 1480.0,
+  "legit_processed": 27,
+  "attacks_launched": 6,
+  "dollars_extracted": 20350.37,
+  "false_positive_cost": 50.0,
+  "detection_latency_days": 0.0
+ },
+ "lost": 20350.37,
+ "to_attacker_accounts": 18180.0,
+ "to_real_parties": 2170.37,
+ "unattributed": 0.0,
+ "totals": {
+  "attempted": 27565.92,
+  "extracted": 20350.37,
+  "blocked": 1480.0,
+  "attacks": 6,
+  "schemes": 6,
+  "schemes_with_loss": 4,
+  "controls_seen": 4
+ },
+ "gate": {
+  "allow": 75,
+  "block": 3,
+  "escalate": 2,
+  "total": 80,
+  "escalations": {
+   "approved": 0,
+   "blocked": 0,
+   "timeout": 2,
+   "open": 0
+  }
+ },
+ "controls": [
+  {
+   "control_id": "no_hr_record",
+   "fired": 3,
+   "blocks": 3,
+   "escalations": 0,
+   "notes": 0,
+   "on_fraud": {
+    "n": 3,
+    "dollars": 1480.0,
+    "stopped": 3
+   },
+   "on_legit": {
+    "n": 0,
+    "dollars": 0.0,
+    "stopped": 0
+   },
+   "schemes": [
+    "ghost_employee"
+   ],
+   "effect": "block",
+   "learned": false,
+   "verdict_ids": [
+    "vd_d2658ad28df4",
+    "vd_908bfde13b10",
+    "vd_832f7570a426"
+   ]
+  },
+  {
+   "control_id": "bank_change_with_open_invoices",
+   "fired": 2,
+   "blocks": 0,
+   "escalations": 2,
+   "notes": 0,
+   "on_fraud": {
+    "n": 1,
+    "dollars": 0.0,
+    "stopped": 1
+   },
+   "on_legit": {
+    "n": 1,
+    "dollars": 0.0,
+    "stopped": 1
+   },
+   "schemes": [
+    "bank_swap"
+   ],
+   "effect": "escalate",
+   "learned": false,
+   "verdict_ids": [
+    "vd_84feef405a71",
+    "vd_891e87005158"
+   ]
+  },
+  {
+   "control_id": "vendor_age_lt_7d",
+   "fired": 9,
+   "blocks": 0,
+   "escalations": 0,
+   "notes": 9,
+   "on_fraud": {
+    "n": 4,
+    "dollars": 18180.0,
+    "stopped": 0
+   },
+   "on_legit": {
+    "n": 1,
+    "dollars": 4774.79,
+    "stopped": 0
+   },
+   "schemes": [
+    "ghost_vendor",
+    "threshold_split"
+   ],
+   "effect": "note",
+   "learned": false,
+   "verdict_ids": [
+    "vd_e7d51efccb93",
+    "vd_a3f6b3480aac",
+    "vd_6326fb601936",
+    "vd_4a64f85d2ca1",
+    "vd_8c151b041b7b",
+    "vd_9ccd6927a811",
+    "vd_66a0541f2c10",
+    "vd_366c8b5ba27b",
+    "vd_0a20062974fa"
+   ]
+  },
+  {
+   "control_id": "near_threshold",
+   "fired": 1,
+   "blocks": 0,
+   "escalations": 0,
+   "notes": 1,
+   "on_fraud": {
+    "n": 0,
+    "dollars": 0.0,
+    "stopped": 0
+   },
+   "on_legit": {
+    "n": 1,
+    "dollars": 4774.79,
+    "stopped": 0
+   },
+   "schemes": [],
+   "effect": "note",
+   "learned": false,
+   "verdict_ids": [
+    "vd_0a20062974fa"
+   ]
+  }
+ ],
+ "schemes": [
+  {
+   "scheme_id": "ghost_vendor",
+   "display_name": "Ghost Vendor",
+   "attempts": 1,
+   "first_day": 0,
+   "targeted": 4380.0,
+   "extracted": 4380.0,
+   "lost": 4380.0,
+   "to_attacker_accounts": 4380.0,
+   "to_real_parties": 0.0,
+   "outcomes": {
+    "extracted": 1,
+    "partial": 0,
+    "blocked": 0,
+    "flagged": 0,
+    "failed": 0,
+    "pending": 0
+   },
+   "caught_by": [],
+   "noted_by": [
+    "vendor_age_lt_7d"
+   ],
+   "flags": 0,
+   "vendors_frozen": 0,
+   "escalations": {
+    "approved": 0,
+    "blocked": 0,
+    "timeout": 0,
+    "open": 0
+   },
+   "detection_latency_days": null
+  },
+  {
+   "scheme_id": "bank_swap",
+   "display_name": "Bank Account Swap",
+   "attempts": 1,
+   "first_day": 1,
+   "targeted": 1824.22,
+   "extracted": 1824.22,
+   "lost": 1824.22,
+   "to_attacker_accounts": 0.0,
+   "to_real_parties": 1824.22,
+   "outcomes": {
+    "extracted": 0,
+    "partial": 1,
+    "blocked": 0,
+    "flagged": 0,
+    "failed": 0,
+    "pending": 0
+   },
+   "caught_by": [
+    "bank_change_with_open_invoices"
+   ],
+   "noted_by": [],
+   "flags": 0,
+   "vendors_frozen": 0,
+   "escalations": {
+    "approved": 0,
+    "blocked": 0,
+    "timeout": 1,
+    "open": 0
+   },
+   "detection_latency_days": 0.0
+  },
+  {
+   "scheme_id": "threshold_split",
+   "display_name": "Threshold Splitting",
+   "attempts": 1,
+   "first_day": 2,
+   "targeted": 13800.0,
+   "extracted": 13800.0,
+   "lost": 13800.0,
+   "to_attacker_accounts": 13800.0,
+   "to_real_parties": 0.0,
+   "outcomes": {
+    "extracted": 1,
+    "partial": 0,
+    "blocked": 0,
+    "flagged": 0,
+    "failed": 0,
+    "pending": 0
+   },
+   "caught_by": [],
+   "noted_by": [
+    "vendor_age_lt_7d"
+   ],
+   "flags": 0,
+   "vendors_frozen": 0,
+   "escalations": {
+    "approved": 0,
+    "blocked": 0,
+    "timeout": 0,
+    "open": 0
+   },
+   "detection_latency_days": null
+  },
+  {
+   "scheme_id": "expense_inflation",
+   "display_name": "Expense Inflation",
+   "attempts": 1,
+   "first_day": 3,
+   "targeted": 346.15,
+   "extracted": 346.15,
+   "lost": 346.15,
+   "to_attacker_accounts": 0.0,
+   "to_real_parties": 346.15,
+   "outcomes": {
+    "extracted": 1,
+    "partial": 0,
+    "blocked": 0,
+    "flagged": 0,
+    "failed": 0,
+    "pending": 0
+   },
+   "caught_by": [],
+   "noted_by": [],
+   "flags": 0,
+   "vendors_frozen": 0,
+   "escalations": {
+    "approved": 0,
+    "blocked": 0,
+    "timeout": 0,
+    "open": 0
+   },
+   "detection_latency_days": null
+  },
+  {
+   "scheme_id": "amount_drift",
+   "display_name": "Amount Drift",
+   "attempts": 1,
+   "first_day": 4,
+   "targeted": 5735.55,
+   "extracted": 0.0,
+   "lost": 0.0,
+   "to_attacker_accounts": 0.0,
+   "to_real_parties": 0.0,
+   "outcomes": {
+    "extracted": 0,
+    "partial": 0,
+    "blocked": 0,
+    "flagged": 0,
+    "failed": 0,
+    "pending": 1
+   },
+   "caught_by": [],
+   "noted_by": [],
+   "flags": 0,
+   "vendors_frozen": 0,
+   "escalations": {
+    "approved": 0,
+    "blocked": 0,
+    "timeout": 0,
+    "open": 0
+   },
+   "detection_latency_days": null
+  },
+  {
+   "scheme_id": "ghost_employee",
+   "display_name": "Ghost Employee",
+   "attempts": 1,
+   "first_day": 5,
+   "targeted": 1480.0,
+   "extracted": 0.0,
+   "lost": 0.0,
+   "to_attacker_accounts": 0.0,
+   "to_real_parties": 0.0,
+   "outcomes": {
+    "extracted": 0,
+    "partial": 0,
+    "blocked": 1,
+    "flagged": 0,
+    "failed": 0,
+    "pending": 0
+   },
+   "caught_by": [
+    "no_hr_record"
+   ],
+   "noted_by": [],
+   "flags": 0,
+   "vendors_frozen": 0,
+   "escalations": {
+    "approved": 0,
+    "blocked": 0,
+    "timeout": 0,
+    "open": 0
+   },
+   "detection_latency_days": 0.0
+  }
+ ],
+ "gaps": [
+  {
+   "scheme_id": "threshold_split",
+   "display_name": "Threshold Splitting",
+   "extracted": 13800.0,
+   "why": "note only",
+   "controls_on_paid": [
+    "vendor_age_lt_7d"
+   ],
+   "caught_elsewhere": [],
+   "audit_detected": false,
+   "paid_entity_ids": [
+    "inv_33008737ab5b",
+    "inv_b6f1aa010ef2",
+    "inv_e138853bb3bd"
+   ]
+  },
+  {
+   "scheme_id": "ghost_vendor",
+   "display_name": "Ghost Vendor",
+   "extracted": 4380.0,
+   "why": "note only",
+   "controls_on_paid": [
+    "vendor_age_lt_7d"
+   ],
+   "caught_elsewhere": [],
+   "audit_detected": false,
+   "paid_entity_ids": [
+    "inv_07b39eea5327"
+   ]
+  },
+  {
+   "scheme_id": "bank_swap",
+   "display_name": "Bank Account Swap",
+   "extracted": 1824.22,
+   "why": "no control fired",
+   "controls_on_paid": [],
+   "caught_elsewhere": [
+    "bank_change_with_open_invoices"
+   ],
+   "audit_detected": false,
+   "paid_entity_ids": [
+    "inv_79f7316f81e8"
+   ]
+  },
+  {
+   "scheme_id": "expense_inflation",
+   "display_name": "Expense Inflation",
+   "extracted": 346.15,
+   "why": "no control fired",
+   "controls_on_paid": [],
+   "caught_elsewhere": [],
+   "audit_detected": false,
+   "paid_entity_ids": [
+    "exp_218afe3e3da3"
+   ]
+  }
+ ],
+ "false_positives": {
+  "cost": 50.0,
+  "legit_blocked": 1,
+  "legit_escalated": 0,
+  "total_items": 1,
+  "items": [
+   {
+    "entity_type": "vendor_change",
+    "entity_id": "vch_1cc86595ec7c",
+    "amount": 0.0,
+    "verdict": "block",
+    "rules": [
+     "bank_change_with_open_invoices"
+    ],
+    "reason": "Needs independent verification \u2014 Destination change overlaps open invoices; independently verify before approval.",
+    "day": 2,
+    "enforced": true,
+    "cost": 50.0,
+    "verdict_ids": [
+     "vd_891e87005158"
+    ]
+   }
+  ],
+  "penalty": {
+   "rate": 0.02,
+   "flat": 50.0
+  }
+ },
+ "audit": {
+  "flags_raised": 0,
+  "flags_on_fraud": 0,
+  "flags_on_legit": 0,
+  "vendors_frozen": 0,
+  "fraud_vendors_frozen": 0,
+  "reports": 4
+ },
+ "evidence": [
+  {
+   "scheme_id": "ghost_vendor",
+   "attack_ids": [
+    "atk_4ee701711332"
+   ],
+   "entity_ids": [
+    "inv_07b39eea5327",
+    "ven_43058926319e"
+   ],
+   "verdict_ids": [
+    "vd_a3f6b3480aac",
+    "vd_e7d51efccb93"
+   ],
+   "escalation_ids": [],
+   "flag_ids": []
+  },
+  {
+   "scheme_id": "bank_swap",
+   "attack_ids": [
+    "atk_3a0647cfa061"
+   ],
+   "entity_ids": [
+    "inv_79f7316f81e8",
+    "vch_6cc1938fd89e"
+   ],
+   "verdict_ids": [
+    "vd_84feef405a71",
+    "vd_a7d4690a57eb",
+    "vd_d86657fa7bef"
+   ],
+   "escalation_ids": [
+    "esc_3f118db2cfef"
+   ],
+   "flag_ids": []
+  },
+  {
+   "scheme_id": "threshold_split",
+   "attack_ids": [
+    "atk_205170fc2817"
+   ],
+   "entity_ids": [
+    "inv_33008737ab5b",
+    "inv_b6f1aa010ef2",
+    "inv_e138853bb3bd"
+   ],
+   "verdict_ids": [
+    "vd_366c8b5ba27b",
+    "vd_4a64f85d2ca1",
+    "vd_6326fb601936",
+    "vd_66a0541f2c10",
+    "vd_8c151b041b7b",
+    "vd_9ccd6927a811"
+   ],
+   "escalation_ids": [],
+   "flag_ids": []
+  },
+  {
+   "scheme_id": "expense_inflation",
+   "attack_ids": [
+    "atk_10fbac5e1ad3"
+   ],
+   "entity_ids": [
+    "exp_218afe3e3da3"
+   ],
+   "verdict_ids": [
+    "vd_8eda32d4aff8",
+    "vd_ae7f2a191a35"
+   ],
+   "escalation_ids": [],
+   "flag_ids": []
+  },
+  {
+   "scheme_id": "amount_drift",
+   "attack_ids": [
+    "atk_07e72dd0e953"
+   ],
+   "entity_ids": [
+    "inv_7e0a14a12d5b"
+   ],
+   "verdict_ids": [],
+   "escalation_ids": [],
+   "flag_ids": []
+  },
+  {
+   "scheme_id": "ghost_employee",
+   "attack_ids": [
+    "atk_44b5636cb356"
+   ],
+   "entity_ids": [
+    "emp_3ca995da7601",
+    "exp_7992d2074082",
+    "exp_b099a820f267",
+    "exp_dfdf1270807f"
+   ],
+   "verdict_ids": [
+    "vd_832f7570a426",
+    "vd_908bfde13b10",
+    "vd_d2658ad28df4"
+   ],
+   "escalation_ids": [],
+   "flag_ids": []
+  }
+ ]
+}

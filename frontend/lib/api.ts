@@ -1,6 +1,7 @@
 // Thin REST client for battlefield. Owner: Dev R. Full surface: battlefield /docs and FRONTEND-API.md.
 // Calls go same-origin to the Next proxy: `/api/bf<path>` → `${BATTLEFIELD_URL}/api<path>`
 // (app/api/bf/[...path]/route.ts), which adds the operator token server-side. No token here, ever.
+import type { ControlsReport } from "./report/types";
 import { clientId } from "./sync/client";
 
 const BASE = "/api/bf";
@@ -69,6 +70,8 @@ export const api = {
     reports: (ep: string) => call<any[]>("GET", `/fe/episodes/${ep}/reports`),
     report: (id: string) => call<any>("GET", `/reports/${id}`),
     escalations: (ep: string) => call<any[]>("GET", `/fe/episodes/${ep}/escalations`),
+    /** the controls assessment report (lib/report/types.ts). A viewer gets it once the run ends; before that the proxy answers 403 */
+    controls: (ep: string, signal?: AbortSignal) => call<ControlsReport>("GET", `/fe/episodes/${encodeURIComponent(ep)}/controls`, undefined, signal),
     lineageReport: (id: string) => call<any>("GET", `/fe/lineages/${id}/report`),
     lineageTimeline: (id: string) => call<any>("GET", `/fe/lineages/${id}/timeline`),
   },
