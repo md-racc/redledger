@@ -11,6 +11,7 @@ from agentkit.models import ReflectRequest, ReflectResponse
 MEMORY_KEY = "green_reflection"
 MAX_REVIEW_ITEMS = 2000
 MAX_CONTENT_BYTES = 64 * 1024
+MAX_PROMPT_SECTION_BYTES = 1024
 OUTCOMES = ("fraud_paid", "fraud_approved", "fraud_blocked", "fraud_rejected", "legit_blocked")
 PROCEDURES = (
     "Re-read current entity state and existing payments before dependent writes; count only confirmed receipts.",
@@ -115,3 +116,32 @@ def reflect_playbook(req: ReflectRequest) -> ReflectResponse:
         return ReflectResponse(ok=True, rationale="Green reflection would exceed the content limit; playbook kept.")
     rationale = "Green AAR: " + ", ".join(f"{key}={counts[key]}" for key in OUTCOMES)
     return ReflectResponse(ok=True, playbook=content, rationale=rationale + ". Procedural memory only; AP execution unchanged.")
+
+
+def playbook_prompt_section(playbook: dict[str, Any] | None, lineage: dict[str, Any] | None) -> str:
+    """Bounded, deterministic prompt section of stored procedure reminders.
+
+    Procedures-as-data only: reminders must be known PROCEDURES entries, in stored order.
+    Rationale, counts, identifiers and any operator prose are never rendered. Returns ""
+    when there is nothing usable; the turn then keeps the plain static prompt.
+    """
+    if not isinstance(playbook, dict) or not isinstance(lineage, dict):
+        return ""
+    content = playbook.get("content")
+    memory = content.get(MEMORY_KEY) if isinstance(content, dict) else None
+    stored = memory.get("procedure_reminders") if isinstance(memory, dict) else None
+    if not isinstance(stored, list):
+        return ""
+    reminders = [p for p in dict.fromkeys(stored) if isinstance(p, str) and p in PROCEDURES]
+    if not reminders:
+        return ""
+    header = f"Lineage generation {lineage.get('generation')}, playbook version {lineage.get('playbook_version')}. Procedure reminders from your playbook:"
+    lines = [header]
+    size = len(header.encode("utf-8")) + 1
+    for reminder in reminders:
+        line = f"- {reminder}"
+        if size + len(line.encode("utf-8")) + 1 > MAX_PROMPT_SECTION_BYTES:
+            break
+        lines.append(line)
+        size += len(line.encode("utf-8")) + 1
+    return "\n".join(lines)
