@@ -250,7 +250,12 @@ def lineage_summary(ln, with_credits=True):
 CRS_PERSONAS = ("P01", "P12", "P16")
 CRS_DAY1_AMOUNT = {"P01": 55.0, "P12": 91.0, "P16": 48.0}  # the driver's after-verdict expenses
 CRS_STATUSES = ("verified", "mismatch", "review", "unknown")
-CRS_FINDING = "crs_employee_identity_mismatch"
+# A CRS mismatch flag carries blue's evidence text (blue/audit/evidence.py), not the internal finding code.
+CRS_FLAG_MARKERS = ("crs_employee_identity_mismatch", "CRS reports an employee identity inconsistency")
+
+
+def is_crs_flag(reason):
+    return any(m in str(reason or "") for m in CRS_FLAG_MARKERS)
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -350,11 +355,11 @@ def crs_summary(ep, days, emp_ids, day1):
     for pid in CRS_PERSONAS:
         eid = emp_ids[pid]
         mine = [f for f in flags if f.get("entity_type") == "employee" and f.get("entity_id") == eid]
-        crs_flagged = any(CRS_FINDING in str(f.get("reason") or "") for f in mine)
+        crs_flagged = any(is_crs_flag(f.get("reason")) for f in mine)
         personas[pid] = {
             "employee_id": eid,
             "crs_status": "mismatch (flagged)" if crs_flagged else "no CRS finding (verified/review/unknown raise none)",
-            "flags": [{"day": f.get("day"), "severity": f.get("severity"), "crs": CRS_FINDING in str(f.get("reason") or "")} for f in mine],
+            "flags": [{"day": f.get("day"), "severity": f.get("severity"), "crs": is_crs_flag(f.get("reason"))} for f in mine],
             "expenses": [
                 {"id": x.get("id"), "added_for_day": 1 if x.get("id") in day1_pid else 0, "status": x.get("status")}
                 for x in expenses
