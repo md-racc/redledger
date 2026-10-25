@@ -353,6 +353,27 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 @media (max-width: 1100px) { .lnd-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lnd-col:nth-child(odd) { border-left: 0; } .lnd-col { border-top: 1px solid var(--line); } }
 @media (max-width: 640px) { .lnd-cols { grid-template-columns: 1fr; } .lnd-col { border-left: 0; } }
 
+/* the evolution card fits the screen: its header stays put and the rest scrolls, so the title and the close button are never cut off */
+.evo { max-height: min(560px, calc(100vh - var(--bar) - 2 * var(--pad))); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.evo header { position: sticky; top: 0; z-index: 2; background: var(--panel); flex-wrap: wrap; row-gap: 8px; }
+.evo header .cmp-kicker { flex: 1 1 12em; min-width: 0; }
+.evo-toggle { margin-left: auto; font-family: var(--caps); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; padding: 5px 10px; border: 1px solid var(--line-2); background: transparent; color: var(--ink-2); border-radius: 0; cursor: pointer; }
+.evo-toggle:hover, .evo-toggle:focus-visible { border-color: var(--ink); color: var(--ink); outline: 0; }
+.evo header .evo-toggle + .icon-btn { margin-left: 0; }
+.evo-lead { padding: 10px 16px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
+.evo-lead p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.evo-lead b { font-weight: 600; margin-right: 10px; }
+.evo-lead b.tone-red { color: var(--red); } .evo-lead b.tone-blue { color: var(--blue); }
+.evo-sub { margin: 10px 0 6px; font-family: var(--caps); font-weight: 600; font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+.evo[data-detail="off"] .evo-col { padding: 12px 14px; }
+.evo[data-detail="off"] .evo-sub { margin: 8px 0 4px; }
+.evo[data-detail="off"] .evo-bars { margin-bottom: 6px; }
+.evo[data-detail="off"] .evo-chips { margin-bottom: 6px; }
+.evo[data-detail="off"] .evo-caught { margin-bottom: 6px; }
+.evo[data-detail="off"] .evo-notes { gap: 4px; }
+.evo[data-detail="off"] .evo-notes .note { padding: 5px 9px; }
+.evo[data-detail="off"] .evo-notes .note span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.evo-caught { margin: 0 0 10px; font-size: 12.5px; line-height: 1.45; color: #bcd0ee; }
 .evo-src { font-family: var(--caps); font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--amber); border: 1px solid var(--amber); padding: 3px 7px; }
 .evo-wait { margin: 0; padding: 16px; font-size: 14px; color: var(--ink-2); }
 .evo-cols { display: grid; }
