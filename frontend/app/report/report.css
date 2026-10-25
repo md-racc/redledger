@@ -301,6 +301,15 @@ body:has(.rr) {
   text-align: right;
   white-space: nowrap;
 }
+/* scheme ids, control ids and the long numeric headers kept the schemes table wider than the page (Latency was cut off):
+   let ids break anywhere and headers wrap; the figures themselves stay on one line */
+.rr-table code,
+.rr-table .rr-mono {
+  overflow-wrap: anywhere;
+}
+.rr-table thead th.rr-num {
+  white-space: normal;
+}
 .rr-table tr {
   break-inside: avoid;
 }

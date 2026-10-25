@@ -23,8 +23,8 @@ export function Loader({ progress }: { progress: number }) {
       </div>
       <div className="loader-bar"><i style={{ transform: `scaleX(${pct / 100})` }} /></div>
       <div className="loader-line">
-        <span>{model === "fallback" ? "Palace model unavailable, building a stand-in" : "Loading the Palace of Fine Arts"}</span>
-        <span>{String(pct).padStart(3, "0")}</span>
+        <span className="loader-what">{model === "fallback" ? "Palace model unavailable, building a stand-in" : "Loading the Palace of Fine Arts"}</span>
+        <span className="loader-pct">{String(pct).padStart(3, "0")}</span>
       </div>
     </div>
   );

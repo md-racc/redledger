@@ -45,9 +45,12 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .loader.is-done { opacity: 0; visibility: hidden; pointer-events: none; }
 .loader-mark { font-family: var(--caps); font-weight: 600; text-transform: uppercase; font-size: clamp(40px, 8vw, 104px); line-height: 1; letter-spacing: 0.06em; display: flex; gap: 0.35em; }
 .loader-red { color: var(--red); }
-.loader-bar { width: min(360px, 60vw); height: 1px; background: var(--line-2); overflow: hidden; }
+.loader-bar { width: min(360px, 100%); height: 1px; background: var(--line-2); overflow: hidden; }
 .loader-bar i { display: block; height: 100%; background: var(--ink); transform-origin: 0 50%; transition: transform 0.3s linear; }
-.loader-line { width: min(360px, 60vw); display: flex; justify-content: space-between; font-family: var(--caps); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+.loader-line { width: min(360px, 100%); display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; font-family: var(--caps); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+/* the percentage keeps its own column at the end of the last line; it never lands between the label's words */
+.loader-what { min-width: 0; }
+.loader-pct { flex: none; font-variant-numeric: tabular-nums; }
 
 /* ───────── title lockup ───────── */
 .title { position: fixed; inset: 0; z-index: 5; pointer-events: none; transition: opacity 0.6s; }
@@ -105,7 +108,7 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 /* the top strip: brand, state, tools */
 .hud-top { position: absolute; left: 0; right: 0; top: 0; height: var(--bar); display: flex; align-items: stretch; justify-content: space-between; background: rgba(11, 10, 8, 0.97); border-bottom: 1px solid var(--line-2); pointer-events: auto; }
 .hud-top::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 1px; background: var(--line); }
-.hud-brand { display: flex; align-items: stretch; }
+.hud-brand { display: flex; align-items: stretch; min-width: 0; overflow: hidden; }
 .brand { display: flex; align-items: center; padding: 0 var(--pad); font-family: var(--caps); font-weight: 600; font-size: 15px; letter-spacing: 0.3em; text-transform: uppercase; }
 .brand b { color: var(--red); font-weight: 600; margin-right: 0.3em; }
 .stat { display: flex; align-items: center; gap: 9px; padding: 0 16px; border-left: 1px solid var(--line); font-family: var(--caps); font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
@@ -114,7 +117,7 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .led-live { background: var(--green); } .led-offline { background: var(--red); } .led-checking { background: var(--amber); animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }
 .stat.mode-off b { color: var(--red); } .stat.mode-shadow b { color: var(--amber); } .stat.mode-enforce b { color: var(--blue); }
-.hud-actions { display: flex; align-items: stretch; }
+.hud-actions { display: flex; align-items: stretch; flex: none; }
 .hud-actions .btn { height: auto; border: 0; border-left: 1px solid var(--line); background: transparent; }
 .hud-actions .btn:hover:not(:disabled) { background: var(--ink); color: var(--bg); }
 
@@ -313,12 +316,18 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 /* ───────── compare + evolution ───────── */
 .cmp, .evo, .rep, .lnd { position: fixed; z-index: 13; left: var(--pad); right: var(--pad); bottom: var(--pad); width: auto; max-width: 1180px; margin-inline: auto; padding: 4px; background: var(--panel); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(20px); transition: opacity 0.25s var(--ease), transform 0.3s var(--ease), visibility 0s 0.3s; }
 .cmp.is-open, .evo.is-open, .rep.is-open, .lnd.is-open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; transition-delay: 0s; }
+/* a pending decision (.escalation, 460px at the left) and a bottom card used to overlap at 1920; on a wide screen the card
+   starts right of the decision instead */
+@media (min-width: 1280px) {
+  .arena:has(.escalation:not(.is-pitch)) :is(.cmp, .evo, .rep, .lnd) { left: calc(var(--pad) + 460px + 14px); }
+}
 .cmp header, .evo header, .rep header, .lnd header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
 .cmp-kicker { font-family: var(--caps); font-weight: 600; font-size: 11px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink); }
 .cmp header .icon-btn, .evo header .icon-btn, .rep header .icon-btn, .lnd header .icon-btn { margin-left: auto; width: 28px; height: 28px; }
 .cmp footer, .evo footer, .rep footer, .lnd footer { padding: 11px 16px; border-top: 1px solid var(--line-2); font-size: 13px; line-height: 1.5; color: var(--ink-3); }
-.cmp-cols { display: grid; grid-template-columns: 1fr minmax(180px, 0.45fr) 1fr; }
-.cmp-col { padding: 16px 18px 12px; opacity: 0; animation: cmpin 0.4s var(--ease) forwards; }
+/* the middle column sizes to its sum ("$10,285" at 56px is wider than a fixed share); the sides split what is left */
+.cmp-cols { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.cmp-col { min-width: 0; padding: 16px 18px 12px; opacity: 0; animation: cmpin 0.4s var(--ease) forwards; }
 .cmp-col.is-red { box-shadow: inset 0 2px 0 var(--red); }
 .cmp-col.is-blue { box-shadow: inset 0 2px 0 var(--blue); }
 .cmp-col h4 { margin: 0 0 8px; font-family: var(--caps); font-weight: 600; font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase; line-height: 1; display: flex; align-items: baseline; gap: 12px; }
@@ -327,8 +336,8 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .cmp-num span { font-family: var(--caps); font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
 .cmp-num b { font-family: var(--figures); font-weight: 600; font-size: clamp(26px, 2.8vw, 40px); line-height: 1; letter-spacing: -0.015em; font-variant-numeric: lining-nums tabular-nums; }
 .cmp-num.tone-red b { color: var(--red); } .cmp-num.tone-blue b { color: var(--blue); } .cmp-num.tone-amber b { color: var(--amber); } .cmp-num.tone-green b { color: var(--green); }
-.cmp-mid { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 5px; padding: 0 22px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); opacity: 0; animation: cmpin 0.4s var(--ease) forwards; }
-.cmp-mid b { font-family: var(--figures); font-style: italic; font-weight: 600; font-size: clamp(34px, 4vw, 56px); line-height: 1; color: var(--green); }
+.cmp-mid { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 5px; min-width: 180px; max-width: 34vw; padding: 0 22px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); opacity: 0; animation: cmpin 0.4s var(--ease) forwards; }
+.cmp-mid b { font-family: var(--figures); font-style: italic; font-weight: 600; font-size: clamp(34px, 3.4vw, 56px); line-height: 1; color: var(--green); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
 .cmp-mid span { font-family: var(--caps); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-2); }
 .cmp-mid em { font-style: normal; font-size: 13px; color: var(--red); }
 @keyframes cmpin { to { opacity: 1; } }
@@ -404,7 +413,9 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 
 /* ───────── focus: the interaction is lit, the rest is dimmed ───────── */
 .spot { position: fixed; inset: 0; z-index: 3; pointer-events: none; opacity: var(--so, 0); background: radial-gradient(circle at var(--sx, 50%) var(--sy, 50%), transparent 0, transparent calc(var(--sr, 200px) * 1), rgba(5, 4, 3, 0.28) calc(var(--sr, 200px) * 2.1), rgba(5, 4, 3, 0.5) calc(var(--sr, 200px) * 3.6)); }
-.arena[data-focus="1"] .hud-score, .arena[data-focus="1"] .hud-controls { opacity: 0.5; }
+/* the money stays readable from the back of a room: the tiles dim only a little, the buttons more */
+.arena[data-focus="1"] .hud-score { opacity: 0.88; }
+.arena[data-focus="1"] .hud-controls { opacity: 0.55; }
 .arena[data-focus="1"] .hud-score:hover, .arena[data-focus="1"] .hud-controls:hover, .arena[data-focus="1"] .hud-controls:focus-within { opacity: 1; }
 .arena[data-panel="compare"] .hud-score, .arena[data-panel="evolve"] .hud-score, .arena[data-panel="compare"] .hud-controls, .arena[data-panel="evolve"] .hud-controls, .arena[data-panel="compare"] .threat, .arena[data-panel="evolve"] .threat { opacity: 0; pointer-events: none; }
 
@@ -421,8 +432,8 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
   .seg-beat span { display: none; } .seg-beat.on span { display: block; }
   .seg-beat.on { flex-grow: 9 !important; }
   .show-caption { top: calc(var(--bar) + 48px); }
-  .cmp-cols { grid-template-columns: 1fr 1fr; }
-  .cmp-mid { grid-column: 1 / -1; order: -1; flex-direction: row; align-items: baseline; gap: 12px; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--line); }
+  .cmp-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cmp-mid { grid-column: 1 / -1; order: -1; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; max-width: none; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--line); }
   .cmp-num b { font-size: 22px; } .cmp-col h4 { font-size: 12px; }
   .evo-cols { grid-auto-flow: column; grid-auto-columns: 86%; grid-template-columns: none !important; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; max-height: 46vh; scrollbar-width: none; }
   .evo-col { scroll-snap-align: start; overflow-y: auto; max-height: 44vh; }
@@ -440,6 +451,31 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
   .rail { display: none; }
   .hud-score { left: var(--pad); right: var(--pad); bottom: auto; top: calc(var(--bar) + 52px); grid-template-columns: repeat(4, 1fr); }
   .tile { min-width: 0; padding: 8px 10px; } .tile b { font-size: 21px; }
+  /* phone money tiles: the long label gets the wide column and a smaller cut, every label is held to two lines, and the sums
+     sit on one baseline whatever the label does */
+  .hud-score { grid-template-columns: 1fr 1fr 1.25fr 0.85fr; }
+  .tile { display: flex; flex-direction: column; justify-content: space-between; padding: 8px 7px; }
+  .tile span { font-size: 8px; letter-spacing: 0.08em; line-height: 1.25; margin-bottom: 5px; }
+  .tile b { font-size: 19px; }
+  /* compare card on a phone: both columns fit, labels and tags wrap instead of pushing the ON column off screen */
+  .cmp-col { padding: 12px 10px 8px; }
+  .cmp-col h4 { flex-wrap: wrap; gap: 4px 8px; font-size: 11px; letter-spacing: 0.14em; line-height: 1.15; }
+  .cmp-num { flex-wrap: wrap; gap: 2px 6px; }
+  .cmp-num span { font-size: 8.5px; letter-spacing: 0.1em; }
+  .cmp-num b { font-size: 19px; }
+  .cmp-mid b { font-size: 30px; }
+  .cmp header { gap: 8px; padding: 10px 12px; }
+  .cmp-tabs { margin-left: 4px; }
+  .cmp-daybars { grid-template-columns: 5.5em 1fr auto; padding: 10px 12px; }
+  /* title screen: the pills take two columns (the live one under both) instead of one row off the right edge */
+  .pills { display: grid; grid-template-columns: 1fr 1fr; }
+  .pill + .pill { margin-left: 0; }
+  .pill:nth-child(2) { margin-left: -1px; }
+  .pill.live { grid-column: 1 / -1; margin-top: -1px; }
+  .pill { min-width: 0; height: 42px; font-size: 10px; letter-spacing: 0.12em; }
+  .pill span { min-width: 0; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; }
+  .pill-dot { width: 34px; flex: none; }
+  .title:has(.pill.live) .title-serif { bottom: 118px; }
   .hud-controls { left: var(--pad); right: var(--pad); max-width: none; justify-content: flex-start; }
   .hud-note { text-align: left; }
   .roster { top: auto; bottom: 120px; right: var(--pad); left: var(--pad); width: auto; max-height: 40vh; }
@@ -490,7 +526,14 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .stat.badge-live b { color: var(--green); } .stat.badge-recorded b, .stat.badge-replay b { color: var(--amber); } .stat.badge-show b { color: var(--blue); }
 .stat-agents { max-width: 46ch; overflow: hidden; text-overflow: ellipsis; }
 .stat-agents b { overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 1280px) { .stat-agents { display: none; } }
+/* the top bar must fit a 1366 laptop with every tool visible: the agents line goes first, then the padding and key hints;
+   if the state stats still run long they are clipped, never the tools (.hud-brand min-width: 0) */
+@media (max-width: 1440px) {
+  .stat-agents { display: none; }
+  .stat { padding: 0 12px; }
+  .hud-actions .btn { padding: 0 12px; }
+}
+@media (max-width: 1280px) { .hud-actions .btn kbd { display: none; } }
 
 .cmp-tabs { display: flex; gap: 0; margin-left: 14px; }
 .cmp-tabs button { font-family: var(--caps); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 5px 11px; border: 1px solid var(--line-2); border-left-width: 0; background: transparent; color: var(--ink-2); border-radius: 0; cursor: pointer; }
