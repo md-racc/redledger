@@ -214,14 +214,21 @@ def near_threshold(req: GateRequest) -> RuleHit | None:
     return None
 
 
+# Every legitimate vendor onboarded mid-episode bills its first invoice against its onboarding PO,
+# so a new vendor with no PO and no paid history is unverified at any material amount. The old
+# 0.95 x threshold floor let a $4,380 ghost-vendor invoice through on a note alone.
+UNVERIFIED_EXPOSURE_FLOOR = Decimal("1000")
+
+
 def unverified_vendor_exposure(req: GateRequest) -> RuleHit | None:
     if req.action not in INVOICE_ACTIONS:
         return None
-    if 0 <= _vendor_age(req) < 7 and _paid(req) == [] and not _invoice(req).get("po_id") and money(req.amount) >= approval_threshold() * Decimal(".95"):
+    if 0 <= _vendor_age(req) < 7 and _paid(req) == [] and not _invoice(req).get("po_id") and money(req.amount) > UNVERIFIED_EXPOSURE_FLOOR:
         return RuleHit(
             "unverified_vendor_exposure",
             3,
-            "Near-threshold or larger exposure to a new vendor has neither paid history nor an associated PO; verify onboarding before approval or payment.",
+            "Invoice of more than $1,000 from a vendor onboarded under seven days ago, with neither paid history nor an associated PO; "
+            "verify onboarding before approval or payment.",
             "block",
             "authorization",
         )
@@ -250,6 +257,58 @@ def duplicate_pair(current: dict[str, Any], paid: dict[str, Any]) -> bool:
 def duplicate_invoice(req: GateRequest) -> RuleHit | None:
     if req.action in INVOICE_ACTIONS and any(duplicate_pair(_invoice(req), p) for p in _paid(req)):
         return RuleHit("duplicate_invoice", 3, "Invoice identity duplicates a paid invoice for this vendor.", "block", "integrity")
+    return None
+
+
+# A paid invoice re-billed under a new number with a small amount nudge. Seed recurring vendors
+# bill every 30 days and are paid 2-12 days after receipt, so the prior month's payment lands at
+# least 18 days before the next invoice: a 15-day window never reaches it. Legit PO invoices
+# also never share a PO (each PO is billed once) and seed history is all PO-backed.
+NEAR_DUPLICATE_WINDOW_DAYS = 15
+NEAR_DUPLICATE_TOLERANCE = Decimal(".02")
+NEAR_DUPLICATE_FLOOR = Decimal("1000")
+
+
+def _paid_day(row: dict[str, Any]) -> int | None:
+    """Day the invoice was paid (status_day), else received_day, which is never later."""
+    for field in ("status_day", "received_day"):
+        value = row.get(field)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def duplicate_near_match(req: GateRequest) -> RuleHit | None:
+    if req.action not in INVOICE_ACTIONS:
+        return None
+    amount = money(req.amount)
+    if amount <= NEAR_DUPLICATE_FLOOR:
+        return None
+    current = _invoice(req)
+    number = str(current.get("invoice_number", "")).strip().casefold()
+    for paid in _paid(req):
+        if paid.get("id") == current.get("id") or paid.get("vendor_id") != current.get("vendor_id"):
+            continue
+        if (paid.get("po_id") or None) != (current.get("po_id") or None):
+            continue
+        # Exact and one-letter-suffix identities belong to duplicate_invoice.
+        if str(paid.get("invoice_number", "")).strip().casefold() == number or duplicate_pair(current, paid):
+            continue
+        prior = money(paid.get("amount"))
+        if prior <= 0 or abs(amount - prior) > prior * NEAR_DUPLICATE_TOLERANCE:
+            continue
+        day = _paid_day(paid)
+        if day is None or req.day - day > NEAR_DUPLICATE_WINDOW_DAYS:
+            continue
+        basis = "the same PO" if current.get("po_id") else "no PO"
+        return RuleHit(
+            "duplicate_near_match",
+            2,
+            f"Invoice {current.get('invoice_number')} for ${amount:,.2f} is within two percent of paid invoice {paid.get('invoice_number')} "
+            f"(${prior:,.2f}) from this vendor, paid {max(req.day - day, 0)} days ago against {basis}; confirm it is not a re-billing.",
+            "review",
+            "integrity",
+        )
     return None
 
 
@@ -406,6 +465,7 @@ RULES: list[Rule] = [
     near_threshold,
     threshold_split,
     duplicate_invoice,
+    duplicate_near_match,
     recent_bank_change,
     bank_change_with_open_invoices,
     no_po_from_po_vendor,
