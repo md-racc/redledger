@@ -1,0 +1,1 @@
+- 2026-10-25T07:15Z · Ad · battlefield: controls report per-scheme rows use live per-attack scores (score.live_attacks), so they reconcile with #207's decoy scoring and unattributed is never negative; next: none; blocked: none
