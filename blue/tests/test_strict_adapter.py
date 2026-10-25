@@ -219,9 +219,13 @@ async def test_keyless_dry_run_retains_uuid4_events_and_receipts(runtime, monkey
     assert effects and all(effect.tool_use_id in ids and effect.state == "confirmed" for effect in effects)
 
 
-async def test_real_live_guard_and_false_health_are_preserved(runtime, sdk):
+async def test_live_turn_runs_the_shared_sdk_session(runtime, sdk, monkeypatch):
+    # Guard lifted: a live turn must enter the shared SDK session (strict identity is
+    # asserted inside the sdk double) instead of raising the retired hard stop.
     subject, ledger, emitter = runtime(dry_run=False)
+    monkeypatch.setattr(subject.s, "droid_model", "unit-test-only")
     result = await subject.run_turn(turn())
-    assert not result.ok and "Live audit unavailable" in result.summary
-    assert not ledger.writes and not sdk.trace and not emitter.calls
-    assert (await subject.health())["droid_ok"] is False
+    assert sdk.trace[:2] == ["config", "session"] and "stream" in sdk.trace
+    assert "Live audit unavailable" not in result.summary
+    assert not ledger.writes  # The synthetic stream issues no tool calls.
+    assert (await subject.health())["droid_ok"] is False  # Health never probes the SDK.

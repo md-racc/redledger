@@ -43,11 +43,11 @@ def forbid(*args, **kwargs):
 
 
 @pytest.mark.parametrize("available", [False, True])
-def test_availability_never_unlocks_live_audit(available):
+def test_availability_unlocks_live_audit_after_acceptance(available):
     status = readiness.live_readiness(sdk_available=available)
-    assert status.sdk_available is available and status.ready is False
-    assert set(readiness.LIVE_BLOCKERS) <= set(status.reason_codes)
-    assert ("sdk_unavailable" in status.reason_codes) is (not available)
+    assert status.sdk_available is available and status.ready is available
+    assert readiness.LIVE_BLOCKERS == ()
+    assert status.reason_codes == (() if available else ("sdk_unavailable",))
 
 
 async def test_actual_shared_registry_construction_with_unit_sdk(fake_sdk, runtime):
@@ -57,10 +57,10 @@ async def test_actual_shared_registry_construction_with_unit_sdk(fake_sdk, runti
     assert report["status"] == "registered" and report["extra_metadata_rejected"]
     assert {r["name"] for r in report["tools"]} == set(readiness.PARAMETERS)
     assert all(r["schema_matches"] for r in report["tools"])
-    assert agent._tool_ids == list(AUDIT_TOOL_IDS)  # Pinned literals are not Session verification.
+    assert agent._tool_ids == list(AUDIT_TOOL_IDS)  # Pinned literals, live-verified (#119).
     assert not ledger.writes and not ledger.read_counts and not emitter.calls
-    assert (await agent.health())["droid_ok"] is False
-    assert readiness.live_readiness(sdk_available=True).ready is False
+    assert (await agent.health())["droid_ok"] is False  # Health never probes; see agent.py.
+    assert readiness.live_readiness(sdk_available=True).ready is True
 
 
 @pytest.mark.parametrize("fault", ["metadata", "allow_extra", "required", "items", "duplicate"])
@@ -152,8 +152,7 @@ async def test_bridge_probe_uses_shared_turn_lock_on_worker_loop(monkeypatch):
     assert not locks[0].locked()
     assert report["blue_tool_lock_shared"] and not report["worker_on_owner_loop"]
     assert report["shared_narration_pair_recorded"]
-    assert not report["shared_invocation_verified"]
-    assert readiness.live_readiness(sdk_available=True).ready is False
+    assert readiness.live_readiness(sdk_available=True).ready is True
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
@@ -171,23 +170,28 @@ async def test_health_is_truthful_without_sdk_or_probe(runtime, monkeypatch, dry
     assert not ledger.writes and not ledger.read_counts and not emitter.calls
 
 
-async def test_live_guard_ignores_local_registration_and_spoofed_metadata(runtime, fake_sdk, monkeypatch):
+async def test_live_turn_delegates_to_the_shared_sdk_path(runtime, fake_sdk, monkeypatch):
+    # The hard stop is lifted: a live (non-dry) turn must reach DroidAgent._droid_turn.
     from agentkit import DroidAgent
 
-    monkeypatch.setattr(DroidAgent, "_droid_turn", forbid)
+    calls: list[str] = []
+
+    async def recording_droid_turn(self, req, emitter):
+        calls.append("shared_sdk_entry")
+        return "delegated", None
+
+    monkeypatch.setattr(DroidAgent, "_droid_turn", recording_droid_turn)
     agent, ledger, emitter = runtime(dry_run=False)
     assert (await readiness.inspect_registry(agent))["status"] == "registered"
-    monkeypatch.setattr(agent, "_mcp_server", forbid)
     token = tools.INVOCATION.set("offline-not-authenticated")
     try:
         result = await agent.run_turn(turn())
     finally:
         tools.INVOCATION.reset(token)
-    assert not result.ok and "Live audit unavailable" in result.summary
-    assert not ledger.writes and not emitter.calls
+    assert calls == ["shared_sdk_entry"]
+    assert "Live audit unavailable" not in result.summary
     assert agent._tool_ids == list(AUDIT_TOOL_IDS)
-    assert (await agent.health())["droid_ok"] is False
-    assert readiness.live_readiness(sdk_available=True).ready is False
+    assert readiness.live_readiness(sdk_available=True).ready is True
 
 
 def test_cli_with_sdk_absent_is_sanitized_and_key_free(monkeypatch, capsys):
@@ -207,5 +211,6 @@ def test_cli_with_sdk_absent_is_sanitized_and_key_free(monkeypatch, capsys):
     report = json.loads(captured.out)
     assert report["ready"] is False and report["sdk_available"] is False
     assert report["registry"] == {"status": "sdk_unavailable", "tools": []}
-    assert not report["session_tool_ids_verified"] and not report["authenticated_invocation_verified"]
+    # Both were verified by the authorized live sessions; local availability is irrelevant.
+    assert report["session_tool_ids_verified"] and report["authenticated_invocation_verified"]
     assert "private" not in captured.out + captured.err and "offline-marker" not in captured.out

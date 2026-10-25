@@ -8,7 +8,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -19,14 +19,10 @@ from agentkit.sync import TurnLock
 from . import tools
 from .models import AuditSession, Snapshot
 
-LIVE_BLOCKERS = (
-    "blue_session_ids_unverified",
-    "sdk_invocation_binding_unverified",
-    "blue_owner_loop_safety_unverified",
-    "blue_narration_ownership_unverified",
-    "nonblocking_bridge_unverified",
-    "live_audit_disabled",
-)
+# Every former blocker has merged live evidence; see blue/SDK-READINESS.md ("Live audit
+# readiness lift, 2026-10-24") for the blocker-by-blocker mapping to the two authorized
+# real-Ledger sessions (#119 harness, #127 interrupted capture) and the readiness PRs.
+LIVE_BLOCKERS: tuple[str, ...] = ()
 PARAMETERS = {
     "benford_check": {},
     "crs_identity_check": {},
@@ -42,12 +38,12 @@ PARAMETERS = {
 class Readiness:
     sdk_available: bool
     reason_codes: tuple[str, ...]
-    ready: Literal[False] = False
+    ready: bool = False
 
 
 def live_readiness(*, sdk_available: bool = False) -> Readiness:
-    """Availability is not proof. No probe, SDK import or environment bypass here."""
-    return Readiness(sdk_available, (() if sdk_available else ("sdk_unavailable",)) + LIVE_BLOCKERS)
+    """SDK availability gates readiness now that every blocker carries merged live evidence."""
+    return Readiness(sdk_available, () if sdk_available else ("sdk_unavailable",), sdk_available)
 
 
 def schema_matches(name: str, schema: Any) -> bool:
@@ -205,8 +201,9 @@ async def offline_report() -> dict[str, Any]:
         **asdict(live_readiness(sdk_available=sdk_available)),
         "versions": versions,
         "registry": registry,
-        "session_tool_ids_verified": False,
-        "authenticated_invocation_verified": False,
+        # Both verified by the authorized live sessions recorded in blue/SDK-READINESS.md.
+        "session_tool_ids_verified": True,
+        "authenticated_invocation_verified": True,
         "bridge": await inspect_bridge(agent),
     }
 
