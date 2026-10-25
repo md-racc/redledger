@@ -5,6 +5,7 @@
 // /health (`dry_run`, `model`). It claims nothing the backend did not report: with no health answer the agents are "unknown".
 import type { Backend } from "./useFeed";
 import type { FeedSource } from "./store";
+import type { RecordingInfo } from "./pitch";
 
 export type Badge = "LIVE" | "RECORDED" | "REPLAY" | "SHOW" | "IDLE";
 export type AgentMode = "live" | "keyless" | "down" | "unknown";
@@ -18,6 +19,8 @@ export interface Provenance {
   /** "red live (gpt-5.4-mini) · green keyless · blue keyless" */
   agentsLine: string;
   episode: string | null;
+  /** a real run played back: the day it was recorded on prod */
+  recordedOn: string | null;
 }
 
 const MEANING: Record<Badge, string> = {
@@ -28,8 +31,21 @@ const MEANING: Record<Badge, string> = {
   IDLE: "Nothing is running yet.",
 };
 
-export function provenance(input: { backend: Backend; source: FeedSource; inShow: boolean; episodeId: string | null }): Provenance {
+export function provenance(input: { backend: Backend; source: FeedSource; inShow: boolean; episodeId: string | null; recording?: RecordingInfo | null }): Provenance {
   const { backend, source, inShow, episodeId } = input;
+  // a real prod run played back (pitch mode's fallback): RECORDED, with the agents as they ran then, and when
+  const rec = source === "mock" && input.recording ? input.recording : null;
+  if (rec) {
+    const agents = (["red", "green", "blue"] as const).map((name): AgentProvenance => ({ name, mode: rec.agents[name].mode, ...(rec.agents[name].model ? { model: rec.agents[name].model } : {}) }));
+    return {
+      badge: "RECORDED",
+      meaning: `A real run recorded on prod on ${rec.date} (${rec.episodeId}), played back: no agent is running for it now.`,
+      agents,
+      agentsLine: line(agents),
+      episode: rec.episodeId,
+      recordedOn: rec.date,
+    };
+  }
   let badge: Badge;
   if (episodeId?.startsWith("replay_")) badge = "REPLAY";
   else if (source === "live") badge = inShow ? "SHOW" : "LIVE";
@@ -44,6 +60,7 @@ export function provenance(input: { backend: Backend; source: FeedSource; inShow
     if (h.ok === false) return { name, mode: "down" };
     return { name, mode: h.dry_run ? "keyless" : "live", ...(h.dry_run ? {} : h.model ? { model: h.model } : {}) };
   });
-  const agentsLine = agents.map((a) => `${a.name} ${a.mode}${a.model ? ` (${a.model})` : ""}`).join(" · ");
-  return { badge, meaning, agents, agentsLine, episode: episodeId };
+  return { badge, meaning, agents, agentsLine: line(agents), episode: episodeId, recordedOn: null };
 }
+
+const line = (agents: AgentProvenance[]) => agents.map((a) => `${a.name} ${a.mode}${a.model ? ` (${a.model})` : ""}`).join(" · ");
