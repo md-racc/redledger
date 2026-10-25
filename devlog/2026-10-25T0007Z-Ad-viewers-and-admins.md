@@ -1,0 +1,1 @@
+- 2026-10-25T00:07Z · Ad · frontend (for R): public viewers + ADMIN_KEY admins (server-enforced in the /api/bf proxy, rate-limited, lineage export admin-only), every window joins the current run, recorded fallback only when the backend is unreachable; next: Ad sets ADMIN_KEY then approves deploy; blocked: none

@@ -1,5 +1,7 @@
 // POST /api/sync        publish what a visitor did (the arena) or announce a laptop (hello); GET /api/sync?after=<seq> read it back.
 // The relay between the four laptops: see lib/sync/hub.ts. Owner: Dev R.
+// Publishing is for admins (the laptops; lib/admin.ts): a public visitor must not drive the backstage consoles. Reading stays public.
+import { requestRole } from "@/lib/admin";
 import { isCrossSiteMutation } from "@/lib/proxy";
 import { hub } from "@/lib/sync/hub";
 
@@ -10,6 +12,7 @@ const noStore = { "cache-control": "no-store" };
 
 export async function POST(req: Request): Promise<Response> {
   if (isCrossSiteMutation("POST", req.headers)) return Response.json({ error: "cross-site request refused" }, { status: 403, headers: noStore });
+  if (requestRole(req.headers) !== "admin") return Response.json({ error: "viewer" }, { status: 403, headers: noStore });
   const text = await req.text();
   if (text.length > 4000) return Response.json({ error: "too large" }, { status: 413, headers: noStore });
   let body: unknown;

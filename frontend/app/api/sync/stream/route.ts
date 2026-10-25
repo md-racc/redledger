@@ -1,24 +1,33 @@
 // GET /api/sync/stream: the relay as Server-Sent Events. One `snapshot` event on connect (state plus what is kept), then a `msg` or
 // `traffic` event per item as it happens. Owner: Dev R.
+// Public, so the number of open streams is capped (lib/ratelimit.ts MAX_SYNC_STREAMS): beyond it, 503 and the client falls back to
+// polling GET /api/sync (lib/sync/client.ts).
+import { syncStreamSlots } from "@/lib/ratelimit";
 import { hub } from "@/lib/sync/hub";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request): Promise<Response> {
+  const release = syncStreamSlots().acquire();
+  if (!release) {
+    return Response.json({ error: "too many streams" }, { status: 503, headers: { "cache-control": "no-store", "retry-after": "10" } });
+  }
   const enc = new TextEncoder();
   let off = () => {};
   let ping: ReturnType<typeof setInterval> | undefined;
+  const end = () => { off(); clearInterval(ping); release(); };
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const send = (event: string, data: unknown) => controller.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      const close = () => { off(); clearInterval(ping); try { controller.close(); } catch { /* already closed */ } };
+      const close = () => { end(); try { controller.close(); } catch { /* already closed */ } };
       send("snapshot", hub().snapshot(0));
       off = hub().subscribe((item) => send(item.type, item));
       ping = setInterval(() => { try { controller.enqueue(enc.encode(": ping\n\n")); } catch { close(); } }, 15_000);
-      req.signal.addEventListener("abort", close);
+      if (req.signal.aborted) close();
+      else req.signal.addEventListener("abort", close);
     },
-    cancel() { off(); clearInterval(ping); },
+    cancel() { end(); },
   });
   return new Response(stream, {
     headers: {

@@ -1,8 +1,9 @@
-// POST /api/voice/transcribe   multipart `audio` (a WAV from the browser) → { text, language, probability }
+// POST /api/voice/transcribe   multipart `audio` (a WAV from the browser) → { text, language, probability }; admins only (403 {error: viewer})
 // GET  /api/voice/transcribe   → { configured } so the UI can say "type it" instead of letting someone record into nothing
 //
 // "Speak a fraud scheme" (the attack console's microphone): the speech-to-text key lives here, server-side, and nowhere else.
 // See lib/voice/transcribe.ts. Owner: Dev R.
+import { requestRole } from "@/lib/admin";
 import { isCrossSiteMutation } from "@/lib/proxy";
 import { MAX_AUDIO_BYTES, transcribeAudio, VOICE_MESSAGES, voiceConfig, type VoiceErrorCode } from "@/lib/voice/transcribe";
 
@@ -30,6 +31,8 @@ export async function GET(): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   if (isCrossSiteMutation("POST", req.headers)) return Response.json({ error: "cross-site request refused" }, { status: 403, headers: noStore });
+  // the site is public (lib/admin.ts) and this call spends the owner's speech credits: only the admin laptops may make it
+  if (requestRole(req.headers) !== "admin") return Response.json({ error: "viewer" }, { status: 403, headers: noStore });
   const cfg = voiceConfig();
   if (!cfg) return err(503, "voice_not_configured");
   const declared = Number(req.headers.get("content-length") ?? 0);

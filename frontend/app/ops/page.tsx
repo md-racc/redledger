@@ -1,17 +1,31 @@
 "use client";
 // Skeleton page proving the data path: state from the reducer, fed by WS or fixture. Owner: Dev R.
 // Everything visual is yours to replace. The data wiring below is the part worth keeping.
+// On load it joins the run that is going (lib/arena/useActiveRun.ts: a running episode, or a running lineage's current generation),
+// waits for one when nothing runs, and follows a lineage to its next generation. Only admins see the buttons that change the sim.
 import { useEffect, useReducer, useState } from "react";
 import { api } from "@/lib/api";
+import { parseActiveRun } from "@/lib/arena/activeRun";
+import { useActiveRun } from "@/lib/arena/useActiveRun";
 import { loadFixture, replay } from "@/lib/mock";
 import { attacksByDay, blockedVerdicts, initialState, openEscalations, reduce } from "@/lib/reducer";
+import { useRole } from "@/lib/role";
+import type { RLEvent, UIState } from "@/lib/types";
 import { connect } from "@/lib/ws";
 
 const MOCK = process.env.NEXT_PUBLIC_MOCK === "true";
 
+type Action = RLEvent | { type: "__reset" };
+const wrapped = (s: UIState, a: Action): UIState => (a.type === "__reset" ? initialState() : reduce(s, a as RLEvent));
+
 export default function Page() {
-  const [state, dispatch] = useReducer(reduce, undefined, initialState);
+  const [state, dispatch] = useReducer(wrapped, undefined, initialState);
   const [episodeId, setEpisodeId] = useState<string | null>(null);
+  const admin = useRole() === "admin";
+  const active = useActiveRun({ enabled: !MOCK });
+
+  // the run on stage is the one to show; when it ends it stays on screen until the next one starts
+  useEffect(() => { if (active.run) setEpisodeId(active.run.episodeId); }, [active.run]);
 
   useEffect(() => {
     if (MOCK) {
@@ -20,13 +34,23 @@ export default function Page() {
       return () => cancel();
     }
     if (!episodeId) return;
+    dispatch({ type: "__reset" });
     return connect(episodeId, dispatch);
   }, [episodeId]);
 
   async function newEpisode(mode: "off" | "shadow" | "enforce") {
     const ep = await api.createEpisode({ controller_mode: mode, seed: 42, days: 5 });
-    setEpisodeId(ep.id);
-    await api.start(ep.id);
+    try {
+      await api.start(ep.id);
+      setEpisodeId(ep.id);
+    } catch (e) {
+      // another run is active: show that one instead
+      const found = parseActiveRun(e);
+      if (!found) throw e;
+      if (found.episodeId) setEpisodeId(found.episodeId);
+    } finally {
+      active.refresh();
+    }
   }
 
   const esc = openEscalations(state);
@@ -37,7 +61,7 @@ export default function Page() {
         <span>episode: {state.episodeId ?? "—"}</span>
         <span>day {state.currentDay}/{state.days}</span>
         <span>controller: {state.controllerMode}</span>
-        {!MOCK && (
+        {!MOCK && admin && (
           <>
             <button className="border px-2" onClick={() => newEpisode("off")}>new (off)</button>
             <button className="border px-2" onClick={() => newEpisode("enforce")}>new (enforce)</button>
@@ -59,8 +83,8 @@ export default function Page() {
           {esc.map((e) => (
             <div key={e.escalation_id} className="flex gap-3 items-center">
               <span>{e.action} ${e.amount?.toLocaleString()} — {e.reason}</span>
-              <button className="border px-2" onClick={() => api.resolve(e.escalation_id, "approve")}>approve</button>
-              <button className="border px-2" onClick={() => api.resolve(e.escalation_id, "block")}>block</button>
+              {admin && <button className="border px-2" onClick={() => api.resolve(e.escalation_id, "approve")}>approve</button>}
+              {admin && <button className="border px-2" onClick={() => api.resolve(e.escalation_id, "block")}>block</button>}
             </div>
           ))}
         </section>

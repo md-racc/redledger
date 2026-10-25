@@ -4,6 +4,7 @@ import {
   STEP_TIMEOUT_MS,
   downstreamResponseHeaders,
   isCrossSiteMutation,
+  isOperatorOnlyPath,
   runtimeEnv,
   timeoutFor,
   upstreamConfig,
@@ -113,6 +114,17 @@ describe("headers", () => {
     expect(h.get("content-type")).toBe("text/markdown; charset=utf-8");
     for (const n of ["set-cookie", "www-authenticate", "connection", "transfer-encoding", "content-encoding", "content-length"]) {
       expect(h.get(n), n).toBeNull();
+    }
+  });
+});
+
+describe("operator-only reads", () => {
+  it("matches the lineage export however it is spelled, and nothing else", () => {
+    for (const p of ["/api/bf/lineages/ln_1/export", "/api/bf/lineages/ln_1/export/", "/api/bf/lineages/ln_1/%65xport", "/api/bf/LINEAGES/ln_1/EXPORT", "/api/bf/lineages/ln%2D1/export"]) {
+      expect(isOperatorOnlyPath(p), p).toBe(true);
+    }
+    for (const p of ["/api/bf/lineages", "/api/bf/lineages/ln_1", "/api/bf/lineages/ln_1/start", "/api/bf/fe/lineages/ln_1/report", "/api/bf/lineages/ln_1/export/x", "/api/bf/x/lineages/ln_1/export"]) {
+      expect(isOperatorOnlyPath(p), p).toBe(false);
     }
   });
 });

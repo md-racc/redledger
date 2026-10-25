@@ -10,6 +10,7 @@ import type { Feed } from "@/lib/arena/useFeed";
 import type { ControllerMode } from "@/lib/types";
 import type { ShowController } from "../useShow";
 import { ThreatConsole } from "./ThreatConsole";
+import { useRole } from "@/lib/role";
 
 const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const MODES: ControllerMode[] = ["off", "shadow", "enforce"];
@@ -35,6 +36,8 @@ export function Hud({ feed, show }: { feed: Feed; show: ShowController }) {
   };
   const [threat, setThreat] = useState(false);
   const { state, source } = feed;
+  // viewers watch: everything that changes the sim is disabled for them (the proxy refuses it anyway; lib/admin.ts)
+  const admin = useRole() === "admin";
   const arenaFormed = simPhase === "engaged" || simPhase === "converging";
   const inShow = show.status === "playing" || show.status === "paused";
 
@@ -88,13 +91,13 @@ export function Hud({ feed, show }: { feed: Feed; show: ShowController }) {
         <Tile label="Caught" value={`${state.score.attacks_caught}/${state.score.attacks_launched}`} tone="green" />
       </section>
 
-      <ThreatConsole open={threat && !inShow} mode={state.controllerMode} onClose={() => setThreat(false)} onLaunch={feed.launchAttack} />
+      <ThreatConsole open={threat && !inShow && admin} mode={state.controllerMode} onClose={() => setThreat(false)} onLaunch={feed.launchAttack} />
 
       <section className="hud-controls">
-        <button className="btn primary" onClick={() => void feed.run(state.controllerMode === "off" ? "enforce" : state.controllerMode)} disabled={feed.running}>
+        <button className="btn primary" onClick={() => void feed.run(state.controllerMode === "off" ? "enforce" : state.controllerMode)} disabled={feed.running || !admin}>
           {feed.running && <i className="dot" />}{feed.running ? "Running" : state.episodeId ? "Run again" : "Run episode"}
         </button>
-        <button className={`btn ${threat ? "armed" : ""}`} onClick={() => setThreat((v) => !v)} aria-expanded={threat}>Launch attack</button>
+        <button className={`btn ${threat ? "armed" : ""}`} onClick={() => setThreat((v) => !v)} aria-expanded={threat} disabled={!admin}>Launch attack</button>
         <button className="btn" onClick={() => setPanel(panel === "compare" ? null : "compare")}>Compare</button>
         <button className="btn" onClick={() => setPanel(panel === "evolve" ? null : "evolve")}>Evolution</button>
         <button className="btn" onClick={() => (arenaFormed ? actions.disperse() : actions.converge())}>
@@ -102,7 +105,7 @@ export function Hud({ feed, show }: { feed: Feed; show: ShowController }) {
         </button>
         <div className="seg" role="group" aria-label="Controller mode">
           {MODES.map((m) => (
-            <button key={m} className={state.controllerMode === m ? "on" : ""} onClick={() => void feed.setController(m).catch(() => {})}>{m}</button>
+            <button key={m} className={state.controllerMode === m ? "on" : ""} onClick={() => void feed.setController(m).catch(() => {})} disabled={!admin}>{m}</button>
           ))}
         </div>
         <p className="hud-note">{feed.note}{model === "fallback" ? " · stand-in palace" : ""}</p>
@@ -124,6 +127,7 @@ function Tile({ label, value, tone }: { label: string; value: string; tone: stri
 
 /** Open escalations are a human decision (README §3): approve or block right from the arena, against the clock. */
 function EscalationBar({ feed }: { feed: Feed }) {
+  const admin = useRole() === "admin";
   const open = Object.values(feed.state.escalations).filter((e) => e.status === "open");
   const e = open[0];
   const [left, setLeft] = useState(0);
@@ -150,8 +154,8 @@ function EscalationBar({ feed }: { feed: Feed }) {
         <ul>{x.why.map((w) => <li key={w}>{w}</li>)}</ul>
       </div>
       <div className="escalation-act">
-        <button className="esc-btn approve" onClick={() => void feed.resolveEscalation(e.escalation_id, "approve").catch(() => {})}><b>{x.approve.label}</b><span>{x.approve.result}</span></button>
-        <button className="esc-btn block" onClick={() => void feed.resolveEscalation(e.escalation_id, "block").catch(() => {})}><b>{x.block.label}</b><span>{x.block.result}</span></button>
+        <button className="esc-btn approve" disabled={!admin} onClick={() => void feed.resolveEscalation(e.escalation_id, "approve").catch(() => {})}><b>{x.approve.label}</b><span>{x.approve.result}</span></button>
+        <button className="esc-btn block" disabled={!admin} onClick={() => void feed.resolveEscalation(e.escalation_id, "block").catch(() => {})}><b>{x.block.label}</b><span>{x.block.result}</span></button>
       </div>
       <p className="escalation-foot">If nobody decides before the clock runs out, it is blocked.</p>
     </div>

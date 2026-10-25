@@ -82,6 +82,24 @@ export function upstreamPath(pathname: string): string | null {
   return `/api/${rest}`;
 }
 
+/**
+ * Battlefield routes that carry ground truth ("Operator only") and that no screen reads: admins only, even for GET.
+ * Matched on the decoded, lower-cased upstream path segments, so `%65xport`, `EXPORT` or a trailing slash can't slip past.
+ */
+const OPERATOR_ONLY: RegExp[] = [/^\/api\/lineages\/[^/]+\/export$/];
+
+export function isOperatorOnlyPath(pathname: string): boolean {
+  const path = upstreamPath(pathname.replace(/\/+$/, ""));
+  if (!path) return false; // refused as an invalid path anyway, never forwarded
+  let normalized: string;
+  try {
+    normalized = path.split("/").map((s) => decodeURIComponent(s).toLowerCase()).join("/");
+  } catch {
+    return true;
+  }
+  return OPERATOR_ONLY.some((re) => re.test(normalized));
+}
+
 /** Full upstream URL, re-checked so it can only land on battlefield's origin under `/api/`. */
 export function upstreamUrl(battlefieldUrl: string, path: string, search: string): string | null {
   let base: URL;
