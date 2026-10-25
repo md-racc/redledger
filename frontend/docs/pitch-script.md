@@ -40,7 +40,7 @@ And when blue isn't sure, it does what a good employee does. It asks a person. I
 
 *[1:05, compare]*
 
-Same crime. Different ending. In this recording, anyway. I'll tell you what the live numbers look like.
+Same crime. Different ending. In this recording, anyway. The real run is a minute away.
 
 *[1:15, evolution]*
 
@@ -130,7 +130,9 @@ R.
 
 Would I hire an AI to run accounts payable? Not today. Not without proof. But now you can get proof: put an agent in a company, hand it a real attacker, and measure what the controls catch and what they cost.
 
-Here's what live looks like. Real agents, ten days, same seed. No controller: about ten thousand dollars lost. Controller on: about eighteen hundred. Not zero.
+*[Open Compare on laptop 1 and click Real run. Numbers on screen: $10,285 and $1,824.]*
+
+Here's a real run. Red live, ten days, same seed. No controller: about ten thousand dollars lost. Controller on: about eighteen hundred. Not zero.
 
 And to be straight about where we are: red is a live agent. Green and blue run their full logic keyless, and their live sessions are still clearing our safety checks. The show was a recording, and that learning card is a recorded live run.
 

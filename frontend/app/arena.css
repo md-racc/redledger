@@ -451,3 +451,17 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .stat-agents { max-width: 46ch; overflow: hidden; text-overflow: ellipsis; }
 .stat-agents b { overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 1280px) { .stat-agents { display: none; } }
+
+.cmp-tabs { display: flex; gap: 0; margin-left: 14px; }
+.cmp-tabs button { font-family: var(--caps); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 5px 11px; border: 1px solid var(--line-2); border-left-width: 0; background: transparent; color: var(--ink-2); border-radius: 0; cursor: pointer; }
+.cmp-tabs button:first-child { border-left-width: 1px; }
+.cmp-tabs button:hover, .cmp-tabs button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.cmp-days { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--line); }
+.cmp-daybars { display: grid; grid-template-columns: 7em 1fr auto; align-items: end; gap: 10px; padding: 10px 18px; }
+.cmp-daybars + .cmp-daybars { border-left: 1px solid var(--line); }
+.cmp-daybars span { font-family: var(--caps); font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); align-self: center; }
+.cmp-daybars div { display: flex; align-items: flex-end; gap: 3px; height: 38px; }
+.cmp-daybars i { flex: 1; background: var(--red); min-height: 3px; }
+.cmp-daybars.tone-blue i { background: var(--blue); }
+.cmp-daybars b { font-family: var(--figures); font-weight: 600; font-size: 18px; font-variant-numeric: lining-nums tabular-nums; align-self: center; }
+@media (max-width: 760px) { .cmp-days { grid-template-columns: 1fr; } .cmp-daybars + .cmp-daybars { border-left: 0; border-top: 1px solid var(--line); } }
