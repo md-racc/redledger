@@ -14,6 +14,6 @@ mkdir -p /opt/redledger && chown deploy:deploy /opt/redledger
 sudo -u deploy git clone "https://github.com/$REPO.git" /opt/redledger || true
 echo
 echo "Now: (1) add the deploy user's SSH key: public half in ~deploy/.ssh/authorized_keys; repo secrets VULTR_SSH_KEY (private half), VULTR_HOST=<ip>, VULTR_USER=deploy"
-echo "     (2) fill the GitHub 'production' environment (secrets + variables, DOMAIN=$DOMAIN) per deploy/OWNER-CHECKLIST.md §2"
+echo "     (2) fill the GitHub 'production' environment (secrets + variables, DOMAIN=$DOMAIN) per OPERATIONS.md (Environment variables)"
 echo "     (3) docker login ghcr.io as deploy once (read:packages PAT) so compose can pull"
 echo "     (4) set repo variable DEPLOY_ENABLED=true, then run deploy.yml (workflow_dispatch); it renders .env and rolls the stack"
