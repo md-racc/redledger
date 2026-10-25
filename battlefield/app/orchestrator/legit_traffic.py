@@ -52,7 +52,26 @@ BANK_CHANGE_REASONS = [
     "We moved our operating account to {bank}. Updated remittance instructions and a voided cheque are attached.",
     "Our AR team has a new collection account at {bank} as of this month. Please update the account on file.",
     "Account change following our bank's merger with {bank}. Routing is unchanged; please update the account number.",
+    "We have migrated to a new banking partner effective this month; please update remittance details for all open and future invoices.",
 ]
+
+# Free text on legit rows. Without it legit memos were always "" and line items a bare category, so
+# a non-empty memo or a descriptive line item alone told red's rows apart (invariant 4). Drawn from
+# a separate RNG stream (_rng(..., "text")), so the amounts, vendors and days of the day's traffic
+# are unchanged for a given seed.
+EXPENSE_MEMOS = {
+    "travel": ["Client site visit — mileage and lodging", "Airfare to regional office", "Taxi to client meeting", "travel reimbursement"],
+    "meals": ["Team dinner, {n} attendees", "Client lunch", "Working lunch during inventory count", "meals reimbursement"],
+    "software": ["Annual license renewal", "Monthly SaaS subscription", "Design tool seat", "software reimbursement"],
+    "supplies": ["Field kit and replacement parts", "Printer toner and paper", "Packing materials", "supplies reimbursement"],
+}
+
+
+def _line_desc(text: random.Random, category: str | None, po_desc: str | None = None) -> str:
+    cat = category or "services"
+    return text.choice([po_desc or cat, cat, "services", f"{cat} — monthly", f"{cat} — {text.choice(['order', 'service call', 'replenishment'])}"])
+
+
 BANKS = ["First Harbor Bank", "Pacific Trust", "Meridian National", "Summit Federal", "Northgate Bank", "Bayview Credit Union"]
 
 
@@ -149,15 +168,18 @@ async def inject(episode_id: str, seed: int, day: int) -> dict[str, int]:
             day - FIRST_INVOICE_MAX_DELAY,
         )
     ]
+    text = _rng(seed, day, "text")
     for _ in range(rng.randint(3, 6)):
         if open_pos and rng.random() < 0.8:
             po = open_pos.pop(rng.randrange(len(open_pos)))
             vid, po_id = po["vendor_id"], po["id"]
             amount = round(float(po["amount"]) * rng.uniform(0.97, 1.03), 2)  # small legit variance
+            desc = _line_desc(text, None, po["description"])
         else:
             v = rng.choice(vendors)
             vid, po_id = v["id"], None
             amount = round(rng.uniform(150, 2500), 2)
+            desc = _line_desc(text, v.get("category"))
         await db.execute(
             "INSERT INTO invoices (id, episode_id, vendor_id, po_id, amount, invoice_number, line_items, received_day, due_day, origin) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'sim')",
             db.new_id("inv"),
@@ -166,7 +188,7 @@ async def inject(episode_id: str, seed: int, day: int) -> dict[str, int]:
             po_id,
             amount,
             f"INV-{rng.randint(10000, 99999)}",
-            [{"desc": "services", "amount": amount}],
+            [{"desc": desc, "amount": amount}],
             day,
             day + 30,
         )
@@ -178,14 +200,15 @@ async def inject(episode_id: str, seed: int, day: int) -> dict[str, int]:
         if not e:
             break
         amount = round(rng.uniform(20, 600), 2)
+        category = rng.choice(["travel", "meals", "software", "supplies"])
         await db.execute(
             "INSERT INTO expenses (id, episode_id, employee_id, amount, category, memo, submitted_day, origin) VALUES ($1,$2,$3,$4,$5,$6,$7,'sim')",
             db.new_id("exp"),
             episode_id,
             e["id"],
             amount,
-            rng.choice(["travel", "meals", "software", "supplies"]),
-            "",
+            category,
+            text.choice(EXPENSE_MEMOS[category]).format(n=text.randint(2, 6)),
             day,
         )
         counts["expenses"] += 1
@@ -278,7 +301,7 @@ async def _new_vendor_first_invoices(episode_id: str, seed: int, day: int) -> in
             r["po_id"],
             amount,
             f"{_initials(r['name'])}-{rng.randint(1000, 9999)}",
-            [{"desc": r["category"] or "services", "amount": amount}],
+            [{"desc": _line_desc(_rng(seed, day, f"first_invoice_text:{r['created_day']}"), r["category"]), "amount": amount}],
             day,
             day + 30,
         )
