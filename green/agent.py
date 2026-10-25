@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from playbook import reflect_playbook
+import structlog
+from playbook import playbook_prompt_section, reflect_playbook
 from preparation import PreparationDecision, decide_preparation, preparation_for
 from workflow import Key, clerk_scope, run_clerk, state
 
@@ -18,6 +19,8 @@ from agentkit.tools import ToolFn
 PREREQUISITE = "Green live integration prerequisite: SDK permission, restriction, identity and cancellation acceptance are required before Droid execution."
 
 # Observed on canonical #94 with SDK 0.5.0 / MCP 1.30.0; contracts Finding #96.
+log = structlog.get_logger(__name__)
+
 AP_TOOL_IDS = (
     "green-ledger___ap_queue",
     "green-ledger___approve_expense",
@@ -66,7 +69,17 @@ class GreenAgent(DroidAgent):
         return collect_tools(green_tools)
 
     async def build_prompt(self, req: TurnRequest) -> str:
-        return f"Day {req.day}. Follow the AP procedure in your system prompt. Start with ap_queue."
+        prompt = f"Day {req.day}. Follow the AP procedure in your system prompt. Start with ap_queue."
+        lineage = req.options.get("lineage")
+        if not isinstance(lineage, dict):
+            return prompt  # Plain episode: no playbook read, no behavior change.
+        playbook: dict[str, Any] | None = None
+        try:
+            playbook = await ctx.ledger().get_playbook()
+        except Exception as e:  # A playbook read must never cost green its turn.
+            log.warning("playbook_read_failed", agent=self.name, episode_id=req.episode_id, day=req.day, status=getattr(e, "status", None))
+        section = playbook_prompt_section(playbook, lineage)
+        return prompt if not section else f"{prompt}\n\n{section}"
 
     async def reflect(self, req: ReflectRequest) -> ReflectResponse:
         return reflect_playbook(req)
