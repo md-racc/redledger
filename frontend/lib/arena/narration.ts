@@ -86,7 +86,7 @@ export function captionFor(e: RLEvent, days = 0): Caption | null {
       const reason = humanReason(p);
       const amt = money(p.amount);
       const what = `${actionWords(p.action)}${amt ? ` · ${amt}` : ""}`;
-      if (p.verdict === "escalate") return { key: `esc:${reason}`, tone: "amber", tag: "Blue asks a human", text: reason, sub: `${cap(what)}. Approve or block it, on the card.` };
+      if (p.verdict === "escalate") return { key: `esc:${reason}`, tone: "amber", tag: "Blue asks a human", text: reason, sub: `${cap(what)}. A person decides, on the card.` };
       const would = p.enforced === false;
       return { key: `block:${would}:${reason}`, tone: "blue", tag: would ? "Blue would block (shadow)" : "Blue blocks", text: reason, sub: cap(what) };
     }

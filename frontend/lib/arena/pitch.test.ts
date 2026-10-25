@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { RLEvent } from "../types";
-import { buildPitchFallback, PITCH_DAYS, PITCH_FALLBACK, pitchEpisode, pitchQuery, pitchStatus, planPitch } from "./pitch";
+import { buildPitchFallback, canApprove, PITCH_DAYS, PITCH_FALLBACK, pitchEpisode, pitchQuery, pitchStatus, planPitch, willAutoBlock } from "./pitch";
+import { claimIntroLen, INTRO_SECONDS, releaseIntroLen, SHOW_INTRO_SECONDS, timeline } from "./timeline";
 import { ScriptRunner } from "./script";
 
 const read = (p: string) => readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as RLEvent);
@@ -107,5 +108,32 @@ describe("pitch mode: the recorded fallback", () => {
     const resolved = out.filter((e) => e.type === "escalation.resolved");
     expect(resolved.map((e) => (e.payload as { decision: string; by: string }))).toEqual([{ escalation_id: expect.any(String), decision: "block", by: "auto-block" }, { escalation_id: expect.any(String), decision: "block", by: "auto-block" }]);
     expect(held).toBeGreaterThanOrEqual(2 * 5_000 - 100);
+  });
+});
+
+describe("pitch mode: who blocks, who may approve", () => {
+  it("counts down to the auto-block only in a window that will block: an admin's, or one playing a recording itself", () => {
+    expect(willAutoBlock({ mockOnly: false, admin: true, source: "live" })).toBe(true);
+    expect(willAutoBlock({ mockOnly: false, admin: false, source: "live" })).toBe(false);
+    expect(willAutoBlock({ mockOnly: false, admin: false, source: "mock" })).toBe(true);
+    expect(willAutoBlock({ mockOnly: true, admin: false, source: "idle" })).toBe(true);
+  });
+  it("offers no Approve on a recording played back (its outcomes cannot change), and does on a live run", () => {
+    expect(canApprove({ recording: PITCH_FALLBACK, source: "mock" })).toBe(false);
+    expect(canApprove({ recording: null, source: "mock" })).toBe(true);
+    expect(canApprove({ recording: null, source: "live" })).toBe(true);
+  });
+});
+
+describe("the flight's length: the show and pitch mode do not undo each other", () => {
+  it("is put back only by whoever shortened it last", () => {
+    claimIntroLen("pitch", SHOW_INTRO_SECONDS);
+    releaseIntroLen("show"); // the show going "off" as pitch mode starts
+    expect(timeline.introLen).toBe(SHOW_INTRO_SECONDS);
+    claimIntroLen("show", SHOW_INTRO_SECONDS);
+    releaseIntroLen("pitch"); // pitch mode stopped by the show starting
+    expect(timeline.introLen).toBe(SHOW_INTRO_SECONDS);
+    releaseIntroLen("show");
+    expect(timeline.introLen).toBe(INTRO_SECONDS);
   });
 });

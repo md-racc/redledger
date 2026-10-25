@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ShowDirector, type ShowHost, type ShowStatus } from "@/lib/arena/show";
 import { emitShowClock, showClock } from "@/lib/arena/showClock";
 import { useArena } from "@/lib/arena/store";
-import { SHOW_INTRO_SECONDS, INTRO_SECONDS, timeline } from "@/lib/arena/timeline";
+import { SHOW_INTRO_SECONDS, claimIntroLen, releaseIntroLen, timeline } from "@/lib/arena/timeline";
 import type { Feed } from "@/lib/arena/useFeed";
 import { isAdmin } from "@/lib/role";
 
@@ -58,7 +58,7 @@ export function useShow(feed: Feed): ShowController {
         toLawns();
         timeline.introTime = 0;
         timeline.intro = 0;
-        timeline.introLen = SHOW_INTRO_SECONDS;
+        claimIntroLen("show", SHOW_INTRO_SECONDS);
         window.scrollTo(0, 0);
         st().setSkipIntro(false);
         st().setStage("intro");
@@ -123,7 +123,7 @@ export function useShow(feed: Feed): ShowController {
   }, [status, director, sync]);
 
   // outside the show the intro keeps its normal length (ArenaExperience locks the page scroll while the show runs)
-  useEffect(() => { if (status === "off" || status === "done") timeline.introLen = INTRO_SECONDS; }, [status]);
+  useEffect(() => { if (status === "off" || status === "done") releaseIntroLen("show"); }, [status]);
 
   // while the show plays, the feed does not jump to the run going on the battlefield; before and after it, it does
   useEffect(() => { feedRef.current.setFollow(status !== "playing" && status !== "paused"); }, [status]);

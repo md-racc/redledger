@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PITCH_AUTOBLOCK_MS, PITCH_SEED, PITCH_TOUR_MS, pitchQuery } from "@/lib/arena/pitch";
 import { useArena } from "@/lib/arena/store";
-import { INTRO_SECONDS, SHOW_INTRO_SECONDS, timeline } from "@/lib/arena/timeline";
+import { SHOW_INTRO_SECONDS, claimIntroLen, releaseIntroLen, timeline } from "@/lib/arena/timeline";
 import type { Feed, PitchResult } from "@/lib/arena/useFeed";
 
 /** `intro`: the flight and the tour; `on`: in the arena with the run */
@@ -38,6 +38,8 @@ export function usePitch(feed: Feed, opts: { onStart?: () => void } = {}): Pitch
   phaseRef.current = phase;
   /** the run has been asked for, in this start */
   const kicked = useRef(false);
+  /** bumped on every start and stop: the answer to a superseded request is dropped */
+  const req = useRef(0);
   const seed = useMemo(() => (typeof window === "undefined" ? PITCH_SEED : pitchQuery(window.location.search).seed), []);
 
   const start = useCallback(() => {
@@ -46,8 +48,9 @@ export function usePitch(feed: Feed, opts: { onStart?: () => void } = {}): Pitch
     st.select(null);
     st.setPanel(null);
     kicked.current = false;
+    req.current++;
     setResult(null);
-    timeline.introLen = SHOW_INTRO_SECONDS;
+    claimIntroLen("pitch", SHOW_INTRO_SECONDS);
     // replay the flight from the top, unless it has only just begun (?pitch=1 on load)
     if (st.stage !== "loading" && !(st.stage === "intro" && timeline.introTime < 1.5)) {
       st.actions.disperse();
@@ -65,8 +68,9 @@ export function usePitch(feed: Feed, opts: { onStart?: () => void } = {}): Pitch
     setPhase("off");
     setResult(null);
     kicked.current = false;
+    req.current++;
     feedRef.current.stopPitch();
-    timeline.introLen = INTRO_SECONDS;
+    releaseIntroLen("pitch"); // a no-op once the arena is reached, or when the show has taken the flight over
   }, []);
 
   // the flight is over: ask for the run, fast-forward the tour, and once in the arena send everyone in
@@ -75,10 +79,12 @@ export function usePitch(feed: Feed, opts: { onStart?: () => void } = {}): Pitch
     if (!kicked.current) {
       kicked.current = true;
       setResult("connecting");
-      void feedRef.current.pitch({ seed, autoBlockMs: PITCH_AUTOBLOCK_MS }).then(setResult, () => setResult("refused"));
+      const mine = req.current;
+      const settle = (r: PitchResult | "refused") => { if (mine === req.current) setResult(r); };
+      void feedRef.current.pitch({ seed, autoBlockMs: PITCH_AUTOBLOCK_MS }).then(settle, () => settle("refused"));
     }
     if (stage === "arena") {
-      timeline.introLen = INTRO_SECONDS;
+      releaseIntroLen("pitch");
       setPhase("on");
       useArena.getState().actions.converge();
       return;

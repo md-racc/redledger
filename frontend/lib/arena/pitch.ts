@@ -126,3 +126,10 @@ export function pitchStatus(result: "live" | "joined" | "waiting" | "recorded" |
     case "refused": return ctx.note;
   }
 }
+
+/** Will this window block an unanswered escalation itself (and so count down to it)? An admin's does, and so does any window playing
+ *  a recording on its own clock; a viewer of a live run waits for the presenter's screen or the backend's own expiry. */
+export const willAutoBlock = (w: { mockOnly: boolean; admin: boolean; source: "idle" | "live" | "mock" }): boolean => w.mockOnly || w.admin || w.source === "mock";
+
+/** A recorded escalation can only be blocked: approving it could not change the recorded outcomes, so the card offers no Approve. */
+export const canApprove = (w: { recording: RecordingInfo | null; source: "idle" | "live" | "mock" }): boolean => !(w.recording && w.source === "mock");

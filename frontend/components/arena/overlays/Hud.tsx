@@ -11,7 +11,7 @@ import type { Feed } from "@/lib/arena/useFeed";
 import type { ControllerMode } from "@/lib/types";
 import type { ShowController } from "../useShow";
 import type { PitchController } from "../usePitch";
-import { SIDE_SCREENS } from "@/lib/arena/pitch";
+import { canApprove, SIDE_SCREENS } from "@/lib/arena/pitch";
 import { Doors } from "./Doors";
 import { Raw } from "./Raw";
 import { ThreatConsole } from "./ThreatConsole";
@@ -165,6 +165,8 @@ function EscalationBar({ feed, pitch = false }: { feed: Feed; pitch?: boolean })
   if (!e) return null;
   // the backend's action id and reason are for developers: say what is about to happen, why it stopped, and what each button does
   const x = explainEscalation(e, feed.state.verdicts.find((v) => v.verdict_id === e.verdict_id));
+  // a real recording played back: its outcomes are what happened, so the only honest button is Block
+  const approvable = canApprove({ recording: feed.recording, source: feed.source });
   return (
     <div className={`escalation ${pitch ? "is-pitch" : ""}`} role="alert" style={{ ["--left" as string]: String(Math.min(1, left / total)) }}>
       {pitch && <i className="escalation-meter" aria-hidden />}
@@ -179,10 +181,10 @@ function EscalationBar({ feed, pitch = false }: { feed: Feed; pitch?: boolean })
         <ul>{x.why.map((w) => <li key={w}>{w}</li>)}</ul>
       </div>
       <div className="escalation-act">
-        <button className="esc-btn approve" disabled={!admin} onClick={() => void feed.resolveEscalation(e.escalation_id, "approve").catch(() => {})}><b>{x.approve.label}</b><span>{x.approve.result}</span></button>
+        {approvable && <button className="esc-btn approve" disabled={!admin} onClick={() => void feed.resolveEscalation(e.escalation_id, "approve").catch(() => {})}><b>{x.approve.label}</b><span>{x.approve.result}</span></button>}
         <button className="esc-btn block" disabled={!admin} onClick={() => void feed.resolveEscalation(e.escalation_id, "block").catch(() => {})}><b>{x.block.label}</b><span>{x.block.result}</span></button>
       </div>
-      <p className="escalation-foot">{pitch && !admin ? "The presenter decides. " : ""}If nobody decides before the clock runs out, it is blocked.</p>
+      <p className="escalation-foot">{approvable ? "" : "A recording: what happened next on prod stays as it was, so it can only be blocked. "}{pitch && !admin && approvable ? "The presenter decides. " : ""}If nobody decides before the clock runs out, it is blocked.</p>
       <Raw data={{ escalation: e, verdict: feed.state.verdicts.find((v) => v.verdict_id === e.verdict_id) ?? null }} />
     </div>
   );

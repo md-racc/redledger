@@ -35,7 +35,7 @@ import { RED_SCHEMES } from "./roster";
 import { publish } from "../sync/client";
 import { ScriptRunner } from "./script";
 import { buildOffAct, buildOnAct, decisionEvent, finalScoreOf, projectBaseline } from "./showScripts";
-import { buildPitchFallback, PITCH_FALLBACK, pitchEpisode, planPitch, type RecordingInfo } from "./pitch";
+import { buildPitchFallback, canApprove, PITCH_FALLBACK, pitchEpisode, planPitch, willAutoBlock, type RecordingInfo } from "./pitch";
 
 const MOCK_ONLY = process.env.NEXT_PUBLIC_MOCK === "true";
 
@@ -154,13 +154,17 @@ export function useFeed(): Feed {
   const autoBlock = useRef<number | null>(null);
   /** pitch mode's auto-block: unlike an act's, it outlives what is on screen (a joined lineage moves to its next generation) */
   const pitchBlock = useRef<number | null>(null);
+  /** bumped by every pitch request and by stopPitch: a request that is no longer the latest does nothing more */
+  const pitchSeq = useRef(0);
+  const pitchBusy = useRef(0);
   /** escalations waiting on the act's auto-block; cleared whenever what is on screen changes, so a stale id is never resolved */
   const autoBlockTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const clearAutoBlocks = () => { autoBlockTimers.current.forEach(clearTimeout); autoBlockTimers.current.clear(); setDeadlines({}); };
-  const live = useRef({ state, source, mode: "enforce" as ControllerMode, backend });
+  const live = useRef({ state, source, mode: "enforce" as ControllerMode, backend, recording: null as RecordingInfo | null });
   live.current.state = state;
   live.current.source = source;
   live.current.backend = backend;
+  live.current.recording = recording;
 
   const resolveRef = useRef<(id: string, d: "approve" | "block", by?: string) => Promise<void>>(async () => {});
 
@@ -174,7 +178,9 @@ export function useFeed(): Feed {
       if (liveKind.current === "act" || liveKind.current === "attached" || liveKind.current === "run") setRunning(false);
     }
     const blockMs = autoBlock.current ?? pitchBlock.current;
-    if (e.type === "escalation.opened" && blockMs !== null) {
+    // only a window that will actually block it counts down to the auto-block: an admin's, or one playing a recording locally.
+    // A viewer of a live run shows the backend's own expiry (the presenter's screen decides).
+    if (e.type === "escalation.opened" && blockMs !== null && willAutoBlock({ mockOnly: MOCK_ONLY, admin: isAdmin(), source: live.current.source })) {
       const id = (e.payload as { escalation_id: string }).escalation_id;
       const t = setTimeout(() => { autoBlockTimers.current.delete(t); void resolveRef.current(id, "block", "auto-block"); }, blockMs);
       autoBlockTimers.current.add(t);
@@ -527,6 +533,7 @@ export function useFeed(): Feed {
     const s = live.current.state;
     const fresh = !s.episodeId || s.finished || liveKind.current === "sandbox";
     if (fresh) reset();
+    setRecording(null); // a locally simulated attack is not the prod recording: the badge must not say it is
     setSource((x) => (x === "idle" || x === "live" ? "mock" : x));
     if (fresh) setNote("sandbox · attacks you launch play out locally");
     if (spoken) setNote(`offline · playing the closest built-in scheme to what you said: ${builtIn}`);
@@ -549,7 +556,10 @@ export function useFeed(): Feed {
   const resolveEscalation = useCallback(async (escalationId: string, decision: "approve" | "block", by = "judge") => {
     const esc = live.current.state.escalations[escalationId];
     if (esc && esc.status !== "open") return;
-    if (!MOCK_ONLY && !isAdmin()) return; // a human decision, but an admin's
+    // a human decision, but an admin's; the auto-block of a recording played in this window only touches this window
+    if (!MOCK_ONLY && !isAdmin() && !(by === "auto-block" && live.current.source !== "live")) return;
+    // a recording's outcomes are what happened: its escalations can only be blocked
+    if (!canApprove({ recording: live.current.recording, source: live.current.source }) && decision === "approve") return;
     publish("decision", { escalation_id: escalationId, decision, action: esc?.action ?? null, amount: esc?.amount ?? null });
     if (live.current.source === "live") { await api.resolve(escalationId, decision, by).catch(() => {}); return; }
     for (const r of runners.current) r.ctx.decisions[escalationId] = decision;
@@ -567,7 +577,7 @@ export function useFeed(): Feed {
     setRecording(PITCH_FALLBACK);
     const fixture = await loadFixture(PITCH_FALLBACK.fixture).catch(() => null);
     if (mine !== token.current) return;
-    if (!fixture) { setRunning(false); setNote("pitch · the recording could not be loaded"); return; }
+    if (!fixture) { setRunning(false); setRecording(null); setNote("pitch · the recording could not be loaded"); return; }
     const r = newRunner(buildPitchFallback(fixture));
     act.current = r;
     runners.current = [r];
@@ -581,16 +591,26 @@ export function useFeed(): Feed {
     setRunning(true);
     if (MOCK_ONLY) { await playPitchFallback(); return "recorded"; }
     const mine = token.current;
+    const req = ++pitchSeq.current;
+    // anything else started meanwhile (reset, a run, an act) or Esc (stopPitch) makes this request stale: it then does nothing more
+    const stale = () => mine !== token.current || req !== pitchSeq.current;
     starting.current++;
+    pitchBusy.current++;
     try {
       let reach: "live" | "offline" = "live";
       let active: CurrentRun | null = null;
-      try { active = await currentRun(api); } catch (e) { if (isUnreachable(e)) reach = "offline"; }
-      if (mine !== token.current) return "refused";
+      try { active = await currentRun(api); } catch (e) {
+        if (stale()) return "refused";
+        // the backend answered but could not say what is running (a 429, a 403): never create an episode blind
+        if (!isUnreachable(e)) { refused("pitch · could not read the run in progress", e); return "refused"; }
+        reach = "offline";
+      }
+      if (stale()) return "refused";
       const plan = planPitch({ mockOnly: MOCK_ONLY, admin: isAdmin(), reach, active });
       if (plan === "fallback") { setBackend(OFFLINE); await playPitchFallback(); return "recorded"; }
       if (plan === "join" && active) {
         if (await attach({ episodeId: active.episodeId, lineageId: active.lineageId })) return "joined";
+        if (stale()) return "refused";
         refused("pitch · the run in progress could not be found", null);
         return "refused";
       }
@@ -604,33 +624,40 @@ export function useFeed(): Feed {
       publish("run", { mode: "enforce", pitch: true, seed: opts.seed });
       try {
         const ep = await api.createEpisode(pitchEpisode(opts.seed));
-        if (mine !== token.current) return "refused";
+        if (stale()) return "refused"; // created, never started: not an active run, nothing to clean up
         episode.current = ep.id;
         liveKind.current = "run";
         cancel.current = connect(ep.id, pushLive);
         await api.start(ep.id);
+        if (stale()) return "refused"; // whatever replaced this request has already closed the socket (stop) or will watch the run
         setSource("live");
         setNote(`live · ${ep.id} · seed ${opts.seed} · red picks its own schemes`);
         api.schemes().then((schemes) => setCatalogs((c) => ({ ...c, schemes }))).catch(() => {});
         api.fe.vendors(ep.id, "spend").then((vendors) => setCatalogs((c) => ({ ...c, vendors: vendors.slice(0, 12) }))).catch(() => {});
         return "live";
       } catch (e) {
+        if (stale()) return "refused";
         cancel.current();
         cancel.current = () => {};
         liveKind.current = null;
         episode.current = null;
         const found = parseActiveRun(e);
         if (found && (await attach(found))) return "joined"; // someone started a run a moment before us: watch it
+        if (stale()) return "refused";
         if (!found && isUnreachable(e)) { setBackend(OFFLINE); await playPitchFallback(); return "recorded"; }
         refused(found ? "another run is active and could not be found" : "could not start the live run", e);
         return "refused";
       }
     } finally {
       starting.current--;
+      pitchBusy.current--;
     }
   }, [attach, playPitchFallback, pushLive, refused, reset]);
 
   const stopPitch = useCallback(() => {
+    pitchSeq.current++;
+    // Esc while the request is in flight: nothing it was about to do (create, start, attach) happens
+    if (pitchBusy.current > 0) { token.current++; setRunning(false); }
     pitchBlock.current = null;
     if (autoBlock.current === null) clearAutoBlocks(); // an act's own auto-blocks stay
   }, []);
