@@ -1,6 +1,8 @@
 # docs/devpost — track docs for the Devpost submission and the pitch
 
 Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6. Written for R (Devpost + pitch). Ad keeps them current.
+The red-and-blue-live recordings (#193, recorded 04:54–05:05Z) came after that snapshot; this file and the track docs now
+cite them where they change a claim (blue's audit cost, whether the live audit flags anything).
 
 Each file is one prize track. Each has the same ten sections: prize snapshot, our angle, a criteria → evidence
 matrix, what we have in detail, what's planned, demo beats, paste-ready Devpost copy, a claims ledger
@@ -53,7 +55,11 @@ Not submitting, or drop the claim:
   Smoke episode `ep_f9c695b3144f` (2-day enforce) finished live audits on both days, 3,806 and 4,109 credits (blue's
   `turn_usage` log; #78). That smoke predates #176, so battlefield recorded those audits as 0 and blue's `droid_ok`
   read false; from the deploy containing 6640354, `/audit` returns `usage` (#174, #176), blue's credits count toward
-  the episode and lineage caps, and `droid_ok` is truthful. Blue's `/gate`
+  the episode and lineage caps, and `droid_ok` is truthful. In the 6-day red-and-blue-live pair (#193) an audit cost
+  3.4k–18.7k credits (66,422 and 37,446 over the two runs, about 6–11k a day), so ~4k is a quiet day, not the
+  average. Every one of those 12 audits ended "0 confirmed flags, 0 confirmed freezes" (3 of them partial): on prod the
+  live audit's `raise_flag` calls were being refused by agentkit's strict tool identity check (under investigation), so
+  the live audit posts reports but has not yet flagged or frozen anything. Blue's `/gate`
   is still the deterministic rules engine plus an optional LLM advisor that is **off** on prod. The gate is not a
   Droid session. Its rules decide: some block, some escalate to a human (bank changes), and some only annotate
   (`vendor_age_lt_7d`, `near_threshold`). Real blue does **not** stop every red attack; see hyphenate.md §8.
@@ -63,7 +69,8 @@ Not submitting, or drop the claim:
 - **Judges can steer red** (#165): words typed or spoken in the attack console reach red's next turn as quoted data
   and steer which catalog scheme it picks, or that scheme's params. The **voice attack console** (#154) takes speech
   in any language, transcribed by ElevenLabs speech-to-text (key wired in #162/#163). Voice is admin-only on the site,
-  maps the words to the closest of five built-in schemes by keyword (`frontend/lib/voice/intent.ts`), and #154 was
+  maps the words to the closest of red's eight schemes by keyword (`frontend/lib/voice/intent.ts`; since #186 a test keeps
+  its eight the same as the arena roster's), and #154 was
   never tested against the real ElevenLabs service. Try one real recording on prod before relying on it.
 - **CRS (P6): end-to-end acceptance PASSED** against the live CRS sandbox from a local stack (M, ep_0181eda1c921,
   #102 at 00:09Z): P12's identity mismatch raised a high flag and blocked P12's next expense
@@ -90,6 +97,13 @@ Not submitting, or drop the claim:
   In both runs 9 of red's 10 attacks were duplicate invoices that were never paid; all the money came from one bank
   swap. In enforce, the bank-change approvals escalated and timed out to blocks, but red's own $1,824.22 invoice was
   still paid (outcome `partial`). So the enforce number is not zero.
+- **Controller off vs. on with red and blue live (#193):** seed 42, 6 days, one fixed attack plan (ghost_vendor,
+  bank_swap, threshold_split, expense_inflation, amount_drift, ghost_employee), red and blue's audit live, green keyless:
+  off `ep_89d1df6b012a` $23,681.43 extracted, 0 of 6 caught; enforce `ep_d9b561111d60` $20,350.37 extracted, 2 of 6
+  caught, $1,480 blocked, $50 false-positive cost. The splitting, drift and inflation schemes got through, and the two
+  catches came from the gate rules (the live audit flagged nothing, see above). This pair is the honest picture of the
+  controls against a harder plan; the #136 pair looks better largely because 9 of its 10 attacks were duplicate
+  invoices that were never paid either way. If you quote #136, say "with red choosing its own schemes"; don't present it as the general result.
 - The 90-second show in `frontend/` plays a recording when any agent is live (red and blue are), so it's a replay on
   prod (`frontend/public/mocks/sample.jsonl`, mock agents; `wantLive` in `frontend/components/arena/useShow.ts`). The
   live evidence is Launch attack (typed, tiles or voice) plus the backstage consoles, which since #146 join the active
@@ -99,14 +113,17 @@ Not submitting, or drop the claim:
 - **The site is public and read-only (P7, LIVE since ~04:30Z 2026-10-25; #152, #159).** Judges can open
   app.redledger.us on their own devices and watch runs live. Only the stage laptops, signed in at `/admin`, can start
   runs, launch attacks, use voice or resolve escalations; the server enforces it (viewers get 403 on anything but
-  GET/HEAD, and the lineage export is admin-only). Cloudflare Access no longer gates the site.
+  GET/HEAD; reads that say which rows are red's, such as the lineage export, attacks, the audit log and the
+  verdict × origin matrices, are admin-only; and `origin` keys are stripped from every other read a viewer gets).
+  Cloudflare Access no longer gates the site. The event socket is still the operator stream, so viewers see red's
+  attacks as they launch, which is the show.
 
 ## Planned items (the same IDs in every doc)
 
 | ID | What | Owner | Status | If it doesn't land, say |
 |---|---|---|---|---|
 | P1 | Live-red evolution lineage | Ad | DONE (`ln_f52a3df83c8d`) | — |
-| P2 | Live-red off/on recordings | Ad | DONE (#136, `docs/recordings/`) | — |
+| P2 | Live off/on recordings | Ad | DONE (#136 red live; #193 red and blue live, `docs/recordings/`) | — |
 | P3 | Evolution view in the frontend from real data | R (#117) | PARTIAL: the EvolutionCard loads the real report | "The evolution card shows the latest real lineage report" |
 | P4 | Agents live on Droid | M | Blue audit LIVE; green NOT DOING (Ad's decision, #78) | "Red and blue live on Droid; green on the same harness, keyless" |
 | P5 | Prod on the TimescaleDB image | Ad | NOT DOING for the hackathon unless it lands | "TimescaleDB proven in CI; prod on Postgres 16" |

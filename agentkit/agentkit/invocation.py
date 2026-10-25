@@ -47,9 +47,9 @@ Ledger write keys inside one invocation: the first write uses the tool_use_id ex
 (n >= 2) uses `f"{tool_use_id}:{n}"`. `put_state` / `post_input` count as writes. A caller-supplied
 `tool_use_id=` is used verbatim and never handed out again; passing one this invocation already
 used (its own id after its first write, or any `<id>:<n>` it issued) raises IdempotencyKeyReused
-before anything is sent. Green's mirror therefore
-keys `POST blue/gate` on the bare tool_use_id, which equals the X-Tool-Use-Id of the call's first
-(and for every green gated tool, only) ledger write.
+before anything is sent. Green's preparation therefore
+keys `POST /preparations` on the bare tool_use_id, which equals the X-Tool-Use-Id of the call's first
+(and for every green gated tool, only) ledger write (the green → blue mirror was removed in D1 / #80).
 """
 
 from __future__ import annotations

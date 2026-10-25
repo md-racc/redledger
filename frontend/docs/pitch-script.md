@@ -98,7 +98,7 @@ There. A person decides. Read my reason: plain English, like an auditor's note. 
 
 *[If the line says BLOCK instead, say: blocked.]*
 
-Once a day I also audit the books and freeze suspicious vendors. And I'm graded both ways: dollars blocked, and the cost of blocking someone innocent. Block everything and I lose.
+Once a day I also audit the books, live, and write a report. I can flag and freeze suspicious vendors. And I'm graded both ways: dollars blocked, and the cost of blocking someone innocent. Block everything and I lose.
 
 Red, you've been quiet.
 

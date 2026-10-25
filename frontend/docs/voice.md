@@ -61,7 +61,7 @@ so a local run needs its own copy of the key.
 Every request spends the owner's credits. **Only admins can use it** (`lib/admin.ts`): the site is public, so a viewer's POST is
 refused with `403 {"error":"viewer"}` before the key is touched, and the console disables the microphone for a viewer
 (`useRole()`). The route also refuses cross-site posts, is behind the same Cloudflare Access check as the rest
-of the site (`middleware.ts`), caps audio at 3 MB (about 90 s), the console stops listening at 45 s, and the route answers 429 after 20
+of the site when that is on (`middleware.ts`; off on prod since the site went public), caps audio at 3 MB (about 90 s), the console stops listening at 45 s, and the route answers 429 after 20
 requests a minute per server process. Audio is sent to ElevenLabs and not stored by us.
 
 ## Browser notes

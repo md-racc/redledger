@@ -46,7 +46,8 @@ export function publish(kind: SyncKind, data: Record<string, string | number | b
   void fetch("/api/sync", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {});
 }
 
-export type Link = "connecting" | "stream" | "polling";
+/** `admins`: the relay answered 403, so this browser is a viewer and the relay is not for it (app/api/sync). */
+export type Link = "connecting" | "stream" | "polling" | "admins";
 
 export interface SyncView {
   state: SyncState;
@@ -109,6 +110,7 @@ export function useSync(r: string): SyncView {
       const run = async () => {
         try {
           const res = await fetch(`/api/sync?after=${seq.current}`, { cache: "no-store" });
+          if (res.status === 403) { dead = true; clearInterval(poll); clearTimeout(retry); es?.close(); setLink("admins"); return; }
           if (res.ok) apply(await res.json(), seq.current === 0);
         } catch { /* next tick */ }
       };

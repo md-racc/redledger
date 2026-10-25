@@ -2,7 +2,8 @@
 // The data behind the backstage consoles. Owner: Dev R.
 //
 // Four laptops on stage: one runs the arena, the other three each show a team's side of the backend, live. They are separate
-// browsers with no shared state, so each console follows the battlefield itself: it polls GET /episodes, attaches to the newest
+// browsers with no shared state, so each console follows the battlefield itself: it joins the run on stage like every other window
+// (lib/arena/useActiveRun.ts: a running episode, or a running lineage's current generation; never a replay), else the newest
 // episode (whoever created it, the arena's show or a curl), opens the ticketed WebSocket with after_id=0 so a console that joins
 // late still gets the whole episode, and folds the events with the same reducer as the arena. REST reads from /api/fe add what
 // events do not carry (cash, AP aging, gate latency, the confusion matrix).
@@ -14,7 +15,8 @@ import { loadFixture } from "@/lib/mock";
 import { initialState, reduce } from "@/lib/reducer";
 import type { ControllerMode, RLEvent, UIState } from "@/lib/types";
 import { connect } from "@/lib/ws";
-import { isUnreachable } from "@/lib/arena/activeRun";
+import { isUnreachable, runningEpisode } from "@/lib/arena/activeRun";
+import { useActiveRun } from "@/lib/arena/useActiveRun";
 import { loadLineageReport, type LineageReport } from "@/lib/arena/lineage";
 import { ScriptRunner } from "@/lib/arena/script";
 import { buildOnAct } from "@/lib/arena/showScripts";
@@ -143,13 +145,19 @@ export function useBackstage(want: Want[] = []): Backstage {
     return () => { dead = true; clearInterval(t); };
   }, []);
 
+  const active = useActiveRun({ enabled: !MOCK_ONLY && mode === "live" });
+  const activeId = active.run?.episodeId ?? null;
   const episode = useMemo<EpisodeRow | null>(() => {
     if (mode !== "live") return null;
     if (pinned) return episodes.find((e) => e.id === pinned) ?? null;
     // battlefield allows one active run: while one is running that is the one on stage (a site that lost the race leaves an empty,
-    // newer episode behind, which must not steal the screen). Otherwise the newest episode.
-    return episodes.find((e) => e.status === "running") ?? episodes[0] ?? null; // newest first
-  }, [mode, episodes, pinned]);
+    // newer episode behind, which must not steal the screen), and between a lineage's generations it is the current generation.
+    // Otherwise the newest episode that is not a replay.
+    return (activeId ? episodes.find((e) => e.id === activeId) : undefined)
+      ?? runningEpisode(episodes)
+      ?? episodes.find((e) => !e.id.startsWith("replay_"))
+      ?? null; // newest first
+  }, [mode, episodes, pinned, activeId]);
 
   // follow it: a fresh socket (catch-up from event 0) whenever the followed episode changes
   const followId = episode?.id ?? null;

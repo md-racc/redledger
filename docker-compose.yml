@@ -4,7 +4,7 @@
 #   edge   — frontend (+ caddy in prod) ↔ battlefield. Agents are NOT here: the frontend's
 #            /api/bf/* proxy carries OPERATOR_TOKEN, so an agent that could reach it could read
 #            origin, /events, /attacks/all.
-#   agents — red/green/blue ↔ battlefield (and green → blue mirror gate). Needs internet egress
+#   agents — red/green/blue ↔ battlefield (green no longer calls blue: D1 / #80). Needs internet egress
 #            for Factory/LLM APIs, so not internal.
 #   data   — postgres ↔ battlefield only. Internal: no egress, no other service can reach the DB.
 # Usage:

@@ -14,7 +14,16 @@ Proxy errors: `502 {error}` if those vars are unset or battlefield is unreachabl
 upstream timeout (30 s; 300 s for `POST /episodes/{id}/step`), `400` on a path containing
 `..`/encoded slashes, `403` for a cross-site (`Sec-Fetch-Site: cross-site`) mutation.
 
-Origin auth: when `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set (prod), `middleware.ts`
+Viewers and admins: the site is public and read-only (prod since 2026-10-25, #152/#159). Anyone is a **viewer**; only a
+browser signed in at `/admin` (`ADMIN_KEY`, see `AGENTS.md`) is an **admin**. For a viewer the proxy forwards GET/HEAD
+only (`403 {"error":"viewer"}` otherwise), refuses the reads that say which rows are red's (`/attacks*`, `/audit_log`,
+`/state*`, `/fe/compare`, `/fe/episodes/{ep}/attacks`, `.../entities/*`, `.../state/*`, `.../verdicts/rules`,
+`.../verdicts/confusion`, `/lineages/{id}/export`; `lib/proxy.ts` `OPERATOR_ONLY`), and removes `origin`,
+`entity_origin` and `origin_of_source` from every JSON answer (`stripGroundTruth`). A viewer's WS ticket must name an
+episode. So the `origin` / `entity_origin` fields named below reach admins only. `/api/sync` (the laptop relay) is
+admin-only both ways.
+
+Origin auth: when `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set (both blank on prod since P7), `middleware.ts`
 requires a valid Cloudflare Access JWT (`Cf-Access-Jwt-Assertion` header or `CF_Authorization`
 cookie) on every page and `/api/bf/*` call, else `403 {"error":"forbidden"}`. The browser does
 nothing: Access sets both on requests through `app.<domain>`. Unset (local, mock, CI) → no check.

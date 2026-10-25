@@ -83,10 +83,35 @@ export function upstreamPath(pathname: string): string | null {
 }
 
 /**
- * Battlefield routes that carry ground truth ("Operator only") and that no screen reads: admins only, even for GET.
+ * Battlefield routes that carry ground truth ("Operator only") and that no viewer screen needs: admins only, even for GET.
  * Matched on the decoded, lower-cased upstream path segments, so `%65xport`, `EXPORT` or a trailing slash can't slip past.
+ * They say which rows are red's (attacks and their invoices, red's tool-call args, agent memory) or score blue against origin.
  */
-const OPERATOR_ONLY: RegExp[] = [/^\/api\/lineages\/[^/]+\/export$/];
+const OPERATOR_ONLY: RegExp[] = [
+  /^\/api\/lineages\/[^/]+\/export$/,
+  /^\/api\/attacks(\/.*)?$/,
+  /^\/api\/audit_log$/,
+  /^\/api\/state(\/.*)?$/,
+  /^\/api\/fe\/compare$/,
+  /^\/api\/fe\/episodes\/[^/]+\/attacks$/,
+  /^\/api\/fe\/episodes\/[^/]+\/entities\/.*$/,
+  /^\/api\/fe\/episodes\/[^/]+\/state\/.*$/,
+  /^\/api\/fe\/episodes\/[^/]+\/verdicts\/(rules|confusion)$/,
+];
+
+/** Ground-truth keys battlefield includes for the operator. Removed from every JSON answer a viewer gets. */
+const GROUND_TRUTH_KEYS = new Set(["origin", "entity_origin", "origin_of_source"]);
+
+/** A copy of a parsed JSON body with every ground-truth key removed, at any depth. */
+export function stripGroundTruth(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripGroundTruth);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) if (!GROUND_TRUTH_KEYS.has(k)) out[k] = stripGroundTruth(v);
+    return out;
+  }
+  return value;
+}
 
 export function isOperatorOnlyPath(pathname: string): boolean {
   const path = upstreamPath(pathname.replace(/\/+$/, ""));

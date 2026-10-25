@@ -135,6 +135,9 @@ export function useFeed(): Feed {
   /** an admin's run, act or sandbox is being set up: the poller must not attach underneath it */
   const starting = useRef(0);
   const autoBlock = useRef<number | null>(null);
+  /** escalations waiting on the act's auto-block; cleared whenever what is on screen changes, so a stale id is never resolved */
+  const autoBlockTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const clearAutoBlocks = () => { autoBlockTimers.current.forEach(clearTimeout); autoBlockTimers.current.clear(); };
   const live = useRef({ state, source, mode: "enforce" as ControllerMode, backend });
   live.current.state = state;
   live.current.source = source;
@@ -153,7 +156,8 @@ export function useFeed(): Feed {
     }
     if (e.type === "escalation.opened" && autoBlock.current !== null) {
       const id = (e.payload as { escalation_id: string }).escalation_id;
-      setTimeout(() => { void resolveRef.current(id, "block"); }, autoBlock.current);
+      const t = setTimeout(() => { autoBlockTimers.current.delete(t); void resolveRef.current(id, "block"); }, autoBlock.current);
+      autoBlockTimers.current.add(t);
     }
     dispatch(e);
     listeners.current.forEach((fn) => fn(e));
@@ -171,6 +175,7 @@ export function useFeed(): Feed {
     pacer.current.clear();
     liveKind.current = null;
     autoBlock.current = null;
+    clearAutoBlocks();
     setRunning(false);
   }, []);
 
@@ -255,6 +260,7 @@ export function useFeed(): Feed {
     runners.current = [];
     act.current = null;
     autoBlock.current = null;
+    clearAutoBlocks();
     pacer.current.clear();
     dispatch({ type: "__reset" });
     episode.current = id;
