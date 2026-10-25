@@ -37,8 +37,8 @@ async def test_weak_hints_are_mode_independent_notes(gate_request, mode):
 @pytest.mark.parametrize(
     "amount,age,paid,po,verdict",
     [
-        (1000, 0, False, False, "allow"),
-        (1000.01, 0, False, False, "block"),
+        (499.99, 0, False, False, "allow"),
+        (500, 0, False, False, "block"),
         (4380, 0, False, False, "block"),
         (4749.99, 0, False, False, "block"),
         (4750, 0, False, False, "block"),
@@ -382,7 +382,7 @@ async def test_ghost_vendor_under_band_is_blocked(gate_request):
     res = await engine.decide(req)
     assert res.verdict == "block"
     assert "unverified_vendor_exposure" in res.rules_fired
-    assert "$1,000" in res.reason
+    assert "$500" in res.reason
 
 
 @pytest.mark.parametrize("action", ["invoices.approve", "invoices.pay"])

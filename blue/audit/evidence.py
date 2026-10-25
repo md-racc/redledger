@@ -161,7 +161,7 @@ def derive_findings(snapshot: Snapshot) -> None:
             exposed = [inv for inv in current if not inv["po_id"]]
             exposure_ids = {inv["id"] for inv in exposed}
             prior_paid = [inv for inv in paid if inv["id"] not in exposure_ids]
-            if not prior_paid and sum((inv["amount"] for inv in exposed), Decimal(0)) > UNVERIFIED_EXPOSURE_FLOOR:
+            if not prior_paid and sum((inv["amount"] for inv in exposed), Decimal(0)) >= UNVERIFIED_EXPOSURE_FLOOR:
                 findings.append(
                     _finding(
                         snapshot,
@@ -173,7 +173,7 @@ def derive_findings(snapshot: Snapshot) -> None:
                         [
                             Evidence(
                                 family="authorization",
-                                fact="A new vendor has more than $1,000 of exposure without independent paid history or associated POs.",
+                                fact="A new vendor has $500 or more of exposure without independent paid history or associated POs.",
                             ),
                         ],
                     )

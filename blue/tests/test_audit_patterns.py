@@ -54,7 +54,7 @@ async def test_benign_onboarding_subscriptions_rotations_po_variance(runtime):
     ledger = FakeLedger(
         vendors=[vendor(), vendor("new", created_day=5)],
         invoices=[
-            invoice("small_new", vendor_id="new", amount=700),
+            invoice("small_new", vendor_id="new", amount=450),  # under the shared $500 unverified-exposure floor
             invoice("monthly_paid", invoice_number="SUB-1", amount=1200, status="paid", received_day=-20),
             invoice("monthly_now", invoice_number="SUB-2", amount=1200),
             invoice("po_new", vendor_id="new", amount=4800, po_id="new_po"),
@@ -145,7 +145,7 @@ async def test_live_path_delegates_to_the_shared_sdk_turn(runtime, monkeypatch):
     assert (await agent.health())["droid_ok"] is sdk_installed()  # installed-or-not only; health never imports the SDK
 
 
-@pytest.mark.parametrize("amount,found", [(1000, False), (1000.01, True), (4380, True)])
+@pytest.mark.parametrize("amount,found", [(499.99, False), (500, True), (4380, True)])
 async def test_audit_unverified_exposure_shares_gate_floor(amount, found):
     ledger = FakeLedger(vendors=[vendor(created_day=4)], invoices=[invoice("first", amount=amount, received_day=5)])
     snapshot = await evidence.collect_snapshot(ledger, "ep", 5)
