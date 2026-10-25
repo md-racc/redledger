@@ -17,7 +17,7 @@ fails: if the controller-off baseline doesn't lose real money, nothing else matt
   cannot pay, approve, freeze, or read the audit log. If you think red needs another route,
   that's a `contracts/` PR to Ad.
 - You never import from `battlefield/`, `green/`, or `blue/`.
-- `origin` and `attack_id` are hidden from you by battlefield. Don't try to infer them.
+- `origin` is hidden from you by battlefield, and so is every attack id except your own declared ones (and their outcomes until the reveal day). Don't try to infer them.
 
 ## Files
 
@@ -64,9 +64,9 @@ Stop the mock red first (`docker compose stop red`) so battlefield hits yours.
 ## Droid specifics
 
 - Autonomy HIGH; permission handler approves everything (default in `DroidAgent`).
-- Tool IDs: after the first live turn, `agentkit` logs the exact MCP tool ids; record the format in `contracts/CHANGELOG.md` Findings.
+- Tool IDs: `<server>___<tool>`, derived and checked by `agentkit` every session (recorded in `contracts/CHANGELOG.md` Findings).
 - Pin `DROID_MODEL` to a low-multiplier model. Red doesn't need frontier reasoning.
-- Log credits per turn (agentkit does); if a turn costs >2 credits, shorten the prompt.
+- Log credits per turn (agentkit does). The measured median red turn is ~2,790 credits (#216); if a turn runs well above that, shorten the prompt.
 
 ## Extension points (grow without a contracts PR)
 
@@ -88,7 +88,7 @@ one exception to "red doesn't see blue's reasons" below; outside the debrief the
   inside your turn (`None` outside lineages: fall back to defaults).
 - Override `reflect(req)` (and `dry_run_reflect`) on your agent: `req.review` is the after-action
   review of the whole generation, `req.playbook` your current version; return new content or `None`.
-- Composed schemes go in the playbook and are declared as `scheme_id = "evolved:<slug>"`.
+- Composed (`evolved:<slug>`) schemes are not implemented: red runs only the catalog, and evolution drops anything outside it.
 - `battlefield/mock_agents/server.py` (mock red's evasion ladder) is a worked example of using only
   these inputs. Contract: `contracts/agent-service.md` (Lineages); runbook: README §15; design: `docs/EVOLUTION-DESIGN.md` §12.
 
@@ -99,7 +99,7 @@ You are working in the Red Ledger repo, directory `red/`, as Dev Al's coding age
 Before any edit: read `red/AGENTS.md`, `GIT.md` §7, `README.md` §§0,1,3,5,6,7,16, and
 `contracts/agent-service.md`, `contracts/events.md`. Confirm `git branch --show-current` starts with `red/`;
 if not, create `red/<topic>` from origin/main. Edit only inside `red/`,
-`battlefield/extensions/red_*.py`, `contracts/ext/red/`, and append to `DEVLOG.md`.
+`battlefield/extensions/red_*.py`, `contracts/ext/red/`, and add one `devlog/` fragment.
 Never force-push, never merge, never touch another directory; if you need a contracts change,
 write the proposed diff into the PR description and stop. Run `make lint test-red` before
 each push. Everything must work with DRY_RUN=true. Goal for this session: implement the next scheme in README §8 with a test, land it against `make mock-agents`.
