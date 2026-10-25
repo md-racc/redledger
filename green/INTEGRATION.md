@@ -12,7 +12,9 @@ per-mode decisions against mocked Ledger HTTP. Preparation uses the SDK key
 without consuming the first mutation's key. Its JSON cancellation comment carries
 the cause. `on_permission` applies the decision with `PROCEED_ONCE`/`CANCEL`;
 turn-local state suppresses held entities and separates unique cancellation causes.
-The pre-SDK live guard remains. No new model tools or AP policy.
+The pre-SDK live guard is lifted in the guard-lift PR following the accepted Stage B SDK
+acceptance evidence (issue #78); DRY_RUN remains the default and live still requires the
+operator to set `DRY_RUN_GREEN=false`. No new model tools or AP policy.
 
 Unknown/empty permission requests and multi-use batches fail closed without preparing;
 the SDK's response applies to the whole batch, so callers must request tools individually.

@@ -1,4 +1,4 @@
-"""Trusting AP clerk; live execution awaits the shared invocation/gate protocol."""
+"""Trusting AP clerk; live execution is enabled following Green SDK acceptance (issue #78)."""
 
 from __future__ import annotations
 
@@ -14,8 +14,6 @@ from agentkit import AgentSettings, DroidAgent, EventEmitter, TurnRequest, TurnR
 from agentkit.invocation import VERIFIED_SOURCES, ToolUse, current_registry
 from agentkit.models import ReflectRequest, ReflectResponse, Usage
 from agentkit.tools import ToolFn
-
-PREREQUISITE = "Green live integration prerequisite: SDK permission, restriction, identity and cancellation acceptance are required before Droid execution."
 
 # Observed on canonical #94 with SDK 0.5.0 / MCP 1.30.0; contracts Finding #96.
 AP_TOOL_IDS = (
@@ -79,8 +77,8 @@ class GreenAgent(DroidAgent):
             return await super().run_turn(req)
 
     async def _droid_turn(self, req: TurnRequest, emitter: EventEmitter) -> tuple[str, Usage | None]:
-        # Guard before the base class imports the SDK, constructs a server or opens a Session.
-        raise RuntimeError(PREREQUISITE)
+        # Live execution enabled after Green SDK acceptance (issue #78).
+        return await super()._droid_turn(req, emitter)
 
     async def on_permission(self, request: Any) -> Any:
         from droid_sdk import ToolConfirmationOutcome

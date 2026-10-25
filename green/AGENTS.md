@@ -10,13 +10,13 @@ pay legitimate invoices so the false-positive penalty is real, and (b) actually 
 ones when the controller is off so the baseline loses money. Don't make green suspicious; that's
 blue's job.
 
-`battlefield` remains the enforcement point. Live Green is intentionally disabled before
-Droid Session/tool execution pending Green SDK acceptance,
-including exact tool restrictions and verified invocation correlation. The merged contract
+`battlefield` remains the enforcement point. The pre-SDK `_droid_turn` hard guard was lifted
+in the guard-lift PR following the accepted budgeted Stage B SDK acceptance evidence (issue #78).
+DRY_RUN remains the default; a live turn still requires the operator to set `DRY_RUN_GREEN=false`.
+The merged contract
 uses Battlefield preparations, not a Green → Blue mirror (#80, Option P). Shared strict identity
 and `LedgerClient.prepare` landed in #84; preparation creation/consumption landed in #87/#89.
-The permission handler uses `preparation.py` for canonical decisions, but the pre-SDK
-`_droid_turn` hard guard still prevents live execution.
+The permission handler uses `preparation.py` for canonical decisions.
 [INTEGRATION.md](INTEGRATION.md) separates current prerequisites
 from the superseded handoff; [IDENTITY.md](IDENTITY.md) records identity evidence limits.
 
@@ -95,7 +95,8 @@ are appended only when present, leaving ordinary keyless summaries unchanged.
 Unknown/empty requests and batches of multiple tool uses fail closed before preparing.
 Batch callers must issue individual tool requests; Green SDK acceptance must verify callback
 granularity as well as OFF prompting, restrictions, identity and cancellation delivery.
-Do not remove the pre-SDK guard without separate Green SDK acceptance.
+The pre-SDK guard was removed only after separate Green SDK acceptance: the guard-lift PR
+follows the accepted Stage B evidence (issue #78).
 
 ## Realism work (shared with Ad)
 
@@ -120,7 +121,9 @@ make episode MODE=enforce
 
 ## Droid specifics
 
-- `autonomy = "off"`. Permission handler is `on_permission` in `agent.py`; live stays guarded.
+- `autonomy = "off"`. Permission handler is `on_permission` in `agent.py`; the pre-SDK live guard
+  is lifted following the accepted Stage B evidence (issue #78), but live still needs
+  `DRY_RUN_GREEN=false` from the operator.
 - Never return `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*`. They disable the gate.
 - Pin a cheap model. Green does procedural work.
 - Keep the prompt short; green runs every day of every episode and burns the most credits.
@@ -155,8 +158,9 @@ paid/approved/blocked/rejected). Legit items you had blocked arrive only in the 
   fields, is preserved; incompatible namespace versions and oversized content are kept unchanged.
 - This is stored reflection memory, **not changed AP policy**: neither `build_prompt` nor the
   keyless clerk consumes it or daily debriefs yet. Active-turn consumption needs a separate PR;
-  do not add playbook tools/writes without fresh tool-ID acceptance. Live Green retains the
-  pre-SDK guard. Contract: `contracts/agent-service.md` (Lineages).
+  do not add playbook tools/writes without fresh tool-ID acceptance. Live Green's pre-SDK guard
+  was lifted following the accepted Stage B evidence (issue #78); DRY_RUN stays the default.
+  Contract: `contracts/agent-service.md` (Lineages).
 
 ## Paste this to your coding agent as its first message
 

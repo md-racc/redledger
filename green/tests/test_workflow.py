@@ -9,7 +9,7 @@ import pytest
 from conftest import REQ, S, change, expense, invoice, tool_turn
 
 import tools
-from agent import PREREQUISITE, GreenAgent
+from agent import GreenAgent
 
 
 @pytest.mark.parametrize(
@@ -182,17 +182,28 @@ def test_small_clerk_surface_has_no_investigation_or_automatic_gl():
     }
 
 
-async def test_live_guard_precedes_sdk_import_session_or_tools(book, monkeypatch):
-    def forbidden():
-        pytest.fail("live prerequisite must guard before any tools/server construction")
+async def test_live_turn_delegates_to_shared_droid_turn(book, monkeypatch):
+    calls = []
 
+    async def stub(self, req, emitter):
+        calls.append((req, emitter))
+        return "sentinel-summary", None
+
+    monkeypatch.setattr("agentkit.droid_agent.DroidAgent._droid_turn", stub)
     agent = GreenAgent(S.model_copy(update={"dry_run": False}))
-    monkeypatch.setattr(agent, "_mcp_server", forbidden)
-    monkeypatch.setattr(agent, "tools", forbidden)
-    monkeypatch.setitem(sys.modules, "droid_sdk", None)
     result = await agent.run_turn(REQ)
-    assert not result.ok and PREREQUISITE in result.summary
-    assert not book.calls and agent.autonomy == "off"
+    assert result.ok and result.summary == "sentinel-summary"
+    assert len(calls) == 1 and calls[0][0] == REQ
+    assert not book.writes and agent.autonomy == "off"
+
+
+async def test_dry_run_turn_never_reaches_droid_turn(book, monkeypatch):
+    async def stub(self, req, emitter):
+        pytest.fail("DRY_RUN must use the keyless clerk, never _droid_turn")
+
+    monkeypatch.setattr("agentkit.droid_agent.DroidAgent._droid_turn", stub)
+    result = await GreenAgent(S).run_turn(REQ)
+    assert result.ok and result.summary.startswith("[dry-run]")
 
 
 async def test_permission_handler_cancels_invalid_context_with_sanitized_cause(monkeypatch):

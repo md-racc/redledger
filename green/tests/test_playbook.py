@@ -8,8 +8,8 @@ import httpx
 import pytest
 from playbook import MAX_CONTENT_BYTES, MAX_REVIEW_ITEMS, MEMORY_KEY, OUTCOMES, PROCEDURES, reflect_playbook
 
-from agent import PREREQUISITE, GreenAgent
-from agentkit import AgentSettings, EventEmitter, LedgerClient, TurnRequest, make_agent_app
+from agent import GreenAgent
+from agentkit import AgentSettings, DroidAgent, EventEmitter, LedgerClient, TurnRequest, make_agent_app
 from agentkit.models import ReflectRequest
 
 
@@ -202,7 +202,7 @@ def test_limits_keep_content_instead_of_truncating_or_dropping_operator_fields()
     assert len(result.rationale) < 256 and len(json.dumps(result.playbook)) < 1500
 
 
-async def test_plain_and_lineage_prompts_do_not_consume_memory_or_enable_live_turn():
+async def test_plain_and_lineage_prompts_do_not_consume_memory_and_live_turn_delegates(monkeypatch):
     agent = GreenAgent(settings(False))
     req = TurnRequest(episode_id="ep", day=3, controller_mode="off")
     expected = "Day 3. Follow the AP procedure in your system prompt. Start with ap_queue."
@@ -210,5 +210,12 @@ async def test_plain_and_lineage_prompts_do_not_consume_memory_or_enable_live_tu
     req.options = {"lineage": {"id": "ln", "playbook_version": 7}, "debrief": {"items": [legitimate()]}}
     assert await agent.build_prompt(req) == expected
     assert agent.autonomy == "off"
-    with pytest.raises(RuntimeError, match=PREREQUISITE):
-        await agent._droid_turn(req, None)
+    calls = []
+
+    async def stub(self, turn_req, emitter):
+        calls.append((turn_req, emitter))
+        return "sentinel-summary", None
+
+    monkeypatch.setattr(DroidAgent, "_droid_turn", stub)
+    assert await agent._droid_turn(req, None) == ("sentinel-summary", None)
+    assert calls == [(req, None)]
