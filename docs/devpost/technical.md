@@ -2,6 +2,12 @@
 
 Status as of 2026-10-24 ~23:00Z, main @ 0de4fe8; prod runs 4c6bdd9 (#131).
 
+**Update 2026-10-25 ~03:05Z:** blue's daily audit now runs live on Droid on prod (`DRY_RUN_BLUE=false`,
+`DROID_MODEL_BLUE=gpt-5.4-mini`; #157 lifted the guard, #169 fails the image build without the SDK; smoke
+`ep_f9c695b3144f`, 2-day enforce, 3,806 and 4,109 credits per audit turn). Blue's `/gate` is unchanged: rules plus
+learned controls, no gate LLM. Green stays keyless for the hackathon. The recorded runs (P1 lineage, P2 recordings)
+predate this and had blue keyless.
+
 One doc, two audiences. (a) **Cal Hacks**: Most Technically Advanced Hack, plus the Technical Complexity and
 Functionality criteria of the Overall prizes. These judges want depth: hard problems, solved and shown.
 (b) **Microsoft**: Built for the Real World (1st) and Customer Impact Award (2nd). These judges want something
@@ -47,7 +53,7 @@ dollars stolen against dollars blocked against the cost of blocking honest work.
 > from the Droid SDK's tool-call ID. The Droid CLI never hands that ID to tool code, so we recover it from permission
 > requests and the event stream. A verdict can be prepared ahead of execution, bound to a state fingerprint, and
 > claimed exactly once. After a crash the system pauses itself, expires held decisions, and never re-runs the
-> attacker's day. The attacker runs live on Factory's Droid SDK. Everything else runs keyless on the same harness,
+> attacker's day. The attacker and the controller's daily audit run live on Factory's Droid SDK. The clerk runs keyless on the same harness,
 > backed by 831 Python tests and 123 frontend tests.
 
 ### (b) Microsoft, 30 seconds (built for the real world)
@@ -65,11 +71,11 @@ dollars stolen against dollars blocked against the cost of blocking honest work.
 
 | Track | Criterion / thesis point | What we have | Status | Evidence |
 |---|---|---|---|---|
-| (a) | Technical complexity | Single enforcement point with per-key single flight, CAS state transitions, preparations claimed once under row locks, escalation holds that close exactly once, restart recovery, and tool-call identity recovered from SDK side channels | ON MAIN; the gate is LIVE on prod against live red (verdicts from blue's keyless rules) | `battlefield/app/gate/gatekeeper.py`, `battlefield/app/api/green_writes.py`, `agentkit/agentkit/invocation.py`; #33, #39, #52, #84, #87, #89 |
+| (a) | Technical complexity | Single enforcement point with per-key single flight, CAS state transitions, preparations claimed once under row locks, escalation holds that close exactly once, restart recovery, and tool-call identity recovered from SDK side channels | ON MAIN; the gate is LIVE on prod against live red (verdicts from blue's deterministic rules and learned controls, no LLM) | `battlefield/app/gate/gatekeeper.py`, `battlefield/app/api/green_writes.py`, `agentkit/agentkit/invocation.py`; #33, #39, #52, #84, #87, #89 |
 | (a) | Functionality (smooth live demo) | 90-second show, backstage consoles on three more laptops, judge-picked attacks, approve/block on escalations, replay with recorded fallback | ON MAIN (frontend); prod runs the show from the recording by default (§6) | `frontend/docs/show-mode.md`, `frontend/docs/backstage.md`, `frontend/docs/pitch-script.md` (#132) |
 | (a) | Intentionality | Contracts-first design (`contracts/` beats code), enforced by CI; ownership by directory; every non-trivial PR independently verified before merge | ON MAIN | `AGENTS.md` §3 inv. 6, `.github/workflows/ci.yml`, `GIT.md` §4 |
 | (a) | Creativity | Adversarial co-evolution: lineages, debriefs, playbooks, after-action reviews | ON MAIN; recorded on prod with live red (`ln_f52a3df83c8d`, P1 done) | `battlefield/app/orchestrator/lineage.py`, `battlefield/app/evolution/*`; §10 |
-| (a) | Application | A finance controller that gates an autonomous clerk, measured against a live attacker | Red LIVE; green and blue keyless on prod | Finding 2026-10-24 (gpt-5.4-mini); `deploy/PROD-OPS.md` "Going live: red only" |
+| (a) | Application | A finance controller that gates an autonomous clerk, measured against a live attacker | Red and blue's audit LIVE; green keyless on prod | Finding 2026-10-24 (gpt-5.4-mini); #157 (blue's guard lift); smoke `ep_f9c695b3144f` |
 | (b) | Deployment | Image build with no secrets → approval-gated SSH roll → `.env` rendered from a GitHub Environment → compose pull/up → in-container health probe | LIVE (infra) | `.github/workflows/deploy.yml`, `deploy/render-env.sh`, README §17 |
 | (b) | Security | Cloudflare Access + origin JWT verification, origin IP lock, per-agent tokens and a 401 matrix, operator token kept server-side, HMAC single-use WS tickets, compose network isolation, `origin` hidden from agents | LIVE (edge, JWT, IP lock, networks, per-agent tokens) | `deploy/Caddyfile` (#47), `frontend/lib/access.ts` (#50), `battlefield/app/auth.py` (#109), `docker-compose.yml` (#15) |
 | (b) | Operations | `make prod-*` runbook that never moves the operator token; credit guard; one active run at a time; recording with a secret scan | LIVE (tooling used on prod; see #118's evidence) | `deploy/prod.sh`, `deploy/PROD-OPS.md`, #95, #122 |
@@ -110,7 +116,7 @@ dollars stolen against dollars blocked against the cost of blocking honest work.
   `deploy/` or compose. Merges are pinned with `gh pr merge --squash --match-head-commit <assessed sha>`, so a
   push after assessment voids it.
 
-### 4.2 The single enforcement point — `LIVE` (gate against live red, blue keyless) / details `ON MAIN`
+### 4.2 The single enforcement point — `LIVE` (gate against live red; blue's gate is rules, no LLM) / details `ON MAIN`
 
 Every green mutation (`invoices.match|approve|reject|pay`, `vendor_changes.approve|reject`, `expenses.approve|pay`,
 `gl.post`) runs through `gatekeeper.check()` inside battlefield (`battlefield/app/gate/gatekeeper.py:1-25`):
@@ -350,8 +356,10 @@ From the internet inward:
     `resolve`, `score`, `credits`, `record`, `fixtures`, `evolve`, `lineage-status|pause|resume|wait|export`,
     `evolution-report`.
 - **Going live one agent at a time.** `DRY_RUN_RED/GREEN/BLUE` override `DRY_RUN` per agent through compose,
-  render-env and deploy. Prod today: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=true` (`deploy/PROD-OPS.md`
-  "Going live: red only"; confirmed by `make prod-health`).
+  render-env and deploy. Red went live first (`deploy/PROD-OPS.md` "Going live: red, then blue's audit"); blue's audit
+  followed on 2026-10-25. Prod today: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=false`, visible as
+  `dry_run` in `make prod-health`. Blue's `droid_ok` always read false before #176; from the deploy containing
+  6640354 it is truthful.
 - **Record / replay** (#43). `POST /api/replays/{id}/play` re-emits a fixture as a real `replay_*` episode with fresh
   event IDs, so WebSocket catch-up, `GET /events` and the event-derived `/fe` views all work. Safeguards:
   - fixture names must match the listing, and symlinks can't escape the fixtures dir
@@ -438,7 +446,7 @@ the CHANGELOG:
 | P1 | Live-red lineage on prod. **Done:** `ln_f52a3df83c8d`, 5 generations × 8 days, enforce, gpt-5.4-mini, ~109k red credits, ran to completion under one-active-run (#122) | Ad | — | Done. Red adapted (re-weighted to `threshold_split`, extraction $19,076 → $97,734); blue's learned controls never fired on a split. Say that plainly |
 | P2 | Recorded controller-off vs. controller-on episodes with live red, same seed. **Done:** `docs/recordings/` (#136) | Ad | — | Done, not yet wired into the show: "the compare beat uses the recorded mock episode; the controller-off act is a projection, and the UI says so" (`frontend/docs/show-mode.md`); the live-red pair can be replayed via `POST /replays/{id}/play` |
 | P3 | Evolution view in the frontend from real `/fe/lineages` data | R (#117) | — | The EvolutionCard already tries live first: `GET /lineages` (newest first) + `/fe/lineages/{id}/report`, labelled "live lineage" vs. "recorded lineage", with fallback to `public/mocks/lineage-report.json` (`frontend/lib/arena/lineage.ts:47-57`). On prod it now picks `ln_f52a3df83c8d`. Say which label showed |
-| P4 | Green and/or blue live on Droid on prod | M (#78) | M's live acceptance | "Red is live; green and blue run their full logic keyless on the same harness." |
+| P4 | Green and/or blue live on Droid on prod. **Blue's audit: done** (#157; live on prod since 2026-10-25). **Green: stays keyless** for the hackathon (#160 stays a draft) | M (#78) | — | "Red and blue are live agents; green runs its full logic keyless on the same harness." |
 | P5 | Prod on the TimescaleDB image | Ad | a deliberate switch between episodes (#100 notes `migrate_data` takes an ACCESS EXCLUSIVE lock) | "Prod is plain Postgres 16; CI proves the Timescale path on every battlefield change." |
 | — | A recorded rollback rehearsal | Ad | — | Don't claim "tested rollback"; say "documented rollback path" |
 
@@ -451,7 +459,7 @@ technical beats ride on them. Nothing here changes the script; these are what to
 judge stops by the table.
 
 **Important about prod:** the show runs live only if every agent is keyless (`components/arena/useShow.ts:15-20`).
-Prod red is live, so on app.redledger.us the show **defaults to the recording**, and the controller-off act is a
+Prod red and blue are live, so on app.redledger.us the show **defaults to the recording**, and the controller-off act is a
 projection. `?show=live` forces live acts, but each act steps 4 days with live red turns of about 11 s each, which
 doesn't fit the act windows. Backstage consoles follow the newest *battlefield* episode, so during a recorded show they
 won't show the show's events. Rehearse with that in mind (open question §9 Q9). The judge's free-play attack at the end
@@ -547,7 +555,7 @@ Cloudflare Access protects the site, and the frontend re-verifies Access's signe
 - Verify your edge: an access proxy in front of an origin is only as good as the origin's refusal to talk to anyone else.
 
 **What's next**
-- Run green and blue live on the Droid SDK in prod.
+- Run green live on the Droid SDK in prod (blue's audit already runs live there).
 - Close the control gap our live five-generation lineage found: the attacker learned to split invoices across an
   established vendor, which no current control catches.
 - Move prod to TimescaleDB.
@@ -564,7 +572,7 @@ stays correct when agents call tools in parallel, retry, time out, or the server
 decision. We bound idempotency keys to the Droid SDK's tool-call IDs, even though the CLI never hands those IDs to tool
 code. We made every payment a compare-and-set, let the clerk prepare a gate decision ahead of execution that can be
 claimed exactly once under row locks, and made escalations close exactly once across resolvers, timeouts and crash
-recovery. The attacker runs live on Factory's Droid SDK. Every mechanism has real-concurrency tests, and independent
+recovery. The attacker and the controller's daily audit run live on Factory's Droid SDK. Every mechanism has real-concurrency tests, and independent
 reviewers tried to break each one before it merged.
 
 **Why this fits "Built for the Real World" / "Customer Impact"**
@@ -584,6 +592,8 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 ### Safe to say
 - Red runs live on Factory's Droid SDK on prod (`gpt-5.4-mini`, reasoning low): a full attack in about 11 s, about
   2.6k credits per turn (Finding 2026-10-24; ep_568aef023d7c).
+- Blue's daily audit runs live on Factory's Droid SDK on prod since 2026-10-25 (`gpt-5.4-mini`): both days of smoke
+  `ep_f9c695b3144f` finished a live audit, 3,806 and 4,109 credits (blue's `turn_usage`).
 - Every agent action goes through one Ledger API, and agents never touch the database (`docker-compose.yml` `data`
   network is internal; AGENTS.md inv. 1).
 - Parallel pays of one invoice produce exactly one payment, in tests with 3, 5 and 12 concurrent calls (#39, #89).
@@ -599,8 +609,10 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 ### Say with this caveat
 - "Blue's /gate answers in ~8 ms p95." Caveat: measured on a local stack during a live blue audit session (#119:
   p95 8.04 ms, max 56.6 ms, 1,817 samples), not on prod.
-- "Green and blue run their full logic." Caveat: keyless on prod (`DRY_RUN_GREEN/BLUE=true`), so blue's verdicts there
-  come from its deterministic rules (P4).
+- "Green and blue run their full logic." Caveat: green is keyless on prod (`DRY_RUN_GREEN=true`). Blue's audit is live
+  on Droid, but blue's gate verdicts come from its deterministic rules and learned controls, not an LLM.
+- Blue's credits: for the smoke episode quote `turn_usage` (3,806 / 4,109). It predates #176, so `make prod-credits`
+  shows blue as 0 there and `droid_ok` read false. From the deploy containing 6640354 both are truthful for blue.
 - "TimescaleDB hypertables and a continuous aggregate." Caveat: CI-proven; prod is plain Postgres 16 (P5).
 - "Agents learn across generations." Caveat: with live red on prod (`ln_f52a3df83c8d`), red adapted and blue's bounded
   learning didn't keep up. The closed-loop numbers (blue catches 5/5 in g3) are a keyless mock-agent lineage
@@ -614,7 +626,8 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
   not human reviewers (`GIT.md` §4, `AGENTS.md` §10).
 
 ### Do NOT say
-- "Green and blue are live AI agents in production." Not true today (P4).
+- "Green is a live AI agent in production" or "all three agents are live." Green is keyless by decision (P4). Red and
+  blue's audit are live.
 - "Runs on TimescaleDB in production." Not true (P5).
 - "The agents sharpen each other" with the live attacker: in `ln_f52a3df83c8d` red got better and blue didn't.
 - "Horizontally scalable." Battlefield must run as a single uvicorn worker. The turn guard, escalation waiters and WS
@@ -657,12 +670,12 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
    The WebSocket uses a 60 s single-use HMAC ticket.
 8. **"Is per-agent token separation on in prod?"** Yes, since ~19:00Z on 2026-10-24: battlefield holds all three
    tokens and each agent container only its own (#108–#111). render-env refuses partial or duplicate sets.
-9. **"Is the demo live?"** The attacker is live on prod. On prod the 90-second show plays a recording by default,
-   because it only runs live when every agent is keyless. A judge's attack from the console hits the real backend.
-   Green and blue run keyless there.
+9. **"Is the demo live?"** The attacker and blue's daily audit are live on prod. On prod the 90-second show plays a
+   recording by default, because it only runs live when every agent is keyless. A judge's attack from the console hits
+   the real backend. Green runs keyless there.
 10. **"How do you control model spend?"** A per-episode credit guard pauses the episode at `MAX_CREDITS_PER_EPISODE`,
     with exactly one more paid turn after a resume. Prod runs `MAX_CREDITS_PER_EPISODE=375000`; a live-red 10-day
-    episode spends ~25k. Lineages need their own cap (`prod-evolve` refuses without `MAX_CREDITS=`). One active run at a time.
+    episode spends ~25k on red. Blue's live audit adds ~4k a day, which counts toward the cap from the deploy containing 6640354 (before #176 it was recorded as 0). Lineages need their own cap (`prod-evolve` refuses without `MAX_CREDITS=`). One active run at a time.
 11. **"How do you deploy and roll back?"** Merge to `main` builds five images tagged with the SHA. An approval-gated
     job renders `.env` from the `production` environment and rolls compose. Roll back with `git revert` + merge, or by
     re-running an older deploy run (README §17).

@@ -45,6 +45,7 @@ def extra(app: FastAPI, agent: AuditAgent, settings: AgentSettings) -> None:
             summary=result.summary,
             report_posted=outcome.report_posted,
             flags_raised=outcome.flags_raised,
+            usage=result.usage,  # charged to the episode by battlefield (contracts #174)
         )
 
 

@@ -167,8 +167,8 @@ redact=fn)` redacts `agent.tool_call` arguments on every narration path.
   ever stop holding, record that there and rely on ledger-side enforcement alone.
 - Blue audit: `Autonomy.OFF`, strict identity, permission handler always `PROCEED_ONCE` (D11, #90);
   the live-audit guard is lifted (#157), so the audit runs on Droid whenever `DRY_RUN_BLUE=false`.
-  Prod runs it live (`DRY_RUN_BLUE=false`); set it explicitly, because an unset `DRY_RUN_BLUE`
-  follows the global `DRY_RUN`.
+  Prod runs it live (`DRY_RUN_BLUE=false`) since 2026-10-25; set it explicitly, because an unset
+  `DRY_RUN_BLUE` follows the global `DRY_RUN`.
 - Never return `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*` from any handler. They disable the gate.
 - Handlers may be async and may do I/O. They must not start a turn on the same session.
 - Pin models via `DROID_MODEL_*`. Don't use `model="auto"` in anything that runs during judging.

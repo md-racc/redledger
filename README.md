@@ -25,8 +25,8 @@ the work is done).
 - **What runs live on prod.** Red and blue's daily audit run on Factory Droid (`gpt-5.4-mini`;
   blue's guard lifted in #157). Green runs the same harness keyless (`DRY_RUN_GREEN=true`). Blue's
   `/gate` is the deterministic rules engine, not a Droid session (§6).
-- **Results on prod** (recorded with red live and green and blue keyless, before blue's audit
-  went live):
+- **Results on prod** (both runs below were recorded with red live on `gpt-5.4-mini` and green
+  and blue running their full logic keyless, before blue's daily audit went live on Droid):
   - Same company, same seed, 10 days: controller off, **$10,285** extracted; controller on
     (`enforce`), **$1,824** extracted at $100 false-positive cost. Recordings and details:
     [`docs/recordings/`](docs/recordings/README.md).
@@ -261,8 +261,8 @@ not enabled on prod.
 | Service | `DroidAgent` subclass | Autonomy | Permission handler | Restricted tool IDs | Prod |
 |---|---|---|---|---|---|
 | red `/turn` | `RedAgent` (`red/agent.py`) | `high` | base default: `PROCEED_ONCE` | `red-ledger___` + `list_schemes`, `inspect_books`, `run_scheme`, `create_vendor`, `submit_invoice`, `request_vendor_bank_change`, `submit_expense`, `add_employee`. Not hardcoded: built from the `@ledger_tool` names in `red/tools.py`, then confirmed by `session.list_tools()` on the first Session | **live**, `gpt-5.4-mini`, reasoning `low` (repo vars `DROID_MODEL_RED` / `DROID_REASONING_RED`) |
-| green `/turn` | `GreenAgent` (`green/agent.py`) | `off`, strict identity | one call per request: `POST /preparations` keyed by the SDK `tool_use_id` (`green/preparation.py`); `PROCEED_ONCE` on `allow`, else `CANCEL` with a reason; batched requests, unverified ids and handler errors fail closed | hardcoded `AP_TOOL_IDS`: `green-ledger___` + `ap_queue`, `approve_expense`, `approve_invoice`, `approve_vendor_change`, `match_invoice`, `pay_expense`, `pay_invoice`, `reject_invoice`, `reject_vendor_change` (Finding, #94) | keyless (`DRY_RUN_GREEN`); `_droid_turn` raises before any Session opens until live acceptance (#78, #102) |
-| blue `/audit` (and `/turn`) | `AuditAgent` (`blue/audit/agent.py`) | `off`, strict identity | `PROCEED_ONCE` | hardcoded `AUDIT_TOOL_IDS`: `blue-ledger___` + `benford_check`, `crs_identity_check`, `day_activity`, `freeze_vendor`, `post_report`, `raise_flag`, `vendor_dedupe` | **live**, `gpt-5.4-mini` (`DRY_RUN_BLUE=false`; guard lifted in #157 on the evidence in `blue/SDK-READINESS.md`) |
+| green `/turn` | `GreenAgent` (`green/agent.py`) | `off`, strict identity | one call per request: `POST /preparations` keyed by the SDK `tool_use_id` (`green/preparation.py`); `PROCEED_ONCE` on `allow`, else `CANCEL` with a reason; batched requests, unverified ids and handler errors fail closed | hardcoded `AP_TOOL_IDS`: `green-ledger___` + `ap_queue`, `approve_expense`, `approve_invoice`, `approve_vendor_change`, `match_invoice`, `pay_expense`, `pay_invoice`, `reject_invoice`, `reject_vendor_change` (Finding, #94) | keyless (`DRY_RUN_GREEN`), by decision for the hackathon; `_droid_turn` raises before any Session opens (the live path, #160, stays a draft) |
+| blue `/audit` (and `/turn`) | `AuditAgent` (`blue/audit/agent.py`) | `off`, strict identity | `PROCEED_ONCE` | hardcoded `AUDIT_TOOL_IDS`: `blue-ledger___` + `benford_check`, `crs_identity_check`, `day_activity`, `freeze_vendor`, `post_report`, `raise_flag`, `vendor_dedupe` | **live** audit, `gpt-5.4-mini` (`DRY_RUN_BLUE=false`, `DROID_MODEL_BLUE`); guard lifted on merged evidence (#157), image build fails without the SDK (#169). Smoke `ep_f9c695b3144f` (2-day enforce): live audit both days, 3,806 and 4,109 credits (`turn_usage`). `/gate` stays rules plus learned controls |
 
 - `system_prompt` is a plain string read from each service's `prompts/` file and passed as
   `SessionConfig(system_prompt=...)`; `disable_builtin_skills=True` and
@@ -277,9 +277,13 @@ not enabled on prod.
 - Per-turn `factory_credits` is logged at INFO (`turn_usage`) and returned in `usage`; battlefield
   pauses an episode at `MAX_CREDITS_PER_EPISODE` (`battlefield/app/orchestrator/runner.py`, 0 =
   off) and a lineage at `config.max_credits`; `make prod-evolve` refuses to start without
-  `MAX_CREDITS=`.
+  `MAX_CREDITS=`. Blue's `/audit` returns its `usage` too (#174, #176), so from the deploy
+  containing 6640354 blue's live-audit credits count toward both caps and `make prod-credits`.
+  Before #176 battlefield recorded blue's audit as 0 credits.
 - Per-agent `DRY_RUN_RED/GREEN/BLUE` (`deploy/render-env.sh`, `.github/workflows/deploy.yml`)
-  is how prod runs red and blue live while green stays keyless.
+  is how prod runs red and blue's audit live while green stays keyless. Before #176 blue's
+  `/health` always reported `droid_ok: false`; from the deploy containing 6640354 it reports
+  truthfully whether the SDK is installed (a metadata check, never a probe).
 
 ---
 
@@ -370,7 +374,7 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 | `AGENT_TOKEN_RED/GREEN/BLUE` | blank (shared `AGENT_TOKEN`), or three distinct strings; `make local-stack` generates three | secrets, all three or none (`deploy/render-env.sh` refuses a partial or duplicate set); see `deploy/ENVIRONMENT.md` |
 | `FACTORY_API_KEY` | **your own key**, or empty with `DRY_RUN=true` | dedicated prod key; secret; exists nowhere else |
 | `DROID_MODEL_RED/GREEN/BLUE` | a cheap / low-multiplier model | pinned prod models; variables |
-| `DRY_RUN`, `DRY_RUN_RED/GREEN/BLUE` | `DRY_RUN=true` for keyless dev; overrides blank | variables; prod `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=false` = red and blue's audit live, green keyless |
+| `DRY_RUN`, `DRY_RUN_RED/GREEN/BLUE` | `DRY_RUN=true` for keyless dev; overrides blank | variables; set the overrides explicitly. Prod: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=false` = red and blue's audit live, green keyless |
 | `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
 | `BLUE_GATE_LLM_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
 | `CRS_USERNAME`, `CRS_PASSWORD` | CRS sandbox login credentials, or empty (Blue returns `unknown`) | secrets; passed only to Blue at runtime |
@@ -390,7 +394,10 @@ Repository-level Actions secrets hold only deploy plumbing: `VULTR_HOST`, `VULTR
 CRS uses username/password login, not an API key. Its REST sandbox is
 `https://api-sandbox.stitchcredit.com/api`; the CalHacks signup portal is not the API base.
 Blue checks only explicitly bound, approved fictional employee profiles during audit. Never
-send arbitrary seeded identities: unmatched sandbox requests can reach real vendors.
+send arbitrary seeded identities: unmatched sandbox requests can reach real vendors. On prod,
+where blue's audit is live and the credentials sit in the `production` environment, a provider call
+needs a new, active employee that an operator bound to a persona and whose name matches it
+(`blue/audit/tools.py`, `crs.py`); seeded employees never qualify.
 See `blue/CRS.md` for the profile API, neutral fallback, and live-demo readiness checklist.
 
 ---

@@ -105,8 +105,8 @@ text says. Blocked only by P1/P2.
 | A# | Prize | Value | Proof already in the repo | Submission must say |
 |---|---|---|---|---|
 | A1 | **Hyphenate** — Autonomous Systems for Finance | $8k / $5k / $3k | "realistic data" → `battlefield/seed/company.py` (90 seeded days); "limited access, a clean record of its work, knowing when to ask" → `AGENTS.md` §3 invariants 1, 5, 11, the `audit_log`, and the preparation → gate → escalation path (green prepares each money move, blue decides, a human resolves escalations; `contracts/ledger-api.yaml` `/preparations`); "something new" → the red agent plus **evolution**: lineages of episodes where agents get debriefs and after-action reviews and rewrite their playbooks (`docs/EVOLUTION-DESIGN.md`; `make evolve` / `make evolution-report`; a keyless 3-generation run shows red evading in generation 2 and blue learning rules that catch it in generation 3; the live-red lineage `ln_f52a3df83c8d`, 5 gens × 8 days `enforce`, had red converge on invoice `threshold_split` and lift extraction from $19,076 to $97,734 with no blue rule catching it, a real gap; blue's `threshold_split` rule (#173) now blocks the expense version, the invoice version is still open); 8 red schemes (#166) a judge can steer by voice or text (#154, #165); the CRS identity hold proven against the live sandbox on the local stack (ep_0181eda1c921); "the moment" → a `gate.verdict` block on a live bank swap | Answer "would you hire it, for which seats" with the gate, the audit log, the escalation path, then how it improves across generations — in that order |
-| A2 | **Factory** — Droid SDK | $2000 + credits | Three `agentkit.DroidAgent` subclasses; **red and blue's daily audit run live on prod**. Red runs `gpt-5.4-mini`, reasoning `low` (~11 s and ~2.6k Factory credits per turn; moved off `gemini-3.8-flash` after it stalled live red turns, Finding in #118). Blue's audit runs on `gpt-5.4-mini` since #157 lifted its guard (`DRY_RUN_BLUE=false`; smoke ep_f9c695b3144f finished live audits on both days, ~3.8k and ~4.1k credits; `/audit` reports `usage`, #174). Blue's `/gate` stays the deterministic rules engine, not a Droid session. Spend is capped per episode (`MAX_CREDITS_PER_EPISODE`) and per lineage (`make prod-evolve ... MAX_CREDITS=`); `restrict_tools` with exact `<agent>-ledger___<tool>` ids, strict tool-use identity and `Autonomy.OFF` for green/blue, each turn on its own loop so the service stays responsive (#79, #84); `agent.thinking`/`tool_call`/`tool_result` rendered live. Green runs the same harness keyless on prod (`DRY_RUN_GREEN=true`), by Ad's decision for the pitch (#78; the green guard lift #160 stays a draft). Where each session runs and which tools it holds: `README.md` §6 "Where Droid runs" | Point judges at `README.md` §6 "Where Droid runs"; lead with a live episode, not a feature tour; say "red and blue live on Droid; green on the same harness, keyless", never that green runs live |
-| A3 | **Microsoft** — Grand Prize + Customer Impact | Surface laptops + FDE sessions | CI (per-service tests incl. Postgres, ownership and contracts guards), `.github/workflows/deploy.yml` with an approval gate, per-agent `DRY_RUN_RED/GREEN/BLUE` (red and blue live, green keyless), replayable fixtures, a real VM behind Cloudflare Access, `make prod-*` operations incl. recorded evolution runs | Lead with the deploy pipeline and replay, not the agents |
+| A2 | **Factory** — Droid SDK | $2000 + credits | Three `agentkit.DroidAgent` subclasses; **red and blue's daily audit run live on prod**. Red runs `gpt-5.4-mini`, reasoning `low` (~11 s and ~2.6k Factory credits per turn; moved off `gemini-3.8-flash` after it stalled live red turns, Finding in #118). Blue's audit runs on `gpt-5.4-mini` since #157 lifted its guard (`DRY_RUN_BLUE=false`, `DROID_MODEL_BLUE`; the image fails the build without the SDK since #169; smoke `ep_f9c695b3144f`, 2-day enforce, live audit both days at 3,806 and 4,109 credits from `turn_usage`; `/audit` reports `usage`, #174). Blue's `/gate` stays rules plus learned controls, not a Droid session (no gate LLM on prod). Spend is capped per episode (`MAX_CREDITS_PER_EPISODE`) and per lineage (`make prod-evolve ... MAX_CREDITS=`); `restrict_tools` with exact `<agent>-ledger___<tool>` ids, strict tool-use identity and `Autonomy.OFF` for green/blue, each turn on its own loop so the service stays responsive (#79, #84); `agent.thinking`/`tool_call`/`tool_result` rendered live. Green runs the same harness keyless on prod (`DRY_RUN_GREEN=true`), by Ad's decision for the pitch (#78; the green guard lift #160 stays a draft). Where each session runs and which tools it holds: `README.md` §6 "Where Droid runs" | Point judges at `README.md` §6 "Where Droid runs"; lead with a live episode, not a feature tour; say "red and blue live on Droid; green on the same harness, keyless", never that green runs live. Blue's `droid_ok` (always false) and per-episode audit credits (recorded as 0) were wrong before #176; from the deploy containing 6640354 both are truthful |
+| A3 | **Microsoft** — Grand Prize + Customer Impact | Surface laptops + FDE sessions | CI (per-service tests incl. Postgres, ownership and contracts guards), `.github/workflows/deploy.yml` with an approval gate, per-agent `DRY_RUN_RED/GREEN/BLUE` (red and blue's audit live, green keyless), replayable fixtures, a real VM behind Cloudflare Access, `make prod-*` operations incl. recorded evolution runs | Lead with the deploy pipeline and replay, not the agents |
 | A4 | **Armadin** — Best Security Hack | AirPods | Pitch hook: an AI red-team agent attacking a defended agentic finance system (offensive agents vs. a gate), matching Armadin's agent-swarm offensive-security thesis. Criteria still "Coming soon!" (P9) | Submit regardless with the hook; re-check wording once P9 lands |
 | A5 | **MLH Vultr** | M5Stack Tab5 | Already the deploy target (`README.md` §13; `VULTR_HOST`/`VULTR_SSH_KEY`) | One line |
 | A6 | **MLH Gemini** | Swag kit | No live Gemini use on prod. `blue/gate/llm.py` supports Gemini as one of three gate-LLM providers (gemini, anthropic, openai; `BLUE_GATE_LLM_PROVIDER`, default `gemini` in `.env.example`), but the gate LLM is not enabled on prod (`BLUE_GATE_LLM_PROVIDER` unset; blue's live audit runs on `gpt-5.4-mini` through Droid). Red is not on Gemini either: it tried `gemini-3.8-flash` live and moved to `gpt-5.4-mini` after it stalled (#118) | Drop the claim unless blue's gate LLM goes live on Gemini |
@@ -170,13 +170,17 @@ B1 before B2: B1 is an hour and unblocks A9; B2 is blocked on P3 and P4.
   In the mismatch case, show that the CRS flag, not an existing heuristic, changes the later
   expense gate. Verify sandbox request logs say `billable:false`.
 - *Status: end-to-end acceptance PASSED locally* (M, #102, 2026-10-25 00:09Z). Episode
-  ep_0181eda1c921, 2-day `enforce`, local stack at main `34fdbdf` with real blue and the live CRS
-  sandbox: day-0 expenses for P01/P12/P16 paid; blue's audit flagged P12 (provider mismatch);
-  P12's day-1 expense was blocked with `already_flagged_high`; P01/P16 day-1 expenses paid;
-  19 identity checks, all `billable:false`. It rests on #139 (the expense gate context carries
-  employee and expense flags); #150 keeps episode evidence when the provider check fails. Blue's
-  live-audit guard was lifted separately (#157). CRS does not run on prod; the live demo is from
-  a laptop on the local stack, else the recorded run. Details: `blue/CRS.md`.
+  ep_0181eda1c921, 2-day `enforce`, local stack at main `34fdbdf` with real blue (keyless audit,
+  `CRS_LIVE=true`) and the live CRS sandbox: day-0 expenses for P01/P12/P16 paid; blue's audit
+  flagged P12 (provider mismatch); P12's day-1 expense was blocked with `already_flagged_high`;
+  P01/P16 day-1 expenses paid; 19 identity checks, all `billable:false`. It rests on #139 (the
+  expense gate context carries employee and expense flags); #150 keeps episode evidence when the
+  provider check fails.
+- *Live status:* the live-audit guard was lifted on merged evidence (#157) and blue's audit runs
+  on Droid on prod (`DRY_RUN_BLUE=false`), so its `crs_identity_check` tool is live code there.
+  It reaches the provider only for a new, active employee that an operator bound to a persona and
+  whose name matches it; seeded employees never qualify, so no prod CRS call has happened. The
+  live demo is from a laptop on the local stack, else the recorded run. Details: `blue/CRS.md`.
 
 *Done when:* both PRs are squash-merged per `GIT.md` §4 and A9 is written. B1 merged (#98/#100);
 B2 merged and its acceptance passed (above).
@@ -184,8 +188,9 @@ B2 merged and its acceptance passed (above).
 ## §7 Phase C — if someone goes idle
 
 Blanket gate: the `README.md` §14 Saturday 14:00 checkpoint (full 3-day episode in `shadow`
-with real agents) must be green first. **Status: NOT RUN.** Red and blue's audit run live on prod
-(#157); green stays keyless by Ad's decision (#78), so the all-real checkpoint has not run. M
+with real agents) must be green first. **Status: not met as written.** Red and blue's audit run
+live on prod (#157; smoke `ep_f9c695b3144f`, 2-day enforce), but green stays keyless by Ad's
+decision (#78; #160 stays a draft), and no 3-day `shadow` run with live agents is recorded. M
 proposed an overnight all-real shadow run in its place (#78), pending Ad's decision. CRS sandbox
 acceptance passed on its own (B2, ep_0181eda1c921); Bright Data live readiness is tracked
 separately. Neither is proven by that checkpoint. Each item ends the weekend either merged or marked
@@ -203,8 +208,8 @@ separately. Neither is proven by that checkpoint. Each item ends the weekend eit
 - **C3 Bright Data — web due diligence.** Does this vendor have a registration, a site, an
   address? Second evidence source beside CRS, same audit path, `blue/audit/webcheck.py`.
   **Extra gate:** B2 and its runtime/documentation prerequisites merged — then it reuses the
-  finding plumbing. Draft PRs do not clear this gate. Blue's shared live-audit readiness also
-  applies to a live Bright Data demo.
+  finding plumbing. Draft PRs do not clear this gate. Blue's audit is live on prod (#157), so a
+  live Bright Data tool would run inside that live session and needs its own live evidence.
 - **C4 Capital One Nessie.** Back `payments` and `bank_transactions` with real Nessie accounts
   so reconciliation runs against an external system instead of a self-consistent fiction.
   **Extra gate: do not start.** It rewrites battlefield's payment path, Ad's critical path,
