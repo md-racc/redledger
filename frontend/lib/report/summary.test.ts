@@ -23,15 +23,15 @@ import {
 } from "./summary";
 import type { ControlsReport, Gap } from "./types";
 
-// the recorded demo (docs/recordings/demo-enforce-redblue-live.jsonl) as battlefield's builder derives it
+// the live controls report of the red + blue controller-on run (ep_d9b561111d60, GET /fe/episodes/{id}/controls, scored since #207)
 const fixture: ControlsReport = JSON.parse(readFileSync("public/mocks/controls-report.json", "utf8"));
 const clone = (): ControlsReport => structuredClone(fixture);
 
 describe("the mock fixture", () => {
   it("carries the recorded demo's numbers and no ground-truth keys", () => {
     expect(fixture.final).toBe(true);
-    expect(fixture.score.dollars_extracted).toBe(20350.37);
-    expect([fixture.lost, fixture.to_attacker_accounts, fixture.to_real_parties]).toEqual([20350.37, 18180, 2170.37]);
+    expect(fixture.score.dollars_extracted).toBe(18526.15);
+    expect([fixture.lost, fixture.to_attacker_accounts, fixture.to_real_parties]).toEqual([18526.15, 18180, 346.15]);
     for (const s of fixture.schemes) expect((s.to_attacker_accounts ?? 0) + (s.to_real_parties ?? 0)).toBeCloseTo(s.lost, 2);
     expect(fixture.schemes.reduce((n, s) => n + s.lost, 0) + fixture.unattributed).toBeCloseTo(fixture.lost, 2);
     expect(fixture.false_positives.cost).toBe(50);
@@ -39,7 +39,7 @@ describe("the mock fixture", () => {
     const gaps = Object.fromEntries(fixture.gaps.map((g) => [g.scheme_id, g]));
     expect(gaps.ghost_vendor!.extracted).toBe(4380);
     expect(gaps.ghost_vendor!.why).toBe("note only");
-    expect(gaps.bank_swap!.extracted).toBe(1824.22);
+    expect(gaps.bank_swap).toBeUndefined(); // its invoice went to the real vendor: no loss, no gap
     expect(gaps.threshold_split!.extracted).toBe(13800);
     expect(gaps.expense_inflation!.extracted).toBe(346.15);
     expect(fixture.schemes.find((s) => s.scheme_id === "ghost_employee")!.outcomes.blocked).toBe(1);
@@ -102,10 +102,10 @@ describe("the assessment", () => {
     const s = executiveSummary(fixture);
     expect(s[0]).toBe("The attacker made 6 attempts across 6 schemes worth $27,565.92; $1,480.00 of it was stopped.");
     expect(s[1]).toBe(
-      "$20,350.37 lost to fraud (74% of attempted), of which $18,180.00 reached attacker-controlled accounts and $2,170.37 was paid to real vendors/employees on fraudulent documents (an overpayment, usually recoverable).",
+      "$18,526.15 lost to fraud (67% of attempted), of which $18,180.00 reached attacker-controlled accounts and $346.15 was paid to real vendors/employees on fraudulent documents (an overpayment, usually recoverable).",
     );
     expect(s[2]).toMatch(/^2 controls stopped fraudulent items: "Employee has no HR onboarding record" \(3 items, \$1,480\.00\) and /);
-    expect(s[3]).toBe("4 schemes still extracted money: Threshold Splitting ($13,800.00, note only), Ghost Vendor ($4,380.00, note only), Bank Account Swap ($1,824.22, no control fired) and 1 more.");
+    expect(s[3]).toBe("3 schemes still extracted money: Threshold Splitting ($13,800.00, note only), Ghost Vendor ($4,380.00, note only) and Expense Inflation ($346.15, no control fired).");
     expect(s[4]).toBe("False positives cost $50.00: 1 legitimate item blocked and 0 escalated for review.");
     expect(s).toHaveLength(5);
   });
@@ -153,7 +153,7 @@ describe("the assessment", () => {
   it("says where lost money landed, or that a replay can't tell", () => {
     const r = clone();
     r.to_attacker_accounts = r.to_real_parties = null;
-    expect(lostSentence(r)).toBe("$20,350.37 lost to fraud (74% of attempted); where it landed is not recorded for a replayed run.");
+    expect(lostSentence(r)).toBe("$18,526.15 lost to fraud (67% of attempted); where it landed is not recorded for a replayed run.");
     const all = clone();
     all.to_attacker_accounts = all.lost;
     all.to_real_parties = 0;
@@ -165,14 +165,14 @@ describe("the assessment", () => {
     expect(lostSentence(none)).toBe("No money was lost to fraud.");
     const over = clone();
     over.totals.attempted = 100; // took more than it targeted: no share above 100%
-    expect(lostSentence(over)).toMatch(/^\$20,350\.37 lost to fraud, of which/);
+    expect(lostSentence(over)).toMatch(/^\$18,526\.15 lost to fraud, of which/);
     const stray = clone();
     stray.unattributed = 250.5;
     expect(lostSentence(stray)).toMatch(/ \$250\.50 of it is not attributed to any scheme\.$/);
   });
 
   it("orders schemes worst first", () => {
-    expect(schemesByLoss(fixture.schemes).map((s) => s.scheme_id).slice(0, 3)).toEqual(["threshold_split", "ghost_vendor", "bank_swap"]);
+    expect(schemesByLoss(fixture.schemes).map((s) => s.scheme_id).slice(0, 3)).toEqual(["threshold_split", "ghost_vendor", "expense_inflation"]);
   });
 });
 
