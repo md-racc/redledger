@@ -1,6 +1,6 @@
 # Red Ledger for the CRS Financial Intelligence Challenge
 
-Status as of 2026-10-25 ~04:15Z, main @ fb829e6; prod @ 47e3e33. Issue #102 is closed (acceptance passed, M, 00:09Z).
+Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6. Issue #102 is closed (acceptance passed, M, 00:09Z).
 
 Status legend: `LIVE` = running on prod (app.redledger.us) with a real model today. `ON MAIN` = merged and tested, runs keyless, not exercised live on prod. `PLANNED` = not done yet. `NOT DOING` = out of scope. Track-specific tag: `SANDBOX-PROVEN (local)` = exercised against the real CRS sandbox from a team member's local stack, with evidence in a PR or issue, not on prod. `UNVERIFIED` = could not confirm.
 
@@ -86,7 +86,7 @@ Judging: "No points formula. Judges look at the whole project, and a bold idea c
 
 The original plan (B2) was EIN/vendor verification. The published CalHacks OpenAPI exposes personal identity checks, not an EIN business-verification endpoint, so B2 was redesigned on 2026-10-24 to check synthetic **employee** identities (INTEGRATIONS.md §6 B2; `blue/CRS.md:3`). It fits the ghost-employee threat in the range: red's `ghost_employee` scheme adds a never-onboarded contractor who files expenses (`red/schemes/ghost_employee.py`).
 
-**Honesty point:** the live red attacker does **not** drive the CRS scenario. Red's ghost employees get random plausible names that aren't sponsor personas, and the policy forbids sending arbitrary identities ("Unmatched identities can reach real vendors, even in the sandbox", `blue/CRS.md:36-37`). Red's ghost employees are caught by `no_hr_record` instead (`blue/gate/rules.py:320-328`; `red_writes.py:214`). The CRS scenario is **operator-seeded**: three employees named exactly after the sponsor personas, with valid HR records and distinct accounts, so CRS, not an existing heuristic, supplies the hold.
+**Honesty point:** the live red attacker does **not** drive the CRS scenario. Red's ghost employees get random plausible names that aren't sponsor personas, and the policy forbids sending arbitrary identities ("Unmatched identities can reach real vendors, even in the sandbox", `blue/CRS.md:36-37`). Red's ghost employees are caught by `no_hr_record` instead (`blue/gate/rules.py:377-385`; `red_writes.py:214`). The CRS scenario is **operator-seeded**: three employees named exactly after the sponsor personas, with valid HR records and distinct accounts, so CRS, not an existing heuristic, supplies the hold.
 
 ### 4.2 Data flow, step by step `ON MAIN` (SANDBOX-PROVEN locally end to end, ep_0181eda1c921)
 
@@ -99,7 +99,7 @@ The original plan (B2) was EIN/vendor verification. The published CalHacks OpenA
 7. **Normalize** (`parse_identity`, `crs.py:27-54`). Evidence counts only from exactly one `idManagerVerification` product with `status == "DELIVERED"` and `searchStatus` in {CLEAR, HIT} and well-formed `messages`. Any code outside {2101, 2201, 2202, 2301, 2401} → unknown. 2401, or 2101 alone → `review`. Any of 2201/2202/2301 → `mismatch`. No messages → `verified` (sponsor note "messages: empty = verified"; the live P01 probe returned HIT + empty, and #125 fixed the parser, which had required CLEAR).
 8. **Finding.** Only `mismatch` creates `crs_employee_identity_mismatch`, severity **high**, family `identity`, fixed text "CRS reports an employee identity inconsistency; independent HR review is required." (`blue/audit/evidence.py:314-328`). `review`, `verified` and `unknown` create nothing. The audit report counts "CRS unknown/step-up" (`tools.py:341`).
 9. **Flag.** The audit raises the finding through `raise_flag(finding_id)`. That tool takes only a service-defined finding id: "No arbitrary entity, severity or reason" (`tools.py:262-280`).
-10. **Hold on the next gated action.** Blue's existing `already_flagged_high` rule blocks an expense approve/pay when a high-severity flag sits on the expense or its employee (`blue/gate/rules.py:331-344`). `/gate` makes no CRS call and gains no latency (`blue/CRS.md:31-32`). **Gap found and fixed:** in the #134 run battlefield's `_expense_context` sent no `flags`, so `req.context.get("flags", [])` was empty and step 10 never fired. #139 (ae822a1) adds the employee + expense flags query, the same pattern `_invoice_context` uses (`battlefield/app/api/green_writes.py` `_expense_context`, `"flags": flags`). **Re-proven end to end with real CRS** in ep_0181eda1c921: P12's day-1 expense blocked with `already_flagged_high` (#102).
+10. **Hold on the next gated action.** Blue's existing `already_flagged_high` rule blocks an expense approve/pay when a high-severity flag sits on the expense or its employee (`blue/gate/rules.py:388-401`). `/gate` makes no CRS call and gains no latency (`blue/CRS.md:31-32`). **Gap found and fixed:** in the #134 run battlefield's `_expense_context` sent no `flags`, so `req.context.get("flags", [])` was empty and step 10 never fired. #139 (ae822a1) adds the employee + expense flags query, the same pattern `_invoice_context` uses (`battlefield/app/api/green_writes.py` `_expense_context`, `"flags": flags`). **Re-proven end to end with real CRS** in ep_0181eda1c921: P12's day-1 expense blocked with `already_flagged_high` (#102).
 
 ### 4.3 Modes and switches `ON MAIN`
 
@@ -152,11 +152,11 @@ tool returns all-unknown and calls nobody.
 | CRS on prod (seed and bind personas on prod, confirm the CRS secrets in the production environment) | Ad / M | NOT DOING for the hackathon | "CRS runs on a local stack of the same code; nothing CRS runs on prod" |
 | CRS through blue's live Droid audit (would make "Best Financial AI Agent" honest) | M | not run | Don't enter Best Financial AI Agent |
 | CRS beat in the pitch / a CRS view in the frontend | R | not planned | Demo at the CRS table from a terminal, not in the four-laptop show |
-| P4 / P7 (context) | M / Ad | Blue audit LIVE; green keyless by decision. Public read-only site IN PROGRESS | See docs/devpost/README.md |
+| P4 / P7 (context) | M / Ad | Blue audit LIVE; green keyless by decision. Public read-only site LIVE (P7) | See docs/devpost/README.md |
 
 ## 6. Demo beats for this track
 
-R's pitch (`frontend/docs/pitch-script.md`) has **no CRS beat**, and the four laptops point at prod, where CRS can't run. Treat CRS as a **separate 60-90 s table demo for CRS judges**, plus at most one sentence in Blue's minute (only at GO).
+R's pitch (`frontend/docs/pitch-script.md`) has **no CRS beat**, and the four laptops point at prod, where no CRS personas are seeded or bound, so no CRS call happens there. Treat CRS as a **separate 60-90 s table demo for CRS judges**, plus at most one sentence in Blue's minute (only at GO).
 
 **Table demo (laptop with `make local-stack BLUE=real`, credentials and `CRS_LIVE=true` exported in the shell, never `.env`). This is the run the GO depends on:**
 

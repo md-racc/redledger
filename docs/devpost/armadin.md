@@ -1,6 +1,6 @@
 # Red Ledger for Armadin "Best Security Hack"
 
-Status as of 2026-10-25 ~04:15Z, main @ fb829e6; prod @ 47e3e33.
+Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6.
 
 Status legend: `LIVE` = running on prod (app.redledger.us) with a real model today. `ON MAIN` = merged and tested, runs keyless (DRY_RUN or mock agents), not exercised live on prod. `PLANNED` = not done yet. `NOT DOING` = out of scope. `UNVERIFIED` = could not confirm in code or a PR.
 
@@ -44,8 +44,8 @@ Criteria are pending, so the rows are general security-hack judging points plus 
 | Disclosure policy for learning | Only resolved attacks are revealed, within a window; legit items only after the episode; revealed outcomes are frozen; nobody sees an opponent's playbook; red's `GET /attacks` withholds outcomes until they are revealed | ON MAIN | AGENTS.md §3 inv. 4; docs/EVOLUTION-DESIGN.md §3; #60, #62; #138/#142 |
 | Red-teaming our own range | Found and closed: red reading attack outcomes outside the debrief window (#137 → #138, #142); gate verdicts replayed across days or enforcement modes (#147, #151); a paid voice route reachable by viewers (#156, fixed before #154 merged); a fail-open runtime mock flag in the admin check (#159) | ON MAIN | §4.10 |
 | Secure engineering process | An independent verifier on every core PR; 14 verifier-attributed integrity and leak findings fixed before merge (§4.9) | done | PR bodies #30, #52, #57, #59, #62, #66, #71, #130 |
-| Public read-only mode | Anyone can watch, only admins can act: constant-time admin key, HMAC-signed HttpOnly cookie, viewers limited to GET/HEAD in the `/api/bf` proxy before battlefield is contacted, fail closed if `ADMIN_KEY` is unset or short | ON MAIN (#152, #159); switching it on is P7, IN PROGRESS | #152, #159; `frontend/lib/admin.ts` |
-| Deployment hardening | Cloudflare Access + origin locked to Cloudflare IPs, origin JWT check, REST API has no public hostname, internal data network, WS tickets single-use with nonce | LIVE (infra) | #44, #47, #49, #50, #15, #41/#42 |
+| Public read-only mode | Anyone can watch, only admins can act: constant-time admin key, HMAC-signed HttpOnly cookie, viewers limited to GET/HEAD in the `/api/bf` proxy before battlefield is contacted, fail closed if `ADMIN_KEY` is unset or short | LIVE on prod since ~04:30Z 2026-10-25 (P7) | #152, #159; `frontend/lib/admin.ts` |
+| Deployment hardening | Origin locked to Cloudflare IPs, REST API has no public hostname, internal data network, WS tickets single-use with nonce; Cloudflare Access + origin JWT check gated the site until P7 (built, now off: the site is public read-only) | LIVE (infra) | #44, #47, #49, #50, #15, #41/#42 |
 
 ## 4. What we have, in detail
 
@@ -201,7 +201,7 @@ Related fixes whose finder the PR does **not** name (don't attribute them to a v
 | P4 | Agents live on Droid | M | Blue audit LIVE (#157); green NOT DOING (Ad's decision, #78) | "Red and blue live on Droid; green on the same harness, keyless" |
 | P5 | Prod on the TimescaleDB image | Ad | NOT DOING for the hackathon unless it lands | "TimescaleDB proven in CI; prod on Postgres 16" |
 | P6 | CRS live demo | M | Acceptance PASSED locally (ep_0181eda1c921); table demo pending | "Recorded acceptance run ep_0181eda1c921; live at the table on request" (crs.md) |
-| P7 | Public read-only site (no Access) | Ad | IN PROGRESS (#152, #159 merged) | "Site behind Cloudflare Access; live walkthrough or recordings" |
+| P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
 | P8 | Invoice threshold-split control in blue | M (#175) | ASKED | "Red found a gap in invoice split detection; the expense version is shipped (#173)." Until then: "threshold splitting on invoices evades the gate; the audit catches it next day at best" |
 | P9 | Short live lineage after P8 to show blue closing the gap | Ad | PLANNED after P8 | Keep the P1 story: "the sandbox surfaced a real gap" |
 
@@ -215,7 +215,7 @@ Map onto R's pitch (`frontend/docs/pitch-script.md`) and the 90-second show (`fr
 | 0:43 controller on | red number stays at zero (mock recording) | "Same seed, same attacks, gate on." | — |
 | Blue's minute, after the Bank Account Swap launch | laptop 4: verdict line | With **real** blue rules the swap is **escalated** ("independently verify the destination"), and a human Block or the timeout blocks it. Mock blue blocks outright. Since #145 the pitch script says the real version ("I didn't block it. I flagged the bank change and asked a human"), with a fallback line if the screen says BLOCK. | Point at any block already on screen (as scripted) |
 | Red's minute, "it's boxed in" | laptop 2 `/backstage/red`: tool calls (`red-ledger___inspect_books`, `run_scheme`) | "Eight tools. Its own token. No pay, approve, freeze or audit-log route. The server enforces that, not the prompt. Ground truth is stripped from every response red gets." | Point at the tool-call lines in any recorded run |
-| Red's minute, "decent plan" | laptop 2 tape | One line of tradecraft: "My duplicate invoice drifts 1.8% and bumps the number by 3, because blue's duplicate rule tolerates 1%." | — |
+| Red's minute, "decent plan" | laptop 2 tape | One line of tradecraft: "My duplicate invoice bumps the number by 3 and drifts the amount 1.8%, because blue's duplicate rule keys on the invoice number." | Real blue's `duplicate_invoice` matches the same number, or one appended letter with the same PO within $0.05 (`blue/gate/rules.py:231-247`); red's own docstring assumes a 1% tolerance, so don't say "1%" |
 | Red's minute, evolution card | laptop 1 EvolutionCard | "The debrief only tells me about attacks that already resolved. Over five generations on prod I worked out that splitting invoices on an established vendor gets through, so I did more of it, and blue's new controls never caught one." | See warning below |
 | Close, "Pick an attack" (optional voice) | laptop 1 attack console | "Say any fraud in your own words, any language. Red gets your words, but only as quoted data: it can pick one of its eight schemes or tune its amounts, never run something new. That's the prompt-injection boundary, enforced by the tool, not by the model's good manners." | Voice is admin-only and needs the ElevenLabs key; it was never tested against the real service (#154). Type the words instead |
 | Q&A | repo | Show §4.9's table, §4.10's closed findings and §4.11's open gaps | — |

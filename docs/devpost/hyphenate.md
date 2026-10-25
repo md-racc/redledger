@@ -1,6 +1,6 @@
 # Red Ledger for Hyphenate: The Hyphenated Enterprise (Autonomous Systems for Finance)
 
-Status as of 2026-10-25 ~04:15Z, main @ fb829e6; prod @ 47e3e33.
+Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6.
 
 Paths are relative to the repo root (`github.com/md-racc/redledger`). Status legend: `LIVE` (running on prod at app.redledger.us with a real model), `ON MAIN` (merged, tested, runs keyless, not exercised live on prod), `PLANNED`, `NOT DOING`. "Code reading" means the claim comes from reading the code, not from a recorded run.
 
@@ -166,7 +166,7 @@ Rejections (`*.reject`) and `gl.post` pass validation and fire no rules. That is
 
 ### 4.7 Red: the fraud agent — LIVE on prod (gpt-5.4-mini)
 
-- **Schemes that exist** (`red/schemes/__init__.py`): `ghost_vendor`, `bank_swap`, `duplicate_invoice`, `threshold_split`, `ghost_employee`. Planned but not written: `expense_inflation`, `po_mismatch`, `amount_drift`.
+- **Schemes that exist** (`red/schemes/__init__.py`), all eight: `ghost_vendor`, `bank_swap`, `duplicate_invoice`, `threshold_split`, `ghost_employee`, and since #166 `expense_inflation`, `po_mismatch`, `amount_drift`. The voice console's keyword matcher still knows only the first five (`frontend/lib/voice/intent.ts`); an unforced turn can pick any of the eight.
 - **Tools** (`red/tools.py`): `list_schemes`, `inspect_books`, `run_scheme`, `create_vendor`, `submit_invoice`, `request_vendor_bank_change`, `submit_expense`, `add_employee`. Red cannot approve, pay, freeze or read the audit log (README §5 route table).
 - **Live numbers**: `gpt-5.4-mini` (reasoning low), full attack in 11.2 s, 2,635 Factory credits per turn (episode `ep_568aef023d7c`). `gemini-3.8-flash` stalled to the 170 s timeout and was dropped (`contracts/CHANGELOG.md` Findings, #118).
 
@@ -220,7 +220,7 @@ The live-red prod lineage `ln_f52a3df83c8d`: 5 generations × 8 business days, e
 | P4 | Agents live on Droid | M | Blue audit LIVE (#157); green NOT DOING (Ad's decision, #78) | "Red and blue live on Droid; green on the same harness, keyless" |
 | P5 | Prod on the TimescaleDB image | Ad | NOT DOING for the hackathon unless it lands | "TimescaleDB proven in CI; prod on Postgres 16" |
 | P6 | CRS live demo | M | Acceptance PASSED locally (ep_0181eda1c921); table demo from a laptop pending | "Recorded acceptance run ep_0181eda1c921; live at the table on request" (crs.md) |
-| P7 | Public read-only site (no Access) | Ad | IN PROGRESS (#152, #159 merged) | "Site behind Cloudflare Access; live walkthrough or recordings" |
+| P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
 | P8 | Invoice threshold-split control in blue (the gap the live lineage found) | M (#175) | ASKED | "Red found a gap in invoice split detection; the expense version is shipped (#173)" |
 | P9 | Short live lineage after P8 to show blue closing the gap | Ad | PLANNED after P8 | Keep the P1 story: "the sandbox surfaced a real gap" |
 

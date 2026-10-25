@@ -1,6 +1,6 @@
 # docs/devpost — track docs for the Devpost submission and the pitch
 
-Status as of 2026-10-25 ~04:15Z, main @ fb829e6; prod @ 47e3e33. Written for R (Devpost + pitch). Ad keeps them current.
+Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6. Written for R (Devpost + pitch). Ad keeps them current.
 
 Each file is one prize track. Each has the same ten sections: prize snapshot, our angle, a criteria → evidence
 matrix, what we have in detail, what's planned, demo beats, paste-ready Devpost copy, a claims ledger
@@ -19,7 +19,7 @@ real agents). The old "R should reword" notes in these docs are resolved by #145
 
 CRS is in the submit list now: the end-to-end acceptance passed against the live CRS sandbox (ep_0181eda1c921, #102).
 The verdict is **GO, conditional on a live laptop demo at the CRS table**, because the challenge's only rule is "show
-it working live" and CRS doesn't run on prod. If nobody can run the laptop demo, drop CRS (crs.md §0).
+it working live" and no CRS call has run on prod. If nobody can run the laptop demo, drop CRS (crs.md §0).
 
 Rank 6 has no doc because the claims are one-liners. Paste them as-is:
 
@@ -67,7 +67,8 @@ Not submitting, or drop the claim:
   never tested against the real ElevenLabs service. Try one real recording on prod before relying on it.
 - **CRS (P6): end-to-end acceptance PASSED** against the live CRS sandbox from a local stack (M, ep_0181eda1c921,
   #102 at 00:09Z): P12's identity mismatch raised a high flag and blocked P12's next expense
-  (`already_flagged_high`); P01/P16 paid; 19 identity checks, all `billable:false`. It doesn't run on prod. See crs.md.
+  (`already_flagged_high`); P01/P16 paid; 19 identity checks, all `billable:false`. That run used blue's keyless audit
+  with `CRS_LIVE=true`. No CRS call has run on prod (it needs operator-bound persona employees). See crs.md.
 - **`threshold_split` control: expense version shipped, invoice version still open.** #173 adds a blocking aggregate
   `threshold_split` rule for **expenses only**. Red's scheme splits **invoices**, so the gap the live lineage found is
   still open (P8, #175).
@@ -95,9 +96,10 @@ Not submitting, or drop the claim:
   run and show blue's verdicts with reasons. On prod the EvolutionCard loads the real `/fe/lineages/{id}/report` for
   the newest finished lineage, which is `ln_f52a3df83c8d`, with a recorded fallback (`frontend/lib/arena/lineage.ts`;
   P3, #117 still open). Check what it shows before going on stage.
-- The site is still behind Cloudflare Access (email PIN). A public read-only mode is merged (#152, #159): anyone can
-  watch, only admins can act. Switching it on is P7, in progress. Until it is on, say "the site is behind Cloudflare
-  Access; judges get a live walkthrough or the recordings".
+- **The site is public and read-only (P7, LIVE since ~04:30Z 2026-10-25; #152, #159).** Judges can open
+  app.redledger.us on their own devices and watch runs live. Only the stage laptops, signed in at `/admin`, can start
+  runs, launch attacks, use voice or resolve escalations; the server enforces it (viewers get 403 on anything but
+  GET/HEAD, and the lineage export is admin-only). Cloudflare Access no longer gates the site.
 
 ## Planned items (the same IDs in every doc)
 
@@ -109,7 +111,7 @@ Not submitting, or drop the claim:
 | P4 | Agents live on Droid | M | Blue audit LIVE; green NOT DOING (Ad's decision, #78) | "Red and blue live on Droid; green on the same harness, keyless" |
 | P5 | Prod on the TimescaleDB image | Ad | NOT DOING for the hackathon unless it lands | "TimescaleDB proven in CI; prod on Postgres 16" |
 | P6 | CRS live demo | M | Acceptance PASSED locally (ep_0181eda1c921); the table demo from a laptop is pending | "Recorded acceptance run ep_0181eda1c921; live at the table on request" |
-| P7 | Public read-only site (no Access) | Ad | IN PROGRESS (code merged in #152, #159) | "Site behind Cloudflare Access; live walkthrough or recordings" |
+| P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
 | P8 | Invoice threshold-split control in blue | M (#175) | ASKED | "Red found a gap in invoice split detection; the expense version is shipped (#173)" |
 | P9 | Short live lineage after P8, to show blue closing the gap | Ad | PLANNED after P8 | Keep the P1 story: "the sandbox surfaced a real gap" |
 

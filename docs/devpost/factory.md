@@ -1,6 +1,6 @@
 # Red Ledger: Factory track, "Best Use of the Factory Droid SDK"
 
-Status as of 2026-10-25 ~04:15Z, main @ fb829e6; prod @ 47e3e33.
+Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6.
 
 Paths are relative to the repo root (github.com/md-racc/redledger). "Finding" means a dated line under
 `## Findings` in `contracts/CHANGELOG.md`. Status legend: `LIVE` (on prod, app.redledger.us, with a real
@@ -62,7 +62,7 @@ No published criteria, so the rows are the SDK surfaces this track is about.
 | Usage / credits | `result.usage.factory_credits` logged per turn, returned in `/turn`, put on `turn.ended`, summed by a per-episode and per-lineage credit guard | `LIVE` (red; blue's audit from the deploy containing 6640354, which returns `usage` on `/audit`, #174/#176). Smoke `ep_f9c695b3144f` predates it: `turn_usage` 3,806 / 4,109, recorded as 0 by battlefield | `droid_agent.py:668-675`; `battlefield/app/orchestrator/runner.py:280-345`; `.../lineage.py`; `make prod-credits`; #174, #176 |
 | Model pinning | `DROID_MODEL_RED/GREEN/BLUE`, `DROID_REASONING_*` validated at startup | `LIVE` (red and blue: `gpt-5.4-mini`; green pre-set to `gpt-5.4-mini`, keyless) | `agentkit/agentkit/config.py`; `docker-compose.yml:97-131`; Finding (#118) |
 | DRY_RUN | Every agent runs keyless with no SDK import; per-agent `DRY_RUN_RED/GREEN/BLUE` | `LIVE` (green keyless on prod) | `droid_agent.py:340-342`; `.env.example` |
-| Empirical findings | 10 dated Droid-related Findings + 2 open questions | n/a | `contracts/CHANGELOG.md` §Findings (all listed in §4.9) |
+| Empirical findings | 11 dated Droid-related Findings (the 2026-10-25 OFF confirmation lands with the repo-docs refresh) + 1 open question | n/a | `contracts/CHANGELOG.md` §Findings (all listed in §4.9) |
 | Droid packaged in containers | CLI via `curl -fsSL https://app.factory.ai/cli \| sh` in `python:3.11-slim`; `droid-sdk[mcp]` via `agentkit[droid]` | `LIVE` | `red/Dockerfile`; Finding 2026-10-23 |
 
 ---
@@ -271,13 +271,14 @@ tell the model "failed" while battlefield might still pay it (#20, #34). agentki
 | 2026-10-24 · Al | Awaiting in-process MCP tools stall the run (`RunTimeoutError`) | Repro in the red container (PR #9); fix is `_offload` |
 | 2026-10-24 · Al | Model menu and cost: `list_models` ~60 models with `token_multiplier` (gemini-3.8-flash 0.3, gpt-5.4-mini 0.3, claude-haiku-4-5 0.4); trivial one-tool turn ~10k credits (mostly ~31k input tokens of tool/system context); a live red turn ~6.7k credits (gemini-3.8-flash, low, turns 14 s / 79 s) | PR #9 live run |
 | 2026-10-24 · Al | In-process MCP tool IDs are `<server>___<tool>`; `list_tools()` gives `source=None`, so a source filter leaves `restrict_tools` unapplied (~34 built-ins); MCP tools are deferred behind `ToolSearch` but still found | PR #9 live red run against `make mock-agents` |
-| 2026-10-24 · Ad | MCP permission rule: a call asks iff its impact level (low 1 / medium 2 / high 3) exceeds autonomy (off 0 … high 3), so `OFF` asks for every MCP call and `HIGH` for none | Static read of `shouldConfirmExecution` in the CLI binary. **Recorded as provisional** (not yet confirmed live) |
+| 2026-10-24 · Ad | MCP permission rule: a call asks iff its impact level (low 1 / medium 2 / high 3) exceeds autonomy (off 0 … high 3), so `OFF` asks for every MCP call and `HIGH` for none | Static read of `shouldConfirmExecution` in the CLI binary. Recorded as provisional, then confirmed live for blue's tools (next row) |
+| 2026-10-25 · Ad | `Autonomy.OFF` raises a permission request for every MCP tool call, confirmed live: blue's real `AuditAgent` Session at `OFF` made 6 `blue-ledger___*` calls and the handler saw 6 requests, one event pair each (ep_edd0d922b9a5, local stack) | #119; `blue/SDK-READINESS.md`. Added with the repo-docs refresh (`docs/refresh-repo-docs`) |
 | 2026-10-24 · Ad | The CLI never passes `tool_use_id` to an MCP tool handler (`_meta:{assemblySessionId, caller}` only) | `grep -a` on the 0.249.0 binary |
 | 2026-10-24 · M | Blue's 7 session tool IDs observed with a real `Session.list_tools()` (SDK 0.5.0 / MCP 1.30.0) | List-only probe; no stream or tool run |
 | 2026-10-24 · M | One real OFF blue `post_report` call requested permission and kept its SDK identity: one `PROCEED_ONCE`, verified ID = intercepted `X-Tool-Use-Id` = receipt, one event pair; concurrent local `/gate` 3.284 ms; 2,989 credits | Authenticated probe, intercepted HTTP, `gemini-3.8-flash` low |
 | 2026-10-24 · M | Green's 9 AP session tool IDs observed with zero streams or tool calls | List-only probe, #94 evidence |
 | 2026-10-24 · Ad | `gemini-3.8-flash` stalled live red turns on prod from ~20:30Z: almost no stream output, one built-in `ToolSearch` after 80–140 s, no ledger tools, `RunTimeoutError` at 170 s (ep_1961aa7021ec, ep_9a15474fb8e7), with the same image, CLI and `droid-sdk==0.5.0` that worked at 16:04Z in 20–38 s. Switching only `DROID_MODEL_RED=gpt-5.4-mini` (low) fixed it: full attack in 11.2 s, 2,635 credits/turn (ep_568aef023d7c) | Prod episodes; #118 |
-| Still open | (1) Does `Autonomy.OFF` raise a permission request for every MCP call? (2) Does `comment=` on `CANCEL` reach the model? | (1) Blue's real-Ledger run (#119) saw 6 tool calls with 6 permission requests for blue's tools, which supports the provisional rule, but the CHANGELOG line has not been updated. (2) Untested; green's acceptance matrix row "cancellation" would settle it (`green/SDK-ACCEPTANCE.md`) |
+| Still open | Does `comment=` on `CANCEL` reach the model? (The OFF question is settled by the 2026-10-25 row above.) | Untested; green's acceptance matrix row "cancellation" would settle it (`green/SDK-ACCEPTANCE.md`) |
 
 Also measured, outside CHANGELOG (`blue/SDK-READINESS.md`): on `gemini-3.8-flash`, 2 of 7 blue audit
 sessions produced zero stream events for the whole 170 s, while minimal probes finished in < 7 s.
@@ -366,9 +367,9 @@ Keyless runs are how four of five people develop (AGENTS.md §3.8), and how gree
 | P2 | Live-red off/on recordings (`docs/recordings/`, seed 42, 10 days) | Ad | DONE (#136) | Off $10,284.61, enforce $1,824.22; 26,230 and 24,449 red credits. Not wired into the show (`frontend/docs/show-mode.md`) |
 | P3 | Evolution view from real data | R (#117) | PARTIAL: the EvolutionCard loads the real report | "The evolution card shows the latest real lineage report" |
 | P4 | Agents live on Droid | M | Blue audit LIVE (#157); green NOT DOING (Ad's decision, #78) | "Red and blue live on Droid; green on the same harness, keyless" |
-| P7 | Public read-only site (no Access) | Ad | IN PROGRESS | "Site behind Cloudflare Access; live walkthrough or recordings" |
+| P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
 | P8 / P9 | Invoice split control (#175), then a short live lineage with red **and** blue live | M / Ad | ASKED / PLANNED after P8 | Keep the P1 story. `[only if P9]` Factory angle: "a lineage with two live Droid agents adapting against each other" |
-| — | Settle the two open Findings (OFF prompting for every MCP call; CANCEL comment delivery) | M / Ad | open | Cite #119 for blue's tools; say CANCEL-comment delivery is untested (green's acceptance would settle it, and it isn't running) |
+| — | Settle the open Finding on CANCEL comment delivery (OFF prompting is settled for blue's tools, #119) | M | open | Say CANCEL-comment delivery is untested (green's acceptance would settle it, and it isn't running) |
 | — | #174/#176 (`/audit` usage → credit guard, truthful `droid_ok`) on prod | Ad | merged; counts from the deploy containing 6640354 | For the smoke, quote `turn_usage` (3,806 / 4,109), not `prod-credits` (0) |
 | `NOT DOING` | Droid inside `/gate` (8 s synchronous budget; rules + bounded advisory instead); `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*` (AGENTS.md §5); `model="auto"`; retrying `gemini-3.8-flash` | | | |
 
@@ -486,7 +487,7 @@ reproducible Finding in the repo.
 - "Blue's Droid audit is live" → yes, on prod since #157; the detailed identity and replay evidence comes from authorized **local** runs (#119, #127). The prod smoke shows two completed audits and their credits, nothing more.
 - "Credits feed the credit guard" → for red, yes. For blue's audit only from the deploy containing 6640354 (#176). For the smoke episode quote `turn_usage` (3,806 / 4,109); `make prod-credits` shows blue as 0 there and `droid_ok` read false.
 - "Gate p95 8 ms" → measured on the local stack during a live blue audit (#119); the gate itself is rules, not Droid.
-- "OFF asks for every MCP call" → static binary read (provisional Finding) plus blue's 6/6 observation; not yet confirmed for green's tools.
+- "OFF asks for every MCP call" → a recorded Finding: static binary read, then confirmed live for blue's tools (6 calls, 6 requests, #119). Green uses the same `OFF` policy but its tools weren't run live.
 - "Red learns between rounds" → red's playbook update is a deterministic fold of its own disclosed outcomes; the Droid model reads it as data. With live red on prod (`ln_f52a3df83c8d`) it re-weighted toward the scheme that paid (`threshold_split`); it invented no new schemes.
 - Red's tool IDs → exact and checked against `list_tools()`, but derived from the tool list rather than pinned like green's and blue's.
 - Earlier gemini cost → ~6.7k credits/turn per the PR #9 Finding.

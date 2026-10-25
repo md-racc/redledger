@@ -1,16 +1,16 @@
 # Devpost content: first draft
 
-Status as of 2026-10-25 ~04:15Z, main @ fb829e6; prod @ 47e3e33. The draft for the Cal Hacks 13.0 Devpost fields, ready to paste. The
+Status as of 2026-10-25 ~04:45Z, main @ 53adcb7; prod @ fb829e6. The draft for the Cal Hacks 13.0 Devpost fields, ready to paste. The
 claims come from the per-track docs in [`devpost/`](devpost/README.md), where each number and status has a
 source. Before submitting, re-check anything marked live against what's true on the day. Sentences that depend on a
-planned item (P7–P9, see [`devpost/README.md`](devpost/README.md)) are marked `[only if P#]`: delete the marker if it
+planned item (P8–P9, see [`devpost/README.md`](devpost/README.md)) are marked `[only if P#]`: delete the marker if it
 landed, or the sentence if it didn't.
 
 ---
 
 ## Elevator pitch
 
-Devpost's limit is 200 characters. This one is 166.
+Devpost's limit is 200 characters. This one is 158.
 
 ```
 A crash-test lab for finance AI: a live fraud agent attacks a synthetic company while an AP agent pays its bills and a controller agent decides every payment.
@@ -36,7 +36,7 @@ Finance teams are being asked to let AI agents pay bills. In accounts payable th
 Red Ledger runs a synthetic company, Coastal Supply Co. (60 vendors, 40 employees, 90 days of paid history), through simulated business days. Three agents share one ledger:
 
 - **Green, the AP clerk**, matches invoices to purchase orders, pays bills, approves vendor bank changes and reimburses expenses.
-- **Blue, the controller**, decides each of those actions before it happens: allow, block, or escalate to a human, with rule IDs and a plain-English reason. Once a day it also audits the books as a live agent on Factory's Droid SDK, flags and freezes suspicious vendors, and posts a report. It checks new hires against TransUnion identity verification through the CRS sandbox.
+- **Blue, the controller**, decides each of those actions before it happens: allow, block, or escalate to a human, with rule IDs and a plain-English reason. Once a day it also audits the books as a live agent on Factory's Droid SDK, flags and freezes suspicious vendors, and posts a report. Its audit can also check operator-bound new hires against TransUnion identity verification through the CRS sandbox (proven from our local stack).
 - **Red, the fraud agent**, runs live on Factory's Droid SDK. It reads the books like an insider and picks from eight schemes: ghost vendors, bank-account swaps, duplicate invoices, threshold splits, ghost employees, inflated expenses, invoices over their purchase order, and creeping recurring amounts. It uses only the access a junior insider would have.
 
 A judge can steer the attack: type or say a fraud scheme in your own words, in any language. Red gets the words as quoted data and uses them to choose its scheme or tune it, but it can only ever run its own catalog.
@@ -51,7 +51,7 @@ Agents also **evolve**. Across generations of episodes, each agent gets debriefs
 - Against the live CRS sandbox (from our local stack), a new hire whose identity didn't check out was flagged by the controller's audit, and their next expense was blocked at the gate. The two clean identities were paid. Every sandbox call was non-billable.
 
 ## How we built it
-Five services plus Postgres, deployed on a Vultr VM behind Cloudflare. Only one service, `battlefield` (FastAPI), touches the database. It is the Ledger API, the clock, the gatekeeper and the scorekeeper. Agents reach it only over HTTP, with per-agent tokens and per-route permissions. Ground truth (which rows are fraud) lives in a hidden column stripped from every agent response, so scoring is honest.
+Five services plus Postgres, deployed on a Vultr VM behind Cloudflare. The live site is public and read-only: anyone can watch, and only our admin laptops can start runs or launch attacks, enforced on the server. Only one service, `battlefield` (FastAPI), touches the database. It is the Ledger API, the clock, the gatekeeper and the scorekeeper. Agents reach it only over HTTP, with per-agent tokens and per-route permissions. Ground truth (which rows are fraud) lives in a hidden column stripped from every agent response, so scoring is honest.
 
 Before green moves money it calls `POST /preparations`. Battlefield asks blue, stores the verdict, holds any escalation, and binds the decision to the exact action plus a fingerprint of the vendor's bank details, so a bank change in between invalidates the approval. Blue's gate is a deterministic rules engine (vendor age, near-threshold, duplicates, recent bank changes, PO ceilings, recurring-amount drift, same-day expense splits, HR checks, holds) with an optional LLM that can only advise, never decide. Blue's daily audit is a Droid agent that works only through service-validated findings: it can raise a flag or freeze a vendor only by a finding ID the service produced. One of its tools logs in to the CRS sandbox and checks operator-bound fictional personas; a mismatch becomes a high-severity hold that the gate enforces on the next payout.
 
@@ -76,7 +76,7 @@ All three agents share one `agentkit` package around Factory's Droid SDK. Each h
 Most of autonomous AP is deciding what *not* to touch: defer over-limit invoices, defer invoices with no PO, never retry a blocked action. A good controller is one a human can argue with, so it gives reasons, not a score. And the fair way to grade a controller is in dollars on both sides: what it stopped, and what it cost.
 
 ## What's next
-Close the gap the live run found. The expense version of the split control is shipped; the invoice version is next `[only if P8: "and shipped"]`, then a re-run of the lineage to show it holds `[only if P9: "which showed it holding"]`. Put green, the clerk, on a live Droid session after its acceptance run. Open the live site read-only to anyone `[only if P7: "done"]`. Add three-way match (receiving) and approval routing above the threshold.
+Close the gap the live run found. The expense version of the split control is shipped; the invoice version is next `[only if P8: "and shipped"]`, then a re-run of the lineage to show it holds `[only if P9: "which showed it holding"]`. Put green, the clerk, on a live Droid session after its acceptance run. Add three-way match (receiving) and approval routing above the threshold.
 ```
 
 ---
@@ -119,11 +119,11 @@ Optional, the team's call: *"We also used Claude Code (AI coding agents) heavily
 - **Live status:** red and blue's audit are live, green is keyless by decision (#78). Don't write "three live agents".
 - **Voice:** #154 was never tested against the real ElevenLabs service. Record one real transcription on prod before submitting. If it fails, remove the "or say" wording and the ElevenLabs sentences, and swap the tag.
 - **CRS:** the About text says "from our local stack" on purpose. Keep it unless CRS runs on prod. Submitting to the CRS track needs the live table demo (devpost/crs.md §0).
-- **`[only if P#]` markers:** resolve each one (P7 public site, P8 invoice split control, P9 re-run) against devpost/README.md before pasting.
+- **`[only if P#]` markers:** resolve each one (P8 invoice split control, P9 re-run) against devpost/README.md before pasting.
 - **Sources for the numbers:**
   - off/on recordings: [`docs/recordings/README.md`](recordings/README.md) (#136)
   - 5-generation live-red lineage `ln_f52a3df83c8d` and red's per-turn cost: [`devpost/factory.md`](devpost/factory.md) and [`devpost/hyphenate.md`](devpost/hyphenate.md) §10
   - blue's live audit credits (3,806 and 4,109, ep_f9c695b3144f): #78; [`devpost/factory.md`](devpost/factory.md) §10
   - CRS acceptance (ep_0181eda1c921, 19 checks `billable:false`): #102; [`devpost/crs.md`](devpost/crs.md) §0
   - false-positive cost formula: README §4
-- **Repo website link:** set it to the Devpost project URL once the project exists.
+- **Website / "Try it out" link:** `https://app.redledger.us`. It is public and read-only (P7, live), so judges can open it on their own devices and watch; only the stage laptops signed in at `/admin` can start runs, launch attacks, use voice or resolve escalations.
