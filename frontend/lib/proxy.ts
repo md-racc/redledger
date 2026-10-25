@@ -113,16 +113,47 @@ export function stripGroundTruth(value: unknown): unknown {
   return value;
 }
 
-export function isOperatorOnlyPath(pathname: string): boolean {
+/** The upstream path decoded and lower-cased per segment; null for an invalid path, "" when it can't be decoded. */
+function normalizedPath(pathname: string): string | null {
   const path = upstreamPath(pathname.replace(/\/+$/, ""));
-  if (!path) return false; // refused as an invalid path anyway, never forwarded
-  let normalized: string;
+  if (!path) return null; // refused as an invalid path anyway, never forwarded
   try {
-    normalized = path.split("/").map((s) => decodeURIComponent(s).toLowerCase()).join("/");
+    return path.split("/").map((s) => decodeURIComponent(s).toLowerCase()).join("/");
   } catch {
-    return true;
+    return "";
   }
-  return OPERATOR_ONLY.some((re) => re.test(normalized));
+}
+
+export function isOperatorOnlyPath(pathname: string): boolean {
+  const normalized = normalizedPath(pathname);
+  if (normalized === null) return false;
+  return normalized === "" || OPERATOR_ONLY.some((re) => re.test(normalized));
+}
+
+/**
+ * Reads that are made of ground truth but are the point of the public report once a run is over: a viewer gets them only when
+ * battlefield's answer says `final: true` (the controls assessment, /report/[ep]). Before that the answer would say, mid-run,
+ * which rows are red's. Admins always get them.
+ */
+const FINAL_ONLY: RegExp[] = [/^\/api\/fe\/episodes\/[^/]+\/controls$/];
+
+export function isFinalOnlyPath(pathname: string): boolean {
+  const normalized = normalizedPath(pathname);
+  if (normalized === null) return false;
+  return normalized === "" || FINAL_ONLY.some((re) => re.test(normalized));
+}
+
+/** A final-only answer a viewer may have: a JSON object whose `final` is exactly true. */
+export function isFinalAnswer(body: unknown): boolean {
+  return !!body && typeof body === "object" && !Array.isArray(body) && (body as { final?: unknown }).final === true;
+}
+
+/** What a viewer gets for a final-only read before the run ends. */
+export function notFinalYet(): Response {
+  return new Response(JSON.stringify({ error: "viewer", detail: "available when the run ends" }), {
+    status: 403,
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
 }
 
 /** Full upstream URL, re-checked so it can only land on battlefield's origin under `/api/`. */

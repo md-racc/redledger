@@ -274,6 +274,51 @@ describe("ground truth (which rows are red's) is not for viewers", () => {
   });
 });
 
+describe("the controls report (ground truth, public once the run ends)", () => {
+  const path = "/api/bf/fe/episodes/ep_1/controls";
+  const report = (final: boolean) => ({ final, episode: { id: "ep_1", status: final ? "finished" : "running" }, gaps: [{ scheme_id: "ghost_vendor", why: "note only" }] });
+
+  it("refuses a viewer while the run is going, after asking battlefield, with a reason the page can show", async () => {
+    upstream.mockImplementation(async () => Response.json(report(false)));
+    for (const p of [path, "/api/bf/fe/episodes/ep_1/CONTROLS", "/api/bf/fe/episodes/ep_1/%63ontrols"]) {
+      const res = await proxyRoute.GET(req("GET", p));
+      expect(res.status, p).toBe(403);
+      expect(await res.json()).toEqual({ error: "viewer", detail: "available when the run ends" });
+    }
+  });
+
+  it("serves a viewer the finished run's report, and an admin the report at any time", async () => {
+    upstream.mockImplementation(async () => Response.json(report(true)));
+    const viewer = await proxyRoute.GET(req("GET", path));
+    expect(viewer.status).toBe(200);
+    expect((await viewer.json()).final).toBe(true);
+    upstream.mockImplementation(async () => Response.json(report(false)));
+    const admin = await proxyRoute.GET(req("GET", path, { admin: true }));
+    expect(admin.status).toBe(200);
+    expect(await admin.json()).toEqual(report(false));
+  });
+
+  it("only takes final exactly true, refuses a viewer's HEAD and an answer it can't read, and passes battlefield's errors through", async () => {
+    for (const body of [{ final: "true" }, { final: 1 }, [{ final: true }], {}]) {
+      upstream.mockImplementation(async () => Response.json(body));
+      expect((await proxyRoute.GET(req("GET", path))).status, JSON.stringify(body)).toBe(403);
+    }
+    upstream.mockImplementation(async () => new Response("final: true", { headers: { "content-type": "text/plain" } }));
+    expect((await proxyRoute.GET(req("GET", path))).status).toBe(403);
+    upstream.mockClear();
+    expect((await proxyRoute.GET(req("HEAD", path))).status).toBe(403); // Next answers HEAD with the GET handler
+    expect(upstream).not.toHaveBeenCalled();
+    upstream.mockImplementation(async () => Response.json({ detail: "episode not found" }, { status: 404 }));
+    const missing = await proxyRoute.GET(req("GET", path));
+    expect(missing.status).toBe(404);
+  });
+
+  it("leaves the other episode reads alone", async () => {
+    upstream.mockImplementation(async () => Response.json({ final: false }));
+    for (const p of ["snapshot", "controls/extra", "reports"]) expect((await proxyRoute.GET(req("GET", `/api/bf/fe/episodes/ep_1/${p}`))).status, p).toBe(200);
+  });
+});
+
 describe("production hardening", () => {
   const prod = () => vi.stubEnv("NODE_ENV", "production");
   const whoami = async (cookie?: string) => (await (await whoamiRoute.GET(new Request(`${BASE}/api/whoami`, { headers: cookie ? { cookie } : {} }))).json()).role;
