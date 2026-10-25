@@ -32,7 +32,7 @@ function summarize(file) {
 const doc = {
   recorded: "2026-10-24",
   where: "our production server",
-  note: "Red was live on Factory's Droid SDK (gpt-5.4-mini). Green and blue ran keyless.",
+  note: "Red was live on Factory's Droid SDK (gpt-5.4-mini). Green and blue ran their full logic keyless, before blue's daily audit went live.",
   source: "docs/recordings (#136)",
   runs: { off: summarize("demo-off-live.jsonl"), enforce: summarize("demo-enforce-live.jsonl") },
 };
