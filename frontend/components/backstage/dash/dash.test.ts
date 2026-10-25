@@ -90,6 +90,7 @@ describe("verdicts", () => {
     expect(verdictKind({ verdict: "allow", rules_fired: [] })).toBe("allow");
     expect(verdictKind({ verdict: "allow", rules_fired: ["near_threshold"] })).toBe("noted");
     expect(verdictKind({ verdict: "allow", rules_fired: [], cause: "gate_unavailable" })).toBe("noted");
+    expect(verdictKind({ verdict: "allow", rules_fired: [], cause: "control" })).toBe("allow");
     expect(verdictKind({ verdict: "block", rules_fired: [] })).toBe("block");
     expect(verdictKind({ verdict: "escalate" })).toBe("escalate");
   });

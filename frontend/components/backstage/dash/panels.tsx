@@ -311,7 +311,7 @@ export function VerdictStream({ rows, emptyText }: { rows: VerdictRow[]; emptyTe
             {v.confidence != null && <span>conf {v.confidence.toFixed(2)}</span>}
             {v.latencyMs != null && <span>{fmtMs(v.latencyMs)}</span>}
             {!v.enforced && <span className="bd-c-warn">shadow: not enforced</span>}
-            {v.cause && <span className={v.cause === "gate_unavailable" ? "bd-c-bad" : "bd-c-warn"}>cause {v.cause}</span>}
+            {v.cause && <span className={v.cause === "gate_unavailable" ? "bd-c-bad" : undefined}>cause {v.cause}</span>}
           </>
         );
         if (v.kind === "allow") {

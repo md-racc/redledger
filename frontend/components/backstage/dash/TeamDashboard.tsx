@@ -1,13 +1,15 @@
 "use client";
 // The red and blue technical dashboards: a window into what one agent is actually doing in the run on stage. Owner: Dev R.
 //
-// Served at /backstage/red and /backstage/blue, and at `/` on red.<domain> / blue.<domain> (middleware.ts). Same data as the raw
-// console (useBackstage: joins the active run, socket from event 0, the recorded loop when no backend answers), laid out as
-// instrumentation panels a projector can carry. `R` (or the header button) switches to the raw console, which stays the evidence view.
+// Served at /backstage/red and /backstage/blue, and at `/` on the hidden doors red.<site> / blue.<site> (next.config.ts rewrite, admins
+// only: lib/backstage/gate.ts). Same data as the raw console (useBackstage: joins the active run, socket from event 0; with no backend,
+// or `?replay=1`, the recorded live-red run from lib/backstage/recording.ts), laid out as instrumentation panels a projector can carry.
+// `R` (or the header button) switches to the raw console, the messy-backend evidence view.
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { provenance } from "@/lib/arena/provenance";
+import { RECORDING } from "@/lib/backstage/recording";
 import { useRole } from "@/lib/role";
 import { attacksNewestFirst } from "../derive";
 import { hhmmss, TEAM_KEYS } from "../raw";
@@ -50,7 +52,9 @@ export function TeamDashboard({ team, onRaw }: { team: DashTeam; onRaw: () => vo
   // viewers get 403 for the confusion matrix (it needs the ground truth): never ask for it on their behalf
   // the verdicts read carries latency_ms for a battlefield whose events do not
   const want = useMemo<Want[]>(() => (team === "blue" ? (admin ? ["verdicts", "confusion"] : ["verdicts"]) : []), [team, admin]);
-  const bs = useBackstage(want);
+  // `?replay=1` replays the recorded live-red run even with a backend up, exactly as the raw console does
+  const [replay] = useState(() => typeof window !== "undefined" && /[?&]replay(=1|=true)?(&|$)/.test(window.location.search));
+  const bs = useBackstage(want, { recording: RECORDING, forceRecorded: replay });
   const { state, events, episode, now, mode } = bs;
   const live = mode === "live";
 
@@ -89,10 +93,10 @@ export function TeamDashboard({ team, onRaw }: { team: DashTeam; onRaw: () => vo
   const keyless = me?.mode === "keyless";
   const mineCredits = credits.byAgent[team] ?? 0;
   const noThink = mode === "recorded"
-    ? `the recording has no agent.thinking for ${team} (it was made with keyless agents)`
+    ? `the recording has no agent.thinking for ${team} yet`
     : keyless ? `${team} is keyless (DRY_RUN): canned turns carry no thinking` : `waiting for ${team}'s next turn`;
   const noTools = mode === "recorded"
-    ? `the recording has no ${team} turns with tool calls`
+    ? `the recording has no ${team} tool calls yet`
     : keyless ? `${team} is keyless (DRY_RUN): no tool calls to show` : `no ${team} turn yet in this episode`;
 
   const header = (
@@ -118,9 +122,15 @@ export function TeamDashboard({ team, onRaw }: { team: DashTeam; onRaw: () => vo
         <div className="bd-tile bd-wide"><span className="bd-t-l">{team} model</span><span className="bd-t-v bd-mono">{model}</span></div>
         <div className="bd-tile" title="sum of turn.ended.factory_credits this run"><span className="bd-t-l">credits</span><span className="bd-t-v bd-mono">{credits.reported ? fmtCredits(mineCredits) : "-"}<span className="bd-dim bd-small"> {credits.reported ? `/ ${fmtCredits(credits.total)} run` : live ? "none reported" : ""}</span></span></div>
         <div className="bd-tile"><span className="bd-t-l">feed</span><span className="bd-t-v bd-mono">{events.length}<span className="bd-dim bd-small"> ev · {bs.rate}/min · {lastAge == null ? "no events" : `${lastAge}s ago`}</span></span></div>
-        <div className="bd-tile"><span className="bd-t-l">battlefield</span><span className={`bd-t-v bd-mono ${live ? "bd-c-ok" : mode === "recorded" ? "bd-c-bad" : "bd-dim"}`}>{live ? `${bs.healthMs ?? "?"}ms` : mode === "recorded" ? "no answer" : "…"}</span></div>
+        <div className="bd-tile"><span className="bd-t-l">battlefield</span><span className={`bd-t-v bd-mono ${live ? "bd-c-ok" : mode === "recorded" && !replay ? "bd-c-bad" : "bd-dim"}`}>{live ? `${bs.healthMs ?? "?"}ms` : mode === "recorded" ? (replay ? "not asked" : "no answer") : "…"}</span></div>
       </div>
-      {mode === "recorded" && <div className="bd-banner">[FAIL] battlefield unreachable: looping the recorded episode. Nothing on this screen is live.</div>}
+      {mode === "recorded" && (
+        <div className="bd-banner">
+          {bs.recording
+            ? `RECORDED: replaying the live-red run (docs/recordings/${bs.recording}.jsonl)${replay ? ", as asked (?replay=1)" : ", the battlefield did not answer"}. Nothing on this screen is live.`
+            : "[FAIL] battlefield unreachable: looping the recorded episode. Nothing on this screen is live."}
+        </div>
+      )}
     </header>
   );
 

@@ -207,7 +207,10 @@ export function creditsOf(events: RLEvent[]): Credits {
 
 // ---- gate verdicts --------------------------------------------------------------------------------------------------------------
 
-/** `noted` = allowed, but a rule fired or a cause was attached: worth a look, distinct from a clean allow. */
+/**
+ * `noted` = allowed, but a rule fired or the verdict is the fallback for an unavailable gate: worth a look, distinct from a clean allow.
+ * (`cause: "control"` is the ordinary path on prod: every verdict a control produced carries it, so it is not a note.)
+ */
 export type VerdictKind = "block" | "escalate" | "noted" | "allow";
 
 export interface VerdictRow {
@@ -233,7 +236,7 @@ export function verdictKind(p: { verdict?: unknown; rules_fired?: unknown; cause
   if (p.verdict === "block") return "block";
   if (p.verdict === "escalate") return "escalate";
   const rules = Array.isArray(p.rules_fired) ? p.rules_fired : [];
-  return rules.length > 0 || (typeof p.cause === "string" && p.cause !== "") ? "noted" : "allow";
+  return rules.length > 0 || p.cause === "gate_unavailable" ? "noted" : "allow";
 }
 
 /** Every `gate.verdict` of the run, newest first. */
