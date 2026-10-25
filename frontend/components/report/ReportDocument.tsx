@@ -1,5 +1,6 @@
 // The controls assessment as a document: presentational, takes the report and the agents' models. Owner: Dev Ad (crunch).
 // Styled as an audit deliverable (app/report/report.css), printable; the arena's look stays out of it.
+import { COMPANY } from "@/lib/company";
 import type { AgentModel, ControlsReport } from "@/lib/report/types";
 import {
   EFFECT_LABEL,
@@ -42,7 +43,7 @@ function Controls({ ids }: { ids: string[] }) {
   );
 }
 
-export function ReportDocument({ report: r, models }: { report: ControlsReport; models: AgentModel[] }) {
+export function ReportDocument({ report: r, models, company = COMPANY.name }: { report: ControlsReport; models: AgentModel[]; company?: string }) {
   const ep = r.episode;
   const date = reportDate(r);
   const summary = executiveSummary(r);
@@ -61,13 +62,15 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
         <p className="rr-kicker">Red Ledger · Controls Assessment</p>
         <h1>Accounts payable agent: pre-deployment control test</h1>
         <p className="rr-lede">
-          An adaptive attacker tried to steal from a synthetic company while an AI agent ran its accounts payable. This report assesses the controls that
+          An adaptive attacker tried to steal from {company}, a synthetic {COMPANY.kind}, while an AI agent ran its accounts payable. This report assesses the controls that
           stood between them: what each control caught, what it missed, and what it cost legitimate work.
         </p>
         <dl className="rr-meta">
           <div>
             <dt>Entity tested</dt>
-            <dd>A seeded synthetic company</dd>
+            <dd>
+              {company}, a seeded synthetic {COMPANY.kind}
+            </dd>
           </div>
           <div>
             <dt>Run</dt>
@@ -422,7 +425,7 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
           <span>7</span>Methodology
         </h2>
         <p>
-          <strong>Seeded synthetic company.</strong> The company is generated from seed {ep.seed ?? "n/a"}: vendors, employees, purchase orders, open
+          <strong>Seeded synthetic company.</strong> {company}, a fictional {COMPANY.kind} that buys from overseas manufacturers and resells to OEMs, is generated from seed {ep.seed ?? "n/a"}: vendors, employees, purchase orders, open
           invoices and a bank account, plus a stream of legitimate daily business (invoices, expenses, bank-detail changes, new vendors). The same seed gives the
           same company and the same legitimate traffic, so runs in different controller modes compare like for like.
         </p>

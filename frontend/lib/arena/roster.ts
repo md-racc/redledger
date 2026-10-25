@@ -4,8 +4,9 @@
 //           that arrives in `attack.launched.payload.scheme_id`.
 //   blue  = guards. One per gate rule in blue/gate/rules.py (README §9). id key = rule id, the same string
 //           that arrives in `gate.verdict.payload.rules_fired[]`.
-//   green = clients / victims. Slots for the synthetic company's counterparties. They are bound to real vendors
+//   green = clients / victims. Slots for the synthetic company's (lib/company.ts) counterparties. They are bound to real vendors
 //           by the director (lib/arena/director.ts) as vendor/attack events arrive.
+import { COMPANY } from "../company";
 import type { AgentSpec, Team } from "./types";
 
 export const TEAMS: Team[] = ["red", "blue", "green"];
@@ -13,7 +14,7 @@ export const TEAMS: Team[] = ["red", "blue", "green"];
 export const TEAM_META: Record<Team, { label: string; singular: string; role: string; hex: string; glow: string; tagline: string }> = {
   red: { label: "Fraudsters", singular: "Fraudster", role: "Red team", hex: "#ff2e49", glow: "#ff5a6e", tagline: "Eight on the wall, a scheme built for each: money out the door." },
   blue: { label: "Guards", singular: "Guard", role: "Controller", hex: "#3d86ff", glow: "#7fb0ff", tagline: "Ten guards between the clerk and the ledger." },
-  green: { label: "Clients", singular: "Client", role: "Finance ops", hex: "#27d99a", glow: "#7dffcf", tagline: "The vendors and staff the company pays." },
+  green: { label: "Clients", singular: "Client", role: "Finance ops", hex: "#27d99a", glow: "#7dffcf", tagline: `The vendors and staff ${COMPANY.name} pays.` },
 };
 
 interface RedDef { key: string; name: string; blurb: string }
@@ -49,7 +50,7 @@ export const RED_ROSTER: AgentSpec[] = RED_SCHEMES.map((d, index) => ({ id: `red
 export const BLUE_ROSTER: AgentSpec[] = BLUE_RULES.map((d, index) => ({ id: `blue:${d.key}`, team: "blue", index, name: d.name, blurb: d.blurb }));
 export const GREEN_ROSTER: AgentSpec[] = Array.from({ length: GREEN_COUNT }, (_, index) => {
   const n = String(index + 1).padStart(2, "0");
-  return { id: `green:client_${n}`, team: "green" as const, index, name: `Client ${n}`, blurb: "A counterparty of the company." };
+  return { id: `green:client_${n}`, team: "green" as const, index, name: `Client ${n}`, blurb: `A counterparty of ${COMPANY.name}.` };
 });
 
 export const ROSTER: AgentSpec[] = [...RED_ROSTER, ...BLUE_ROSTER, ...GREEN_ROSTER];
