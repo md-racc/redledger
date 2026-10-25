@@ -1,0 +1,1 @@
+- 2026-10-25T02:30Z · Ad · docs: AD-INTEGRATION-DESIGN §1 gap table re-verified against main (A1-A8 mostly done; open: A7 inline 403 cause, A9 threshold defaults, B5 green ClerkState lock, B7 live questions); next: none; blocked: none
