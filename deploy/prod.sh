@@ -8,7 +8,7 @@
 #   deploy/prod.sh toggle EP off|shadow|enforce
 #   deploy/prod.sh attack EP SCHEME [PARAMS_JSON]
 #   deploy/prod.sh fixtures EP FILE           seed operator fixtures (legit employees/expenses) from a local JSON file
-#   deploy/prod.sh crs-episode [SEED] [DAYS]  # blue's CRS identity scenario (P01/P12/P16), stepped; summary + PASS/FAIL
+#   deploy/prod.sh crs-episode SEED [DAYS]    # blue's CRS identity scenario (P01/P12/P16), stepped; summary + PASS/FAIL
 #   deploy/prod.sh escalations [EP]
 #   deploy/prod.sh resolve ESC approve|block
 #   deploy/prod.sh record EP [NAME]          # -> battlefield/fixtures/episodes/<NAME or EP>.jsonl
@@ -866,9 +866,9 @@ main() {
     lineage-wait)
       need LN "${1:-}"; check_id LN "$1"
       py "$((LINEAGE_WAIT_TIMEOUT + 4 * HTTP_TIMEOUT))" lineage_wait "$1" "$LINEAGE_WAIT_TIMEOUT" "$LINEAGE_WAIT_INTERVAL" ;;
-    crs-episode)  # [SEED] [DAYS]: no SEED = battlefield picks one; DAYS defaults to 2 (day 1 holds the after-verdict expenses)
+    crs-episode)  # SEED [DAYS]: SEED required (a live, credit-spending run never starts on defaults); DAYS defaults to 2
       local seed="${1:-}" days="${2:-2}" fx="$REPO_ROOT/battlefield/fixtures/crs-personas.json"
-      [[ -z "$seed" ]] || check_int SEED "$seed" 0 2147483647
+      need SEED "$seed"; check_int SEED "$seed" 0 2147483647
       check_int DAYS "$days" 2 30
       [[ -f "$fx" && -r "$fx" ]] || die "missing $fx"
       # budget: one STEP_TIMEOUT per day plus ~16 ordinary calls (preflight, create, fixtures x2, binds, reads)

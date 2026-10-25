@@ -167,7 +167,7 @@ prod-attack: ## prod: force a scheme on next red turn: EP=... SCHEME=... [PARAMS
 	@$(PROD) attack "$$PRODARG_EP" "$$PRODARG_SCHEME" "$$PRODARG_PARAMS"
 prod-fixtures: ## prod: seed operator fixtures (legit employees/expenses) into EP from a local JSON FILE
 	@$(PROD) fixtures "$$PRODARG_EP" "$$PRODARG_FILE"
-prod-crs-episode: ## prod: blue's CRS identity scenario, stepped, live audit: [SEED=42] [DAYS=2]; prints a summary + PASS/FAIL
+prod-crs-episode: ## prod: blue's CRS identity scenario, stepped, live audit: SEED=42 [DAYS=2]; prints a summary + PASS/FAIL
 	@$(PROD) crs-episode "$$PRODARG_SEED" "$$PRODARG_DAYS"
 prod-escalations: ## prod: open escalations [EP=...]
 	@$(PROD) escalations "$$PRODARG_EP"
