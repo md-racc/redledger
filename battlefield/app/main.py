@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import math
 from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -79,6 +82,24 @@ app = FastAPI(title="Red Ledger — battlefield", version="0.1.0", lifespan=life
 @app.exception_handler(turns.NoActiveTurnError)
 async def _no_active_turn(request: Request, exc: turns.NoActiveTurnError) -> JSONResponse:
     return JSONResponse(status_code=409, content={"error": turns.NO_ACTIVE_TURN})
+
+
+def _finite(x: object) -> object:
+    if isinstance(x, float) and not math.isfinite(x):
+        return str(x)
+    if isinstance(x, dict):
+        return {k: _finite(v) for k, v in x.items()}
+    if isinstance(x, list | tuple):
+        return [_finite(v) for v in x]
+    return x
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's default 422, except that a non-finite number echoed in an error's `input` (a body with
+    NaN/Infinity, which the JSON parser accepts) is rendered as a string; the default handler cannot
+    serialize it and the request would fail with a 500 instead of a 422."""
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(_finite(exc.errors()))})
 
 
 app.add_middleware(

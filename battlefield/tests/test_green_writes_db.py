@@ -98,6 +98,9 @@ async def test_gl_post_replays_identical_fields_and_refuses_different_ones(episo
         retry = await c.post("/api/gl/entries", json=entry, headers=_green(episode, key))
         other = await c.post("/api/gl/entries", json={**entry, "debit": 5_000.0}, headers=_green(episode, key))
     assert (first.status_code, retry.status_code, other.status_code) == (201, 201, 409)
+    async with _client() as c:
+        neg = await c.post("/api/gl/entries", json={**entry, "debit": -50.0}, headers=_green(episode, f"tu_{uuid.uuid4().hex}"))
+    assert neg.status_code == 422  # GL amounts are non-negative and finite
     assert len(blue) == 1
     assert [r["http_status"] for r in await _audit(episode, key)] == [201, 201, 409]
 
