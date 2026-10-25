@@ -139,10 +139,14 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
             </dd>
           </div>
           <div className="rr-bad">
-            <dt>Extracted</dt>
+            <dt>Lost to fraud</dt>
             <dd>
-              {usd(r.totals.extracted)}
-              <small>{pct(r.totals.extracted, r.totals.attempted)} of attempted</small>
+              {usd(r.lost)}
+              <small>
+                {r.to_attacker_accounts === null || r.to_real_parties === null
+                  ? `${pct(r.lost, r.totals.attempted)} of attempted`
+                  : `${usd(r.to_attacker_accounts)} to attacker accounts · ${usd(r.to_real_parties)} to real parties`}
+              </small>
             </dd>
           </div>
           <div className="rr-good">
@@ -240,10 +244,12 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
                 <th className="rr-num">Attempts</th>
                 <th className="rr-num">First day</th>
                 <th className="rr-num">Targeted</th>
-                <th className="rr-num">Extracted</th>
+                <th className="rr-num">Lost</th>
+                <th className="rr-num">To attacker accounts</th>
+                <th className="rr-num">To real parties</th>
                 <th>Outcomes</th>
                 <th>Caught by</th>
-                <th className="rr-num">Detection latency</th>
+                <th className="rr-num">Latency</th>
               </tr>
             </thead>
             <tbody>
@@ -257,7 +263,9 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
                   <td className="rr-num">{s.attempts}</td>
                   <td className="rr-num">{s.first_day}</td>
                   <td className="rr-num">{usd(s.targeted)}</td>
-                  <td className="rr-num">{usd(s.extracted)}</td>
+                  <td className="rr-num">{usd(s.lost)}</td>
+                  <td className="rr-num">{s.to_attacker_accounts === null ? "n/a" : usd(s.to_attacker_accounts)}</td>
+                  <td className="rr-num">{s.to_real_parties === null ? "n/a" : usd(s.to_real_parties)}</td>
                   <td>{outcomeText(s.outcomes)}</td>
                   <td>
                     <Controls ids={s.caught_by} />
@@ -280,7 +288,7 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
           r.gaps.map((g, i) => (
             <div key={g.scheme_id} className="rr-gap">
               <h3>
-                4.{i + 1} {g.display_name}: {usd(g.extracted)} extracted <span className="rr-why">{g.why}</span>
+                4.{i + 1} {g.display_name}: {usd(g.extracted)} lost <span className="rr-why">{g.why}</span>
               </h3>
               <p>{gapExplanation(g, ep.controller_mode)}</p>
               <p>
@@ -420,7 +428,10 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
           fraud versus legitimate work.
         </p>
         <p>
-          <strong>Scoring.</strong> Extracted dollars are payments of fraudulent items (and payments diverted by a swapped bank account). Stopped dollars are
+          <strong>Scoring.</strong> Money lost to fraud is every payment of a fraudulent document plus payments diverted by a swapped bank
+          account. It is split by where it landed: <em>attacker-controlled accounts</em> (a vendor or employee the attacker created, or a bank
+          change it got approved) versus <em>real parties</em> (a real vendor or employee paid on a fraudulent document, such as a duplicate,
+          a split or an inflated claim: an overpayment, usually recoverable). Stopped dollars are
           fraudulent items that ended blocked or rejected, or sat behind a frozen vendor. False positives charge each legitimate item once, by its worst outcome.
           Detection latency is days from launch to the first block, escalation or flag on the scheme&apos;s items.
           {r.source === "events" ? " This run is a replay: its figures are derived from the recorded event stream rather than ledger rows." : ""}

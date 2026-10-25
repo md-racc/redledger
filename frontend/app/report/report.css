@@ -52,7 +52,7 @@ body:has(.rr) {
   flex-wrap: wrap;
   gap: 8px 16px;
   align-items: center;
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 12px 0;
   background: var(--rr-desk);
@@ -94,7 +94,7 @@ body:has(.rr) {
 
 /* ---- the page ---- */
 .rr-paper {
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 56px 64px 40px;
   background: var(--rr-paper);
@@ -336,7 +336,7 @@ body:has(.rr) {
   font-size: 10.5px;
   background: #faf9f6;
 }
-@media (max-width: 720px) {
+@media screen {
   .rr-section {
     overflow-x: auto;
   }

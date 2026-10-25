@@ -695,7 +695,8 @@ async def _control_facts(episode_id: str) -> dict[str, Any]:
         }
         for a in attack_rows
     ]
-    all_changes, changes_by_attack = await score.attributed_changes(episode_id, attack_rows)
+    # as_of_reveal: the same attribution score.compute uses, so the money split below adds up to dollars_extracted
+    all_changes, changes_by_attack = await score.attributed_changes(episode_id, attack_rows, as_of_reveal=True)
     fraud: dict[str, str | None] = {}
     paid: dict[str, set[str]] = defaultdict(set)
 
@@ -776,6 +777,35 @@ async def _control_facts(episode_id: str) -> dict[str, Any]:
         if r["vid"]
     }
     reports = int(await db.fetchval("SELECT COUNT(*) FROM reports WHERE episode_id=$1", episode_id))
+
+    # Where the lost money landed. score.compute's dollars_extracted = payments of red-origin documents + payments a red
+    # bank swap diverted (attributed, as of reveal). Attacker-controlled accounts: a red vendor's or red employee's
+    # bank_account, or the new_value of an approved red bank_account change. Everything else is a real party's account.
+    attacker_accounts = {
+        r["acct"]
+        for r in await db.fetch(
+            "SELECT bank_account AS acct FROM vendors WHERE episode_id=$1 AND origin='red' "
+            "UNION SELECT bank_account FROM employees WHERE episode_id=$1 AND origin='red' "
+            "UNION SELECT new_value FROM vendor_changes WHERE episode_id=$1 AND origin='red' AND field='bank_account' AND status='approved'",
+            episode_id,
+        )
+    }
+    money = [
+        {"amount": float(p["amount"]), "attack_id": p["attack_id"], "to_attacker": p["to_account"] in attacker_accounts}
+        for p in await db.fetch(
+            "SELECT p.amount, p.to_account, COALESCE(i.attack_id, e.attack_id) AS attack_id FROM payments p "
+            "LEFT JOIN invoices i ON i.id=p.invoice_id LEFT JOIN expenses e ON e.id=p.expense_id "
+            "WHERE p.episode_id=$1 AND p.origin_of_source='red' ORDER BY p.id",
+            episode_id,
+        )
+    ]
+    swap_paid: dict[str, str] = {}  # payment id -> attack, each payment once (score.compute's swap_payments)
+    for aid, chs in changes_by_attack.items():
+        for ch in chs:
+            for pid, amt in ch["payments"].items():
+                if pid not in swap_paid:
+                    swap_paid[pid] = aid
+                    money.append({"amount": amt, "attack_id": aid, "to_attacker": True})  # paid to the swapped-in account
     return {
         "source": "ledger",
         "attacks": attacks,
@@ -787,6 +817,7 @@ async def _control_facts(episode_id: str) -> dict[str, Any]:
         "flags": flags,
         "frozen": frozen,
         "reports": reports,
+        "money": money,
     }
 
 
@@ -890,6 +921,7 @@ def _facts_from_events(episode_id: str, rows: Any) -> dict[str, Any]:
         "flags": flags,
         "frozen": frozen,
         "reports": reports,
+        "money": None,  # payee accounts are not in the event stream: the split is unknown for a replay
     }
 
 
@@ -905,6 +937,15 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
     legit: dict[str, dict[str, Any]] = f["legit"]
     escalations: dict[str, dict[str, Any]] = f["escalations"]
     by_id = {a["id"]: a for a in attacks}
+    money: list[dict[str, Any]] | None = f.get("money")
+
+    def split(attack_ids: set[str] | None) -> tuple[float | None, float | None]:
+        """(to attacker-controlled accounts, to real parties) for these attacks' payments (None = every payment)."""
+        if money is None:
+            return None, None
+        rows = [m for m in money if attack_ids is None or m["attack_id"] in attack_ids]
+        return _r2(sum(m["amount"] for m in rows if m["to_attacker"])), _r2(sum(m["amount"] for m in rows if not m["to_attacker"]))
+
     side = {**{e: "legit" for e in legit}, **{e: "fraud" for e in fraud}}
 
     verdicts_on: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -980,6 +1021,7 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
         for a in atks:
             outcomes[a["outcome"]] = outcomes.get(a["outcome"], 0) + 1
         extracted = _r2(sum(a["amount_extracted"] for a in atks))
+        to_attacker, to_real = split({a["id"] for a in atks})
         frozen_here = sorted(ents & f["frozen"])
         row = {
             "scheme_id": scheme_id,
@@ -988,6 +1030,9 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
             "first_day": min(a["day_launched"] for a in atks),
             "targeted": _r2(sum(a["target_amount"] for a in atks)),
             "extracted": extracted,
+            "lost": extracted,
+            "to_attacker_accounts": to_attacker,
+            "to_real_parties": to_real,
             "outcomes": outcomes,
             "caught_by": caught_by,
             "noted_by": noted_by,
@@ -1075,6 +1120,10 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
         "final": status in _FINAL_STATUSES,
         "source": f["source"],
         "score": sc,
+        # money lost to fraud (= score.dollars_extracted) by where it landed; None for a replay (no payee accounts)
+        "lost": _r2(_amount(sc.get("dollars_extracted"))),
+        "to_attacker_accounts": split(None)[0],
+        "to_real_parties": split(None)[1],
         "totals": {
             "attempted": _r2(sum(a["target_amount"] for a in attacks)),
             "extracted": _r2(_amount(sc.get("dollars_extracted"))),
@@ -1112,7 +1161,10 @@ def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, A
 async def controls_report(episode_id: str):
     """Controls assessment for an episode: per gate control (what it fired on, fraud vs legit, its effect), per red
     scheme (attempts, outcomes, which controls caught it, detection latency), gaps (schemes that extracted money and
-    why), false positives (cost, items), blue's audit activity and evidence ids. Money in dollars. `final` = the run has
+    why), false positives (cost, items), blue's audit activity and evidence ids. Money in dollars. Money lost to fraud
+    (`lost` = score.dollars_extracted, and per scheme) is split by where it landed: `to_attacker_accounts` (a red
+    vendor's/employee's account or an approved red bank change's new account) vs `to_real_parties` (an overpayment to a
+    real vendor or employee on a fraudulent document); both null for a replay. `final` = the run has
     ended (status finished/failed); the frontend serves it to site viewers only then. A replay is derived from its events."""
     ep = await _ep(episode_id)
     if is_replay(episode_id):

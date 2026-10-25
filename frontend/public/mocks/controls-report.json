@@ -13,7 +13,7 @@
   "finished_at": "2026-10-25T05:04:59.773269+00:00"
  },
  "final": true,
- "source": "events",
+ "source": "ledger",
  "score": {
   "legit_blocked": 1,
   "attacks_caught": 2,
@@ -24,6 +24,9 @@
   "false_positive_cost": 50.0,
   "detection_latency_days": 0.0
  },
+ "lost": 20350.37,
+ "to_attacker_accounts": 18180.0,
+ "to_real_parties": 2170.37,
  "totals": {
   "attempted": 27565.92,
   "extracted": 20350.37,
@@ -165,6 +168,9 @@
    "first_day": 0,
    "targeted": 4380.0,
    "extracted": 4380.0,
+   "lost": 4380.0,
+   "to_attacker_accounts": 4380.0,
+   "to_real_parties": 0.0,
    "outcomes": {
     "extracted": 1,
     "partial": 0,
@@ -194,6 +200,9 @@
    "first_day": 1,
    "targeted": 1824.22,
    "extracted": 1824.22,
+   "lost": 1824.22,
+   "to_attacker_accounts": 0.0,
+   "to_real_parties": 1824.22,
    "outcomes": {
     "extracted": 0,
     "partial": 1,
@@ -223,6 +232,9 @@
    "first_day": 2,
    "targeted": 13800.0,
    "extracted": 13800.0,
+   "lost": 13800.0,
+   "to_attacker_accounts": 13800.0,
+   "to_real_parties": 0.0,
    "outcomes": {
     "extracted": 1,
     "partial": 0,
@@ -252,6 +264,9 @@
    "first_day": 3,
    "targeted": 346.15,
    "extracted": 346.15,
+   "lost": 346.15,
+   "to_attacker_accounts": 0.0,
+   "to_real_parties": 346.15,
    "outcomes": {
     "extracted": 1,
     "partial": 0,
@@ -279,6 +294,9 @@
    "first_day": 4,
    "targeted": 5735.55,
    "extracted": 0.0,
+   "lost": 0.0,
+   "to_attacker_accounts": 0.0,
+   "to_real_parties": 0.0,
    "outcomes": {
     "extracted": 0,
     "partial": 0,
@@ -306,6 +324,9 @@
    "first_day": 5,
    "targeted": 1480.0,
    "extracted": 0.0,
+   "lost": 0.0,
+   "to_attacker_accounts": 0.0,
+   "to_real_parties": 0.0,
    "outcomes": {
     "extracted": 0,
     "partial": 0,

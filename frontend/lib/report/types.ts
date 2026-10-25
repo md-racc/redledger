@@ -53,6 +53,10 @@ export interface SchemeRow {
   first_day: number;
   targeted: number;
   extracted: number;
+  /** money lost to fraud (same basis as extracted), split by where it landed; the split is null for a replay */
+  lost: number;
+  to_attacker_accounts: number | null;
+  to_real_parties: number | null;
   outcomes: Record<string, number>;
   caught_by: string[];
   noted_by: string[];
@@ -112,6 +116,12 @@ export interface ControlsReport {
   final: boolean;
   source: "ledger" | "events";
   score: Score;
+  /** = score.dollars_extracted */
+  lost: number;
+  /** paid into an account the attacker controls (a vendor or employee it created, or a bank change it got approved); null for a replay */
+  to_attacker_accounts: number | null;
+  /** paid to a real vendor or employee on a fraudulent document: an overpayment, usually recoverable; null for a replay */
+  to_real_parties: number | null;
   totals: { attempted: number; extracted: number; blocked: number; attacks: number; schemes: number; schemes_with_loss: number; controls_seen: number };
   gate: { allow: number; block: number; escalate: number; total: number; escalations: EscalationCounts };
   controls: ControlRow[];

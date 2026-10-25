@@ -131,6 +131,8 @@ async def test_controls_report_for_a_finished_run(episode: str) -> None:
     assert rep["final"] is True and rep["source"] == "ledger"
     assert rep["episode"]["id"] == episode and rep["episode"]["controller_mode"] == "enforce" and rep["episode"]["seed"] == 42
     assert rep["score"] == sc
+    # ghost vendor paid to its own (red) account; duplicate and inflated expense paid to real parties
+    assert (rep["lost"], rep["to_attacker_accounts"], rep["to_real_parties"]) == (sc["dollars_extracted"], 4380.0, round(1200 + 346.15, 2))
 
     controls = {c["control_id"]: c for c in rep["controls"]}
     hr = controls["no_hr_record"]
@@ -196,6 +198,7 @@ async def test_controls_report_for_a_replay_comes_from_its_events(pg: None) -> N
     rep = r.json()
     assert rep["source"] == "events" and rep["final"] is True and not (_keys(rep) & GROUND_TRUTH_KEYS)
     assert rep["score"]["dollars_extracted"] == 20350.37
+    assert rep["lost"] == 20350.37 and rep["to_attacker_accounts"] is None and rep["to_real_parties"] is None  # no payee accounts in events
     assert {g["scheme_id"]: g["why"] for g in rep["gaps"]}["ghost_vendor"] == "note only"
 
 
@@ -283,3 +286,45 @@ def test_shadow_blocks_that_did_not_stop_the_money_are_not_enforced() -> None:
     assert c["learned"] is True and c["effect"] == "block" and c["on_fraud"]["stopped"] == 1 and c["on_legit"]["stopped"] == 1
     (item,) = rep["false_positives"]["items"]
     assert item["enforced"] is False and item["cost"] == 70.0
+
+
+async def test_lost_money_is_split_by_where_it_landed(episode: str) -> None:
+    """Ghost vendor: paid to the red vendor's own account (attacker). Blocked bank swap: the fake invoice was still paid,
+    into the vendor's real account (real party). Approved bank swap: a legit invoice diverted to the swapped-in account
+    (attacker). Duplicate on a real vendor: real party."""
+    gv = await f.attack(episode, day=0, scheme_id="ghost_vendor", target_amount=4380.0)
+    ghost = await f.vendor(episode, origin="red", bank_account="ACCT-GHOST")
+    inv = await f.invoice(episode, ghost, amount=4380.0, origin="red", status="paid", attack_id=gv)
+    await f.payment(episode, inv, amount=4380.0, to_account="ACCT-GHOST", day=0, origin_of_source="red")
+
+    blocked = await f.attack(episode, day=1, scheme_id="bank_swap", target_amount=1824.22)
+    real = await f.vendor(episode, bank_account="ACCT-REAL")
+    await f.change(episode, real, day=1, status="blocked", resolved_day=1, new_value="ACCT-RED-1", attack_id=blocked)
+    inv = await f.invoice(episode, real, amount=1824.22, origin="red", status="paid", attack_id=blocked, day=1)
+    await f.payment(episode, inv, amount=1824.22, to_account="ACCT-REAL", day=1, origin_of_source="red")
+
+    swapped = await f.attack(episode, day=2, scheme_id="bank_swap", target_amount=900.0)
+    victim = await f.vendor(episode, bank_account="ACCT-RED-2")  # approve_change already wrote the new account
+    await f.change(episode, victim, day=2, status="approved", resolved_day=2, new_value="ACCT-RED-2", attack_id=swapped)
+    legit = await f.invoice(episode, victim, amount=900.0, status="paid", day=2)
+    await f.payment(episode, legit, amount=900.0, to_account="ACCT-RED-2", day=3)
+
+    dup = await f.attack(episode, day=3, scheme_id="duplicate_invoice", target_amount=500.0)
+    inv = await f.invoice(episode, real, amount=500.0, origin="red", status="paid", attack_id=dup, day=3)
+    await f.payment(episode, inv, amount=500.0, to_account="ACCT-REAL", day=3, origin_of_source="red")
+
+    await db.execute("UPDATE episodes SET days=5, current_day=5, status='finished' WHERE id=$1", episode)
+    await score.resolve_attacks(episode, 5)
+    async with _client() as c:
+        rep = (await c.get(f"/api/fe/episodes/{episode}/controls", headers=f.auth())).json()
+    assert not (_keys(rep) & GROUND_TRUTH_KEYS)
+    assert rep["lost"] == rep["score"]["dollars_extracted"] == round(4380 + 1824.22 + 900 + 500, 2)
+    assert rep["to_attacker_accounts"] == 4380 + 900
+    assert rep["to_real_parties"] == round(1824.22 + 500, 2)
+    schemes = {s["scheme_id"]: s for s in rep["schemes"]}
+    assert (schemes["ghost_vendor"]["lost"], schemes["ghost_vendor"]["to_attacker_accounts"], schemes["ghost_vendor"]["to_real_parties"]) == (4380, 4380, 0)
+    assert schemes["bank_swap"]["lost"] == round(1824.22 + 900, 2)
+    assert (schemes["bank_swap"]["to_attacker_accounts"], schemes["bank_swap"]["to_real_parties"]) == (900, 1824.22)
+    assert (schemes["duplicate_invoice"]["to_attacker_accounts"], schemes["duplicate_invoice"]["to_real_parties"]) == (0, 500)
+    for s in rep["schemes"]:
+        assert round(s["to_attacker_accounts"] + s["to_real_parties"], 2) == s["lost"] == s["extracted"]

@@ -126,17 +126,26 @@ export function gapRecommendation(g: Gap): string {
   }
 }
 
-/** The executive summary: one sentence each for dollars, controls that worked, open gaps, false-positive cost, and mode. */
+/** "$X lost to fraud (N% of attempted), of which $Y reached attacker-controlled accounts and $Z was paid to real vendors/employees on fraudulent documents." */
+export function lostSentence(r: ControlsReport): string {
+  const lost = `${usd(r.lost)} lost to fraud (${pct(r.lost, r.totals.attempted)} of attempted)`;
+  if (r.to_attacker_accounts === null || r.to_real_parties === null) return `${lost}; where it landed is not recorded for a replayed run.`;
+  if (!r.lost) return "No money was lost to fraud.";
+  return (
+    `${lost}, of which ${usd(r.to_attacker_accounts)} reached attacker-controlled accounts and ${usd(r.to_real_parties)} was paid to real ` +
+    `vendors/employees on fraudulent documents${r.to_real_parties ? " (an overpayment, usually recoverable)" : ""}.`
+  );
+}
+
+/** The executive summary: one sentence each for dollars attempted, where the lost money landed, controls that worked, open gaps, false-positive cost, and mode. */
 export function executiveSummary(r: ControlsReport): string[] {
   const t = r.totals;
   const out: string[] = [];
   if (!t.attacks) {
     out.push("The attacker made no attempts in this run, so no control was tested against fraud.");
   } else {
-    out.push(
-      `An adaptive attacker made ${plural(t.attacks, "attempt")} across ${plural(t.schemes, "scheme")} worth ${usd(t.attempted)}; ` +
-        `${usd(t.extracted)} (${pct(t.extracted, t.attempted)}) left the company and ${usd(t.blocked)} was stopped.`,
-    );
+    out.push(`An adaptive attacker made ${plural(t.attacks, "attempt")} across ${plural(t.schemes, "scheme")} worth ${usd(t.attempted)}; ${usd(t.blocked)} of it was stopped.`);
+    out.push(lostSentence(r));
   }
   const worked = effectiveControls(r);
   if (worked.length) {

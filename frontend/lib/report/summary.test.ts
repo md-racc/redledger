@@ -11,6 +11,7 @@ import {
   isNotFinalAnswer,
   list,
   listSome,
+  lostSentence,
   modelText,
   outcomeText,
   pct,
@@ -29,6 +30,8 @@ describe("the mock fixture", () => {
   it("carries the recorded demo's numbers and no ground-truth keys", () => {
     expect(fixture.final).toBe(true);
     expect(fixture.score.dollars_extracted).toBe(20350.37);
+    expect([fixture.lost, fixture.to_attacker_accounts, fixture.to_real_parties]).toEqual([20350.37, 18180, 2170.37]);
+    for (const s of fixture.schemes) expect((s.to_attacker_accounts ?? 0) + (s.to_real_parties ?? 0)).toBeCloseTo(s.lost, 2);
     expect(fixture.false_positives.cost).toBe(50);
     expect(fixture.false_positives.legit_blocked).toBe(1);
     const gaps = Object.fromEntries(fixture.gaps.map((g) => [g.scheme_id, g]));
@@ -92,11 +95,14 @@ describe("the assessment", () => {
 
   it("writes the executive summary from the data, one sentence per point", () => {
     const s = executiveSummary(fixture);
-    expect(s[0]).toBe("An adaptive attacker made 6 attempts across 6 schemes worth $27,565.92; $20,350.37 (74%) left the company and $1,480.00 was stopped.");
-    expect(s[1]).toMatch(/^2 controls stopped fraudulent items: "Employee has no HR onboarding record" \(3 items, \$1,480\.00\) and /);
-    expect(s[2]).toBe("4 schemes still extracted money: Threshold Splitting ($13,800.00, note only), Ghost Vendor ($4,380.00, note only), Bank Account Swap ($1,824.22, no control fired) and 1 more.");
-    expect(s[3]).toBe("False positives cost $50.00: 1 legitimate item blocked and 0 escalated for review.");
-    expect(s).toHaveLength(4);
+    expect(s[0]).toBe("An adaptive attacker made 6 attempts across 6 schemes worth $27,565.92; $1,480.00 of it was stopped.");
+    expect(s[1]).toBe(
+      "$20,350.37 lost to fraud (74% of attempted), of which $18,180.00 reached attacker-controlled accounts and $2,170.37 was paid to real vendors/employees on fraudulent documents (an overpayment, usually recoverable).",
+    );
+    expect(s[2]).toMatch(/^2 controls stopped fraudulent items: "Employee has no HR onboarding record" \(3 items, \$1,480\.00\) and /);
+    expect(s[3]).toBe("4 schemes still extracted money: Threshold Splitting ($13,800.00, note only), Ghost Vendor ($4,380.00, note only), Bank Account Swap ($1,824.22, no control fired) and 1 more.");
+    expect(s[4]).toBe("False positives cost $50.00: 1 legitimate item blocked and 0 escalated for review.");
+    expect(s).toHaveLength(5);
   });
 
   it("says so when nothing was attempted, nothing got through, or the controller was not enforcing", () => {
@@ -137,6 +143,19 @@ describe("the assessment", () => {
     expect(gapExplanation(g("not enforced"), "shadow")).toMatch(/shadow mode/);
     expect(gapRecommendation(g("note only"))).toMatch(/^Promote "Vendor has less than seven days of history" from a note/);
     for (const why of ["no control fired", "escalation approved", "audit only", "not enforced"] as const) expect(gapRecommendation(g(why))).toMatch(/\.$/);
+  });
+
+  it("says where lost money landed, or that a replay can't tell", () => {
+    const r = clone();
+    r.to_attacker_accounts = r.to_real_parties = null;
+    expect(lostSentence(r)).toBe("$20,350.37 lost to fraud (74% of attempted); where it landed is not recorded for a replayed run.");
+    const all = clone();
+    all.to_attacker_accounts = all.lost;
+    all.to_real_parties = 0;
+    expect(lostSentence(all)).toMatch(/and \$0\.00 was paid to real vendors\/employees on fraudulent documents\.$/);
+    const none = clone();
+    none.lost = none.to_attacker_accounts = none.to_real_parties = 0;
+    expect(lostSentence(none)).toBe("No money was lost to fraud.");
   });
 
   it("orders schemes worst first", () => {
