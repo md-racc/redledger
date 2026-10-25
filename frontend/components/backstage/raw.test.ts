@@ -140,3 +140,16 @@ describe("live checks", () => {
     expect(liveChecks({ ...base, viewer: false, sync: sync("stream", false) }).find((x) => x.label === "arena laptop connected")!.ok).toBe(false);
   });
 });
+
+describe("demoPlan", () => {
+  it("pins every day to a scheme that shows on screen, cycling", async () => {
+    const { demoPlan, DEMO_PLAN_CYCLE } = await import("./raw");
+    const p = demoPlan(30);
+    expect(p).toHaveLength(30);
+    expect(p[0]).toEqual({ day: 0, scheme_id: "bank_swap" });
+    expect(p[6]!.scheme_id).toBe("bank_swap");
+    for (const x of p) expect(DEMO_PLAN_CYCLE).toContain(x.scheme_id as (typeof DEMO_PLAN_CYCLE)[number]);
+    expect(p.map((x) => x.scheme_id)).not.toContain("duplicate_invoice");
+    expect(demoPlan(0)).toEqual([]);
+  });
+});

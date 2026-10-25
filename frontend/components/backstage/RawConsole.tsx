@@ -16,7 +16,7 @@ import { useRole } from "@/lib/role";
 import type { ControllerMode } from "@/lib/types";
 import { FAIL_SAFE_NOTE, FAIL_SAFE_TAG, failSafeLabel, isFailSafe } from "@/lib/verdictCause";
 import { avgLatency, confusion, ruleBoard, ruleName, schemeName, thoughts, toolRows, verdictCounts } from "./derive";
-import { concerns, eventLine, hhmmss, liveChecks, msgLine, TEAM_KEYS, teamEvents, trafficLine, type TeamKey } from "./raw";
+import { concerns, demoPlan, eventLine, hhmmss, liveChecks, msgLine, TEAM_KEYS, teamEvents, trafficLine, type TeamKey } from "./raw";
 import { useBackstage, type Want } from "./useBackstage";
 
 const WANT: Record<TeamKey | "hub", Want[]> = { hub: [], red: [], green: ["snapshot", "apAging"], blue: ["verdicts", "confusion", "reports"], battlefield: ["timeline", "snapshot"] };
@@ -240,6 +240,7 @@ function BattlefieldState({ bs }: { bs: BS }) {
   const [mode, setMode] = useState<ControllerMode>("enforce");
   const [seed, setSeed] = useState("42");
   const [days, setDays] = useState("4");
+  const [planned, setPlanned] = useState(true);
   const [scheme, setScheme] = useState("ghost_vendor");
   const [schemes, setSchemes] = useState<{ id: string; display_name: string }[]>([]);
   const [replays, setReplays] = useState<string[]>([]);
@@ -272,9 +273,9 @@ function BattlefieldState({ bs }: { bs: BS }) {
             <div>
               new episode:{" "}
               {MODES.map((m) => <label key={m}><input type="radio" name="mode" checked={mode === m} onChange={() => setMode(m)} /> {m} </label>)}
-              seed <input value={seed} onChange={(e) => setSeed(e.target.value)} size={4} /> days <input value={days} onChange={(e) => setDays(e.target.value)} size={3} />{" "}
-              <button onClick={() => void act("POST /episodes", () => api.createEpisode({ controller_mode: mode, seed: Number(seed) || 42, days: Number(days) || 4 }))}>create</button>{" "}
-              <button onClick={() => void act("create + start", async () => { const ep = await api.createEpisode({ controller_mode: mode, seed: Number(seed) || 42, days: Number(days) || 4 }); await api.start(ep.id); })}>create + start</button>
+              seed <input value={seed} onChange={(e) => setSeed(e.target.value)} size={4} /> days <input value={days} onChange={(e) => setDays(e.target.value)} size={3} />{" "}<label title="pin red to schemes that show on screen each day (bank swap, split, ghost vendor, ghost employee, inflated expense, PO mismatch)"><input type="checkbox" checked={planned} onChange={(e) => setPlanned(e.target.checked)} /> demo plan</label>{" "}
+              <button onClick={() => void act("POST /episodes", () => api.createEpisode({ controller_mode: mode, seed: Number(seed) || 42, days: Number(days) || 4, ...(planned ? { attack_plan: demoPlan(Number(days) || 4) } : {}) }))}>create</button>{" "}
+              <button onClick={() => void act("create + start", async () => { const ep = await api.createEpisode({ controller_mode: mode, seed: Number(seed) || 42, days: Number(days) || 4, ...(planned ? { attack_plan: demoPlan(Number(days) || 4) } : {}) }); await api.start(ep.id); })}>create + start</button>
             </div>
             <div>
               this episode ({id || "none"}):{" "}
