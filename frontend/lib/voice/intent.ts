@@ -1,4 +1,4 @@
-// Which of the five built-in schemes is closest to what was said? Owner: Dev R.
+// Which of the five voice-forceable schemes is closest to what was said? Owner: Dev R.
 //
 // The spoken scheme goes to red in the judge's own words (POST /inputs, in whatever language they spoke). Red is an LLM agent and
 // reads any language, but a battlefield episode can only be *forced* to run a scheme from the catalog. So there is always a closest
@@ -6,7 +6,8 @@
 // simple and visible (the UI shows its pick and lets the judge change it); it is not a translator, and an unfamiliar phrasing in
 // an unfamiliar language falls back to "no clear match".
 //
-// Only the five schemes red can actually run today (red/schemes/__init__.py). The other three in the arena's roster are not built.
+// Only five of red's eight schemes have a lexicon here. #166 built the other three (expense_inflation, po_mismatch, amount_drift);
+// voice can't force them yet (adding them is a follow-up), but the judge's words still reach red as an input.
 
 export type BuiltInScheme = "ghost_vendor" | "bank_swap" | "duplicate_invoice" | "threshold_split" | "ghost_employee";
 

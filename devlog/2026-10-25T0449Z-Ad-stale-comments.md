@@ -1,0 +1,1 @@
+- 2026-10-25T04:49Z · Ad · chore: refresh stale comments (Caddyfile access modes after public read-only; voice lexicon covers 5 of 8 schemes); comments only; blocked: none
