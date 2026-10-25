@@ -1,0 +1,1 @@
+- 2026-10-25T07:47Z · Al · red: audit fixes - judge input ignores agent-sourced /inputs, non-string closest_built_in no longer crashes the turn, system prompt keeps every attack in the catalog, red/AGENTS.md brought up to date; next: none; blocked: none

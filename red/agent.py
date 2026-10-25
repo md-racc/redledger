@@ -19,12 +19,21 @@ log = structlog.get_logger(__name__)
 # The frontend attack console leaves the judge's own words for red via battlefield `POST /inputs`
 # (payload kind below); they arrive in the next turn as `options.inputs` (README §16 extension point).
 JUDGE_KIND = "custom_fraud_scheme"
+AGENT_SOURCES = frozenset({"red", "green", "blue"})
 
 
 def judge_requests(options: dict) -> list[dict]:
-    """The judge-console payloads among this turn's inputs, oldest first."""
+    """The judge-console payloads among this turn's inputs, oldest first.
+
+    Only operator-side sources count: battlefield stamps an agent's own name as `source` when an agent
+    posts to /inputs, and agents must not be able to steer red through this channel.
+    """
     items = options.get("inputs") or []
-    return [i["payload"] for i in items if isinstance(i, dict) and isinstance(i.get("payload"), dict) and i["payload"].get("kind") == JUDGE_KIND]
+    return [
+        i["payload"]
+        for i in items
+        if isinstance(i, dict) and i.get("source") not in AGENT_SOURCES and isinstance(i.get("payload"), dict) and i["payload"].get("kind") == JUDGE_KIND
+    ]
 
 
 def judge_block(options: dict, forced: str | None) -> str:
@@ -40,7 +49,7 @@ def judge_block(options: dict, forced: str | None) -> str:
         {
             "text": str(a.get("text", ""))[:500],
             "language": a["language"][:16] if isinstance(a.get("language"), str) else None,
-            "closest_built_in": a.get("closest_built_in") if a.get("closest_built_in") in SCHEMES else None,
+            "closest_built_in": a["closest_built_in"] if isinstance(a.get("closest_built_in"), str) and a["closest_built_in"] in SCHEMES else None,
         }
         for a in asked[:3]
     ]
