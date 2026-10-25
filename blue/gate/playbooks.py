@@ -29,8 +29,13 @@ class Playbooks:
         self.latest: dict[str, dict] = {}
         self.refreshes: dict[tuple[str, int], Refresh] = {}
 
-    async def _content(self, req: GateRequest) -> dict | None:
-        """Playbook content for the request's exact episode/version; None when unavailable."""
+    async def _content(self, req: GateRequest, *, allow_stale: bool = True) -> dict | None:
+        """Playbook content for the request's exact episode/version; None when unavailable.
+
+        With allow_stale, a failed read falls back to the episode's latest cached content, which
+        may be another version. Learned review controls only add holds, so that is safe for them;
+        anything that could weaken a control must pass allow_stale=False.
+        """
         key = (req.episode_id, req.playbook_version)
         try:
             if key in self.entries:
@@ -62,7 +67,7 @@ class Playbooks:
                     self.refreshes.pop(key)
             return content
         except Exception:
-            return self.latest.get(req.episode_id)
+            return self.latest.get(req.episode_id) if allow_stale else None
 
     async def hits(self, req: GateRequest) -> list[rules.RuleHit]:
         if req.playbook_version is None or req.action not in rules.INVOICE_ACTIONS:
@@ -77,12 +82,13 @@ class Playbooks:
         return learned.evaluate(req, content)
 
     async def retired(self, req: GateRequest) -> frozenset[str]:
-        """Baseline rules this lineage's playbook retired after legit-only fire (#133).
+        """Note-only baseline rules this lineage's playbook retired after legit-only fire (#133).
 
-        Empty when the requested version is unavailable: a missing playbook never weakens a
-        baseline control.
+        Read from the exact requested version only, never the stale fallback, and only for
+        invoice actions (every retireable rule is invoice-scoped). Empty when that version is
+        unavailable: a missing or stale playbook never weakens a baseline control.
         """
-        if req.playbook_version is None:
+        if req.playbook_version is None or req.action not in rules.INVOICE_ACTIONS:
             return frozenset()
-        content = await self._content(req)
+        content = await self._content(req, allow_stale=False)
         return learned.baseline_retired(content) if content is not None else frozenset()

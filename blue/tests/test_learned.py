@@ -9,7 +9,9 @@ from agentkit import make_agent_app
 from agentkit.config import AgentSettings
 from agentkit.models import Playbook, ReflectRequest
 from audit.agent import AuditAgent
-from gate import engine, learned, playbooks
+from gate import engine, learned, playbooks, rules
+
+from .conftest import paid_invoice
 
 
 def review(items, content=None, statistics=None):
@@ -308,9 +310,15 @@ def test_baseline_retirement_survives_in_content_and_stays_bounded():
     result = learned.reflect(review([], statistics=poisoned))
     assert result.playbook is None  # diagnostics are never retireable
 
-    req = review([], {"retired_baseline": ["near_threshold"]}, [{"rule_id": "duplicate_invoice", "on_legit": 4, "on_red": 0}])
+    req = review(
+        [],
+        {"retired_baseline": ["near_threshold"]},
+        [{"rule_id": "duplicate_invoice", "on_legit": 4, "on_red": 0}, {"rule_id": "recurring_drift", "on_legit": 3, "on_red": 0}],
+    )
     result = learned.reflect(req)
-    assert result.playbook["retired_baseline"] == ["duplicate_invoice", "near_threshold"]
+    # duplicate_invoice is a block rule: it is never retired, however often it fires on legit.
+    assert "duplicate_invoice" not in result.playbook["retired_baseline"]
+    assert result.playbook["retired_baseline"] == ["near_threshold", "recurring_drift"]
 
 
 async def test_retired_reads_the_same_cached_snapshot(gate_request, monkeypatch):
@@ -319,7 +327,8 @@ async def test_retired_reads_the_same_cached_snapshot(gate_request, monkeypatch)
     cache = playbooks.Playbooks(AgentSettings(_env_file=None))
     req = gate_request(playbook_version=1)
     assert await cache.retired(req) == frozenset({"no_po_from_po_vendor"})
-    assert await cache.retired(gate_request(action="expenses.pay", playbook_version=1)) == frozenset({"no_po_from_po_vendor"})
+    # Every retireable rule is invoice-scoped: other actions never retire anything or load a playbook.
+    assert await cache.retired(gate_request(action="expenses.pay", playbook_version=1)) == frozenset()
     assert len(calls) == 1
 
 
@@ -329,3 +338,55 @@ async def test_retired_is_empty_when_the_version_is_unavailable(gate_request, mo
     cache = playbooks.Playbooks(AgentSettings(_env_file=None))
     assert await cache.retired(gate_request(playbook_version=1)) == frozenset()
     assert await cache.retired(gate_request()) == frozenset()  # no playbook version at all
+
+
+# Every baseline rule whose hit blocks, escalates for review (a hold), or reports unavailable.
+NON_RETIREABLE = {
+    "vendor_frozen",
+    "already_flagged_high",
+    "duplicate_invoice",
+    "bank_change_with_open_invoices",
+    "recent_bank_change",
+    "employee_bank_matches_vendor",
+    "no_hr_record",
+    "inactive_employee",
+    "over_po_amount",
+    "po_vendor_mismatch",
+    "invalid_po",
+    "unverified_vendor_exposure",
+    "verification_unavailable",
+}
+
+
+def test_only_note_rules_are_retireable():
+    assert {"vendor_age_lt_7d", "near_threshold", "no_po_from_po_vendor", "recurring_drift"} == rules.RETIREABLE_RULE_IDS
+    assert not NON_RETIREABLE & rules.RETIREABLE_RULE_IDS
+
+
+@pytest.mark.parametrize("rule_id", sorted(NON_RETIREABLE))
+def test_block_and_hold_rules_stay_active_after_legit_only_fire(rule_id):
+    result = learned.reflect(review([], statistics=[{"rule_id": rule_id, "on_legit": 5, "on_red": 0}]))
+    assert result.playbook is None or rule_id not in result.playbook.get("retired_baseline", [])
+    # Content that already names a block or hold rule (older or poisoned playbooks) is ignored.
+    assert learned.baseline_retired({"retired_baseline": [rule_id]}) == frozenset()
+
+
+async def test_block_rule_stands_even_when_passed_as_retired(gate_request):
+    req = gate_request()
+    req.context["vendor_paid_invoices"] = [paid_invoice(invoice_number="INV-002")]
+    verdict = await engine.decide(req, retired=frozenset(NON_RETIREABLE))
+    assert verdict.verdict == "block"
+    assert "duplicate_invoice" in verdict.rules_fired
+    assert "duplicate_invoice" in {h["id"] for h in engine.explain(req, retired=frozenset(NON_RETIREABLE))["hits"]}
+
+
+async def test_retirement_ignores_the_stale_playbook_fallback(gate_request, monkeypatch):
+    calls, state = fake_books(monkeypatch)
+    state["content"] = {"learned": [], "retired_baseline": ["near_threshold"]}
+    cache = playbooks.Playbooks(AgentSettings(_env_file=None))
+    assert await cache.retired(gate_request(playbook_version=1)) == frozenset({"near_threshold"})
+    # Version 2 is requested but the ledger still serves version 1: the read fails. Learned review
+    # controls may fall back to the stale snapshot, but retirement must not.
+    newer = gate_request(playbook_version=2)
+    assert await cache.retired(newer) == frozenset()
+    assert await cache.hits(newer) == []  # stale fallback still serves learned controls

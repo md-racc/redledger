@@ -327,5 +327,6 @@ async def test_retired_baseline_rules_do_not_fire_but_the_rest_stand(gate_reques
     fresh = gate_request(amount=4920)  # a new idempotency key: cached verdicts ignore retired by design
     fresh.context["vendor"]["created_day"] = fresh.day
     retired = await engine.decide(fresh, retired=frozenset({"vendor_age_lt_7d", "near_threshold", "unverified_vendor_exposure"}))
-    assert retired.rules_fired == []
-    assert retired.verdict == "allow"
+    # The note rules drop out; the block rule is not retireable and still holds the payment.
+    assert retired.rules_fired == ["unverified_vendor_exposure"]
+    assert retired.verdict == "block"
