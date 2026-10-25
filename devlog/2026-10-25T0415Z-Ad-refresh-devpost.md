@@ -1,0 +1,1 @@
+- 2026-10-25T04:15Z · Ad · docs: Devpost and track docs refreshed for blue's live Droid audit, CRS acceptance (ep_0181eda1c921), 8 red schemes, judge-steered and voice attacks, closed leaks (#142, #151) and the P1-P9 table; next: R pastes from docs/devpost-content-draft.md, resolve [only if P7-P9] markers; blocked: P8 invoice split control (#175)
