@@ -9,7 +9,7 @@
 # per data dir into .local-stack/env (mode 600) and never printed; the Makefile's curl targets read them
 # from there while the stack is up. This script never reads or writes any .env file. Real agents get
 # DRY_RUN=true unless you export DRY_RUN=false (or DRY_RUN_<AGENT>=false), and FACTORY_API_KEY /
-# DROID_MODEL_<AGENT> / CRS_* only if you exported them yourself.
+# DROID_MODEL_<AGENT> (falling back to DROID_MODEL) / CRS_* only if you exported them yourself.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -153,8 +153,8 @@ PY
         start_proc "$a" "$ROOT/battlefield" uv run --quiet uvicorn mock_agents.server:app --host 127.0.0.1 --port "$port"
     else
       AGENT_NAME="$a" PORT="$port" DRY_RUN="$dry" PYTHONPATH="." \
-        DROID_MODEL="$(eval "printf '%s' \"\${DROID_MODEL_${up}:-}\"")" \
-        DROID_REASONING="$(eval "printf '%s' \"\${DROID_REASONING_${up}:-}\"")" \
+        DROID_MODEL="$(eval "printf '%s' \"\${DROID_MODEL_${up}:-\${DROID_MODEL:-}}\"")" \
+        DROID_REASONING="$(eval "printf '%s' \"\${DROID_REASONING_${up}:-\${DROID_REASONING:-}}\"")" \
         AGENT_TOKEN="$own" start_proc "$a" "$ROOT/$a" uv run --quiet uvicorn server:app --host 127.0.0.1 --port "$port"
     fi
     wait_health "$a" "$A:$port/health"
