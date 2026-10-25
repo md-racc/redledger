@@ -135,6 +135,14 @@ Report list with 200-char preview; full markdown by id.
 ### `GET /fe/episodes/{ep}/escalations`
 All escalations (open and resolved) joined with their verdicts.
 
+### `GET /fe/episodes/{ep}/controls`
+The controls assessment behind `/report/{ep}`: `controls[]` (per rule: fired, blocks, escalations, notes, `on_fraud`/`on_legit`
+{n, dollars}, schemes, effect), `schemes[]` (attempts, outcomes, caught_by, lost and its split), `gaps[]` (why money got through),
+`false_positives` (same pool as the score), `audit`, `evidence`, and the money split: `lost` (= score.dollars_extracted) =
+`to_attacker_accounts` + `to_real_parties`, plus `unattributed` (lost not tied to a scheme row). The split is null for replays.
+`final` is true once the episode is finished or failed. Contains no `origin` keys. **Viewers get it only when `final` is true**
+(`403 {"error":"viewer","detail":"available when the run ends"}` before that); admins always.
+
 ## Agent read routes you may also use (operator sees everything)
 
 `GET /vendors?episode_id=`, `/invoices?episode_id=&status=`, `/payments`, `/expenses`,

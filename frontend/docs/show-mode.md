@@ -75,6 +75,17 @@ There is no running commentary panel: the scene is the feed. Live events pass th
 
 Everything the presenter does is also published to the other laptops (`lib/sync`, see [backstage.md](backstage.md)).
 
+## Pitch mode (the live main screen)
+
+`P`, `?pitch=1`, or the admin **Live pitch** button. A 5.8 s flight and a fast tour, then it joins the run that is going or (admin only)
+creates a live enforce episode (seed 42 or `?seed=`, 4 days, no attack plan, so red picks its own schemes) and starts it. Captions
+come only from real events: the day, red's own `turn.ended.summary`, a block or escalation's reason, attack outcomes, the score from
+`score.updated`. An escalation gets a centred card with a countdown; an admin's screen auto-blocks after 40 s (viewers show the
+backend's expiry). At `episode.ended` a closing card links the controls report (`/report/{ep}`). With no backend it replays the
+real prod recording `public/mocks/pitch-fallback.jsonl` (ep_d9b561111d60, 2026-10-25) under a RECORDED badge, block-only. Pitch mode
+and the 90-second show never run together. Code: `lib/arena/{pitch,narration}.ts`, `components/arena/usePitch.ts`,
+`overlays/PitchOverlay.tsx`, `useFeed.ts` (`pitch`, `stopPitch`).
+
 ## Files
 
 `lib/arena/`: `show.ts` (script + director), `showClock.ts`, `script.ts` (timed event scripts with holds for a human),

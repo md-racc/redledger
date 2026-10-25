@@ -880,6 +880,19 @@ paths:
       security: [ { operatorBearer: [] } ]
       parameters: [ { $ref: '#/components/parameters/id' }, { name: generation, in: query, schema: { type: integer }, description: 'only this generation' } ]
       responses: { '200': { description: bundle }, '404': { description: unknown lineage } }
+  /fe/episodes/{id}/controls:
+    get:
+      summary: >-
+        Controls assessment for one episode: per-control fires/blocks/escalations/notes with fraud vs legit counts and dollars,
+        per-scheme attempts/outcomes/caught_by, gaps (why money got through), false positives (same pool as the score), audit
+        activity and evidence ids. `lost` equals score.dollars_extracted and splits into `to_attacker_accounts` (payee is a
+        red-origin vendor/employee account or an approved red bank change) and `to_real_parties` (a real vendor/employee paid on
+        a fraudulent document), plus `unattributed`; both split fields are null for replays (events carry no payee). `final` is
+        true once status is finished or failed. Never contains a key named origin/entity_origin/origin_of_source. The frontend
+        proxy serves it to viewers only when `final` is true.
+      security: [ { operatorBearer: [] } ]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses: { '200': { description: controls report }, '404': { description: unknown episode } }
   /fe/lineages/{id}/timeline:
     get:
       summary: Playbook versions (with structural diffs vs. their parent), generation scores and debrief counts, ordered by time.

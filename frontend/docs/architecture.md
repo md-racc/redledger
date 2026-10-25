@@ -34,7 +34,7 @@ app/page.tsx ─► ArenaClient (next/dynamic, ssr:false)
                        │    ├─ Picking                          THREE.Raycaster
                        │    └─ Effects                          bloom, tone map, grade, grain, SMAA
                        └─ DOM overlays
-                            TitleOverlay  Chapters  Hud  AgentModal  LabelLayer  PopLayer  Loader
+                            TitleOverlay  Chapters  Hud  AgentModal  LabelLayer  PopLayer  Loader  PitchOverlay
 ```
 
 The whole 3D bundle is client-only (`ssr: false`): the first server response is just the black boot screen, and the arena
