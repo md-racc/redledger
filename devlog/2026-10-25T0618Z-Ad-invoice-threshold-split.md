@@ -1,0 +1,1 @@
+- 2026-10-25T06:18Z · Ad · blue: invoice_threshold_split blocks same-vendor invoice splitting across the approval threshold (P8, #175); next: P9 lineage; blocked: none
