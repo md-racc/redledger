@@ -39,7 +39,7 @@ the clerk runs the same harness keyless.
 > becomes the ledger's idempotency key (`X-Tool-Use-Id`, `<id>:<n>` for later writes). A strict mode
 > refuses to run any call it can't match to an SDK-reported ID. Red runs live on `gpt-5.4-mini`:
 > about 11 s and about 2.6k credits per turn. Blue's daily audit runs live too, at `OFF` with strict
-> identity, about 4k credits per audit. We wrote down what we learned as dated Findings: the tool
+> identity, 3.4k–19k credits per audit. We wrote down what we learned as dated Findings: the tool
 > ID format, awaiting tools stalling 0.5.0, the permission rule, and a model stall.
 
 ---
@@ -254,11 +254,12 @@ tell the model "failed" while battlefield might still pay it (#20, #34). agentki
   `make prod-evolve` requires `MAX_CREDITS`. `make prod-credits` prints credits per agent and day.
 - Prod runs `MAX_CREDITS_PER_EPISODE=375000`, the value `deploy/PROD-OPS.md` recommends. At the measured
   ~2.6k credits per red turn, a 10-day episode (10 red turns) spends ~25k (the #136 recordings: 26,230 and 24,449),
-  so the guard is a runaway stop, not a budget that bites in normal play. Blue's live audit adds ~3.8–4.1k a day
-  (ep_f9c695b3144f), so a 10-day episode with red and blue live is roughly 65k.
+  so the guard is a runaway stop, not a budget that bites in normal play. Blue's live audit added ~3.8–4.1k a day in
+  the 2-day smoke (ep_f9c695b3144f), but 3,454–18,723 per audit over the 6-day #193 pair (66,422 and 37,446 in total,
+  about 6–11k a day), so a 10-day episode with red and blue live is roughly 85–135k: still well under the guard.
 - **Gap, fixed:** before #176 the `/audit` response had no `usage`, so battlefield recorded blue's live audits as 0
   credits, and `make prod-credits` and the guard missed them (contracts CHANGELOG 2026-10-25). From the deploy
-  containing 6640354, `/audit` returns `usage` (#174 contract, #176 code) and blue's ~4k a day counts toward the
+  containing 6640354, `/audit` returns `usage` (#174 contract, #176 code) and blue's audit credits count toward the
   episode and lineage caps.
 - Reflection between generations is deterministic code for all three agents (`red/evolution.py` fold,
   `green/playbook.py`, `blue/gate/learned.py`). It makes no Droid call and spends no credits.
@@ -396,7 +397,7 @@ each day (`/backstage/blue`), not the show itself.
 | Red's minute ("red is a real agent on Factory's Droid SDK…") | Laptop 2, `/backstage/red` | Red's `agent.thinking` text and `agent.tool_call`/`tool_result` lines, each with a `tool_use_id`; tool names `inspect_books` → `run_scheme` |
 | "Pick an attack. Any one." (R's close) | Laptop 1 Launch attack → laptop 2 | A live red Droid turn: the forced-scheme prompt, `inspect_books`, `run_scheme`, then `turn.ended` with `factory_credits` (~2.6k) after ~11 s. On laptop 4, blue's verdict on green's attempt (rules gate) |
 | Judge describes the attack (optional) | Laptop 1 attack console (typed or voice) → laptop 2 | The judge's words appear in red's prompt as quoted DATA and set the forced scheme's params (#165). A Droid agent taking free-form steering without widening its tool surface. Voice caveats: admin-only, never tested against the real ElevenLabs service (#154) |
-| End of the day | Laptop 4, `/backstage/blue` | Blue's live audit turn (Droid, `OFF`, strict identity): flags, freezes and the posted report. ~4k credits |
+| End of the day | Laptop 4, `/backstage/blue` | Blue's live audit turn (Droid, `OFF`, strict identity) and the posted report. 3.4k–19k credits. The #193 recordings (before #195) show 0 flags; since #195 the live audit raised a CRS flag the gate enforced (ep_9cbc3362d44e). A flag on a given day isn't guaranteed: show the report |
 | Q&A, if a Factory judge asks | Laptop 2 / backstage battlefield | Same `tool_use_id` on the tool event and on the ledger write (`X-Tool-Use-Id`, `:2`, `:3`); `/health` shows red and blue `dry_run=false model=gpt-5.4-mini`, green `dry_run=true` (blue's `droid_ok` is truthful from the deploy containing 6640354; before #176 it always read false) |
 | Evolution beat | EvolutionCard | On prod with the backend up, the card loads the newest finished lineage, the live-red `ln_f52a3df83c8d` (`frontend/lib/arena/lineage.ts`). Factory angle: 40 live Droid turns across 5 generations, ~109k credits, red's playbook folded between generations with no model call. Offline it is the synthetic golden fixture, not a recording. R's close ("that learning card is a recorded live run", #145) matches when the backend is up |
 
@@ -446,7 +447,7 @@ We recorded each of these as a dated Finding in the repo.
 
 **Accomplishments we're proud of.** Two Droid agents run live on prod: the attacker completes full
 attacks in ~11 s for ~2.6k credits, and the controller's daily audit runs at `OFF` autonomy with strict
-identity for ~4k credits a day. Before we switched the audit on, its strict-identity path ran against a
+identity for 3.4k–19k credits per audit. Before we switched the audit on, its strict-identity path ran against a
 real local Ledger in authorized runs: every tool call had a permission request and exactly one event pair.
 Writes committed under the SDK's ID, and a same-key replay was refused. A write killed mid-flight left an
 honest `unknown` receipt with no duplicate. Gate p95 stayed at 8 ms during the live audit. A five-generation lineage ran on prod with the live attacker: 40 Droid

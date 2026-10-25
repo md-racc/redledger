@@ -1,0 +1,1 @@
+- 2026-10-25T06:59Z · Al · red: cap judge-input language and check closest_built_in against the catalog so an oversized /inputs payload can't bloat red's live prompt (review finding); next: none; blocked: none

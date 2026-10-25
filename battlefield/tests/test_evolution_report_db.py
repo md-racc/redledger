@@ -291,3 +291,21 @@ async def test_partial_while_running_unknown_404_and_operator_only() -> None:
             assert (await _get(f"/api/fe/lineages/{LN}/{path}", Authorization="Bearer wrong")).status_code == 401
     finally:
         await _wipe()
+
+
+async def test_rules_count_a_live_swap_catch_on_red(episode: str) -> None:
+    """A block on a hijacked vendor's sim invoice while the red swap is live is the controller being
+    right (score.compute agrees): the rule's hit counts on_red, so blue never retires it for it."""
+    from app.evolution import review
+    from app.scoring import score
+
+    hijacked = await f.vendor(episode, bank_account="ACCT-RED")
+    await f.change(episode, hijacked, day=1, status="approved", resolved_day=1)
+    caught = await f.invoice(episode, hijacked, amount=3000, status="blocked", day=2)
+    v1 = await f.verdict(episode, "invoice", caught, verdict="block", day=2)
+    plain = await f.invoice(episode, await f.vendor(episode), amount=500, status="blocked", day=2)
+    v2 = await f.verdict(episode, "invoice", plain, verdict="block", day=2)
+    await db.execute("UPDATE verdicts SET rules_fired=$2::jsonb WHERE id = ANY($1::text[])", [v1, v2], ["learned:bank_change_any_amount"])
+    assert await review.rules(episode) == [{"rule_id": "learned:bank_change_any_amount", "fired": 2, "on_red": 1, "on_legit": 1}]
+    s = await score.compute(episode)
+    assert s["legit_blocked"] == 1  # only the plain one is a false positive, same as the rules table

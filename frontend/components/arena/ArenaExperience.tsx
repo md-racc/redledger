@@ -4,7 +4,8 @@
 //
 // Host integration:
 //   <ArenaExperience agentDetails={{ "red:ghost_vendor": { story: "...", fields: { targeted: 4920 } } }} />
-//   window.redledger.converge() / .disperse() / .select(id) / .run(mode) / .show()      ?show=1 starts the show on load
+//   window.redledger.converge() / .disperse() / .select(id) / .run(mode) / .show() / .pitch()
+//   ?show=1 starts the show on load; ?pitch=1 starts pitch mode (a live episode, components/arena/usePitch.ts)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentDetailOverrides } from "@/lib/arena/types";
 import type { ArenaSim } from "@/lib/arena/sim";
@@ -19,6 +20,9 @@ import { isAdmin } from "@/lib/role";
 import { publish, setClientRole } from "@/lib/sync/client";
 import { ROSTER_BY_ID } from "@/lib/arena/roster";
 import { useShow } from "./useShow";
+import { usePitch } from "./usePitch";
+import { pitchQuery } from "@/lib/arena/pitch";
+import { PitchOverlay } from "./overlays/PitchOverlay";
 import { AgentModal } from "./overlays/AgentModal";
 import { Chapters } from "./overlays/Chapters";
 import { CompareCard } from "./overlays/CompareCard";
@@ -43,6 +47,13 @@ const SCROLL_VH = 780;
 export default function ArenaExperience({ agentDetails, autoConverge = true }: Props) {
   const feed = useFeed();
   const show = useShow(feed);
+  const showStop = useRef(show.stop);
+  showStop.current = show.stop;
+  const showStatus = useRef(show.status);
+  showStatus.current = show.status;
+  // pitch mode and the show never run together: starting one leaves the other
+  const pitch = usePitch(feed, { onStart: () => { if (showStatus.current === "playing" || showStatus.current === "paused") showStop.current(); } });
+  const inPitchIntro = pitch.phase === "intro";
   const stage = useArena((s) => s.stage);
   const modelState = useArena((s) => s.modelState);
   const panel = useArena((s) => s.panel);
@@ -70,13 +81,19 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
     return () => clearTimeout(t);
   }, [stage, sim, modelState]);
 
-  // ?show=1: the show starts as soon as the flight does
+  // ?show=1: the show starts as soon as the flight does (?pitch=1: pitch mode does)
   const autostart = useRef(false);
   useEffect(() => {
     if (stage !== "intro" || autostart.current) return;
+    if (pitchQuery(window.location.search).on) { autostart.current = true; pitch.start(); return; }
     const q = new URLSearchParams(window.location.search).get("show");
     if (q === "1" || q === "live" || q === "recorded") { autostart.current = true; show.start(); }
-  }, [stage, show]);
+  }, [stage, show, pitch]);
+
+  // the show started while pitch mode was on: pitch mode steps aside
+  const pitchStop = pitch.stop;
+  const pitchOn = pitch.phase !== "off";
+  useEffect(() => { if (pitchOn && (show.status === "playing" || show.status === "paused")) pitchStop(); }, [show.status, pitchOn, pitchStop]);
 
   // the page does not scroll while loading or flying...
   useEffect(() => {
@@ -88,8 +105,9 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
 
   // ...nor while the show is driving it: the visitor's wheel, touch and paging keys are swallowed (no overflow:hidden, which
   // would drop the scrollbar and shift the layout under the show)
+  const lockScroll = inShow || inPitchIntro;
   useEffect(() => {
-    if (!inShow) return;
+    if (!lockScroll) return;
     const stopEvent = (e: Event) => e.preventDefault();
     const stopKey = (e: KeyboardEvent) => { if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault(); };
     window.addEventListener("wheel", stopEvent, { passive: false });
@@ -100,7 +118,7 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
       window.removeEventListener("touchmove", stopEvent);
       window.removeEventListener("keydown", stopKey);
     };
-  }, [inShow]);
+  }, [lockScroll]);
 
   // first arrival in the arena: the stampede starts on its own
   const arrived = useRef(false);
@@ -168,6 +186,8 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
   runRef.current = feed.run;
   const showRef = useRef(show.start);
   showRef.current = show.start;
+  const pitchRef = useRef(pitch.start);
+  pitchRef.current = pitch.start;
   useEffect(() => {
     const api = {
       converge: () => useArena.getState().actions.converge(),
@@ -175,6 +195,7 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
       select: (id: string | null) => useArena.getState().select(id),
       run: (mode?: "off" | "shadow" | "enforce") => runRef.current(mode),
       show: () => showRef.current(),
+      pitch: () => pitchRef.current(),
       /** what the camera and the spotlight are looking at (for debugging a shot) */
       debug: () => ({ phase: useArena.getState().simPhase, focus: [...focus.ids], pinned: [...focus.pinned], level: +focus.level.toFixed(2), cinema: { ...cinema } }),
     };
@@ -183,14 +204,15 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
   }, []);
 
   return (
-    <div className="arena" data-stage={stage} data-show={show.status} data-panel={panel ?? ""}>
+    <div className="arena" data-stage={stage} data-show={show.status} data-pitch={pitch.phase} data-panel={panel ?? ""}>
       <div className="arena-canvas">
         <Scene subscribe={feed.subscribe} feedActive={feed.running || inShow || feed.state.episodeId !== null} onSim={onSim} onProgress={onProgress} tallies={tallies} />
       </div>
       <div className="spot" aria-hidden />
-      <TitleOverlay key={show.runKey} onShow={show.start} />
+      <TitleOverlay key={`${show.runKey}:${pitch.runKey}`} onShow={show.start} onPitch={pitch.start} />
       <Chapters />
-      <Hud feed={feed} show={show} />
+      <Hud feed={feed} show={show} pitch={pitch} />
+      <PitchOverlay feed={feed} pitch={pitch} />
       <CompareCard sides={sides} open={panel === "compare"} onClose={() => setPanel(null)} />
       <EvolutionCard open={panel === "evolve"} driven={inShow} preferLive={feed.backend.state === "live"} onClose={() => setPanel(null)} />
       <ReportCard state={feed.state} live={feed.source === "live"} open={panel === "report"} onClose={() => setPanel(null)} />

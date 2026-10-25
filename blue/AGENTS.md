@@ -104,7 +104,7 @@ empty = you missed it), and battlefield's `/gate` requests carry `playbook_versi
   playbook I/O. An unavailable version escalates neutrally and never weakens a baseline hold.
 - Reflection performs no model calls or ledger writes. It preserves unrelated content and
   applies each generation once. Daily debriefs are forwarded but do not yet update playbooks
-  within a turn. These keyless controls do not qualify live audit or the CRS/Bright Data gates.
+  within a turn. These keyless controls do not qualify live audit or the CRS gate.
 
 ## Paste this to your coding agent as its first message
 

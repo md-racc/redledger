@@ -174,3 +174,18 @@ async def test_blocked_legit_bait_counts_as_false_positives() -> None:
     expected = float(inv["amount"]) * settings.fp_penalty_rate + (2 + 1) * settings.fp_flat_penalty
     assert s["false_positive_cost"] == round(expected, 2)
     assert s["attacks_launched"] == 0 and s["dollars_blocked"] == 0  # legit traffic never looks like an attack to scoring
+
+
+async def test_legit_free_text_is_not_a_provenance_tell() -> None:
+    """Legit memos used to be always "" and line items a bare category, so a memo or a descriptive
+    line item alone marked red's rows. Legit text now covers the same shapes red writes."""
+    eid, _ = await _run()
+    memos = [r["memo"] for r in await db.fetch("SELECT memo FROM expenses WHERE episode_id=$1 AND origin='sim'", eid)]
+    assert memos and all(memos) and len(set(memos)) > 3
+    descs = {
+        it["desc"]
+        for r in await db.fetch("SELECT line_items FROM invoices WHERE episode_id=$1 AND origin='sim' AND received_day >= 0", eid)
+        for it in r["line_items"]
+    }
+    assert len(descs) > 5 and any(d.endswith(" — monthly") for d in descs)
+    assert any("new banking partner" in r for r in lt.BANK_CHANGE_REASONS)

@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from agentkit.ledger_client import LedgerClient
-from gate.rules import BANK_FIELDS, approval_threshold, duplicate_pair
+from gate.rules import BANK_FIELDS, UNVERIFIED_EXPOSURE_FLOOR, approval_threshold, duplicate_pair
 
 from .models import Coverage, Evidence, Finding, Snapshot
 from .snapshot import collect_snapshot as collect_rows
@@ -161,7 +161,7 @@ def derive_findings(snapshot: Snapshot) -> None:
             exposed = [inv for inv in current if not inv["po_id"]]
             exposure_ids = {inv["id"] for inv in exposed}
             prior_paid = [inv for inv in paid if inv["id"] not in exposure_ids]
-            if not prior_paid and sum((inv["amount"] for inv in exposed), Decimal(0)) >= threshold * Decimal(".95"):
+            if not prior_paid and sum((inv["amount"] for inv in exposed), Decimal(0)) > UNVERIFIED_EXPOSURE_FLOOR:
                 findings.append(
                     _finding(
                         snapshot,
@@ -173,7 +173,7 @@ def derive_findings(snapshot: Snapshot) -> None:
                         [
                             Evidence(
                                 family="authorization",
-                                fact="A new vendor has near-threshold or larger exposure without independent paid history or associated POs.",
+                                fact="A new vendor has more than $1,000 of exposure without independent paid history or associated POs.",
                             ),
                         ],
                     )

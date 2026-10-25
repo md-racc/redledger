@@ -36,7 +36,7 @@ Finance teams are being asked to let AI agents pay bills. In accounts payable th
 Red Ledger runs a synthetic company, Coastal Supply Co. (60 vendors, 40 employees, 90 days of paid history), through simulated business days. Three agents share one ledger:
 
 - **Green, the AP clerk**, matches invoices to purchase orders, pays bills, approves vendor bank changes and reimburses expenses.
-- **Blue, the controller**, decides each of those actions before it happens: allow, block, or escalate to a human, with rule IDs and a plain-English reason. Once a day it also audits the books as a live agent on Factory's Droid SDK, flags and freezes suspicious vendors, and posts a report. Its audit can also check operator-bound new hires against TransUnion identity verification through the CRS sandbox.
+- **Blue, the controller**, decides each of those actions before it happens: allow, block, or escalate to a human, with rule IDs and a plain-English reason. Once a day it also audits the books as a live agent on Factory's Droid SDK, raises flags the gate then enforces, and posts a report. Its audit can also check operator-bound new hires against TransUnion identity verification through the CRS sandbox.
 - **Red, the fraud agent**, runs live on Factory's Droid SDK. It reads the books like an insider and picks from eight schemes: ghost vendors, bank-account swaps, duplicate invoices, threshold splits, ghost employees, inflated expenses, invoices over their purchase order, and creeping recurring amounts. It uses only the access a junior insider would have.
 
 A judge can steer the attack: type or say a fraud scheme in your own words, in any language. Red gets the words as quoted data and uses them to choose its scheme or tune it, but it can only ever run its own catalog.
@@ -45,8 +45,9 @@ An escalation waits up to 90 seconds for a person. If nobody answers, the action
 
 Agents also **evolve**. Across generations of episodes, each agent gets debriefs on what was caught and rewrites a versioned playbook.
 
-**Results on our production deployment** (recorded with red live; green and blue ran keyless at the time):
-- Same company, same seed, 10 days: controller off, **$10,285** stolen. Controller on, **$1,824** stolen, at $100 of false-positive cost.
+**Results on our production deployment:**
+- Same company, same seed, 10 days, red live and choosing its own schemes (green and blue keyless): controller off, **$10,285** stolen. Controller on, **$1,824** stolen, at $100 of false-positive cost.
+- Red and the controller's audit both live, against a fixed plan of six different schemes over 6 days: controller off, **$23,681** stolen; controller on, **$20,350** stolen, 2 of 6 schemes caught, at $50 of false-positive cost. The split, drift and inflation schemes got through. That is the harder test, and the controls lose most of it today.
 - Over a 5-generation evolution run, the live attacker found that invoices split under the approval threshold get paid, and leaned on it harder every generation: 1 of 7 attacks in generation 1, 7 of 8 in generation 5, with extraction rising from $19k to $98k. No control caught it. The lab surfaced a real control gap, which is exactly what you'd want to learn before hiring the agent. `[only if P9]` After we added an invoice split control, a short live re-run showed the controller closing it.
 - Separately, on our production deployment with the controller's audit live, in a recorded two-day run against the live CRS sandbox, blue's audit agent checked three fictional new hires, flagged the one whose identity didn't check out, and that person's next expense was blocked at the gate. The two clean identities were paid.
 
@@ -68,7 +69,7 @@ All three agents share one `agentkit` package around Factory's Droid SDK. Each h
 ## Accomplishments that we're proud of
 - The controller fails closed: a timeout blocks, and an unreachable controller or missing evidence escalates.
 - False positives are real, because the company generates legitimate bank changes and new vendors every few days.
-- Two agents run live on Factory's Droid SDK: the fraud agent at about 11 seconds and ~2.6k credits per turn, and the controller's daily audit at about 4k credits a day.
+- Two agents run live on Factory's Droid SDK: the fraud agent at about 11 seconds and ~2.6k credits per turn, and the controller's daily audit at 3.4k–19k credits per audit (about 6–11k a day over our recorded runs).
 - Every decision traces from a rule ID to a written reason to an audit row.
 - The lab found a genuine gap in its own controls.
 
@@ -102,7 +103,7 @@ Yes. Two of our three agents run live in production on Factory's Droid SDK, on g
 
 Red, the fraud agent (reasoning: low), reads the company's books each turn through an in-process MCP server limited to red's own Ledger API tools, chooses one of eight fraud schemes that blends in, and executes it, at about 11 seconds and ~2.6k Factory credits per turn. A judge's own words, typed or spoken, are passed to it as quoted data to steer the scheme or its parameters. Between generations it receives debriefs and its playbook is updated.
 
-Blue, the controller, runs its daily audit as a live Droid agent: it reviews the day's service-derived facts, calls its audit tools, raises flags or freezes vendors only through findings the service validated, and posts a report, at about 4k credits per audit. Blue's per-payment gate is deterministic rules; it also supports an optional LLM advisor (Gemini, Anthropic or OpenAI) that can only add advice, never decide, and that advisor is off in production.
+Blue, the controller, runs its daily audit as a live Droid agent: it reviews the day's service-derived facts, calls its audit tools, can raise flags or freeze vendors only through findings the service validated, and posts a report, at 3.4k–19k credits per audit. Until #195 its flag calls were refused by our own strict tool-identity check (streamed arguments arrive as `{}` first); since the fix it has raised a CRS identity flag on prod that the gate then enforced. Blue's per-payment gate is deterministic rules; it also supports an optional LLM advisor (Gemini, Anthropic or OpenAI) that can only add advice, never decide, and that advisor is off in production.
 
 Green, the AP clerk, is built on the same Droid SDK harness but runs its procedure without model calls in production, by our choice for the demo.
 
@@ -119,11 +120,12 @@ Optional, the team's call: *"We also used Claude Code (AI coding agents) heavily
 - **Live status:** red and blue's audit are live, green is keyless by decision (#78). Don't write "three live agents".
 - **Voice:** #154 was never tested against the real ElevenLabs service. Record one real transcription on prod before submitting. If it fails, remove the "or say" wording and the ElevenLabs sentences, and swap the tag.
 - **CRS:** the About text says "on our production deployment" and "a recorded two-day run" because ep_9cbc3362d44e (#197) is one recorded prod run with the live audit. Don't widen it to "every run". Submitting to the CRS track: run `make prod-crs-episode` live at the table if anyone can; the recording is the fallback (devpost/crs.md §0).
+- **Blue's live flags:** the #193 recordings predate #195, so their live audits raised no flags (strict identity refused the streamed `raise_flag` calls). Since #195, ep_9cbc3362d44e shows a live flag the gate enforced. Don't say the live audit flagged anything in #193.
 - **`[only if P#]` markers:** resolve each one (P8 invoice split control, P9 re-run) against devpost/README.md before pasting.
 - **Sources for the numbers:**
-  - off/on recordings: [`docs/recordings/README.md`](recordings/README.md) (#136)
+  - off/on recordings: [`docs/recordings/README.md`](recordings/README.md) (#136 red live; #193 red and blue live, which also gives blue's per-audit credits and the 0-flag audits)
   - 5-generation live-red lineage `ln_f52a3df83c8d` and red's per-turn cost: [`devpost/factory.md`](devpost/factory.md) and [`devpost/hyphenate.md`](devpost/hyphenate.md) §10
-  - blue's live audit credits (3,806 and 4,109, ep_f9c695b3144f): #78; [`devpost/factory.md`](devpost/factory.md) §10
+  - blue's live audit credits: 3,806 and 4,109 in the 2-day smoke ep_f9c695b3144f (#78; [`devpost/factory.md`](devpost/factory.md) §10); 3,454–18,723 per audit in the #193 pair
   - CRS on prod with the live audit (ep_9cbc3362d44e, PASS): #197; [`recordings/crs-live-ep_9cbc3362d44e.jsonl`](recordings/crs-live-ep_9cbc3362d44e.jsonl); local acceptance (ep_0181eda1c921, 19 checks `billable:false`): #102; [`devpost/crs.md`](devpost/crs.md) §0
   - false-positive cost formula: README §4
 - **Website / "Try it out" link:** `https://app.redledger.us`. It is public and read-only (P7, live), so judges can open it on their own devices and watch; only the stage laptops signed in at `/admin` can start runs, launch attacks, use voice or resolve escalations.

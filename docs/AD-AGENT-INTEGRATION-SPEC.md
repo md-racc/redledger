@@ -1,7 +1,8 @@
 # Temporary Green + Blue integration handoff to Dev Ad
 
-**Status: Green/Blue-reviewed handoff, awaiting Ad's protocol decisions.
-Not an approved contract or authorization to enable live agents.**
+**Status: superseded.** Ad answered this handoff in [`AD-INTEGRATION-DESIGN.md`](AD-INTEGRATION-DESIGN.md) (D1–D14
+accepted 2026-10-24; D15 partly lifted: red and blue's audit live on prod, green keyless). That doc's "Progress" table is
+the current state; the checklists below are kept as the original ask and are not updated. Not an approved contract.
 Baseline: merged main `8a2157d`. Shared implementation owner: **Ad**.
 Green and Blue integration owners: **M**, through their respective agents.
 

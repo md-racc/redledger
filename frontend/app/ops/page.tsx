@@ -5,7 +5,7 @@
 // waits for one when nothing runs, and follows a lineage to its next generation. Only admins see the buttons that change the sim.
 import { useEffect, useReducer, useState } from "react";
 import { api } from "@/lib/api";
-import { parseActiveRun } from "@/lib/arena/activeRun";
+import { currentRun, parseActiveRun } from "@/lib/arena/activeRun";
 import { useActiveRun } from "@/lib/arena/useActiveRun";
 import { loadFixture, replay } from "@/lib/mock";
 import { attacksByDay, blockedVerdicts, initialState, openEscalations, reduce } from "@/lib/reducer";
@@ -39,6 +39,13 @@ export default function Page() {
   }, [episodeId]);
 
   async function newEpisode(mode: "off" | "shadow" | "enforce") {
+    // battlefield runs one thing at a time: watch a run that is going instead of creating an episode that can never start
+    const busy = await currentRun(api).catch(() => null);
+    if (busy) {
+      setEpisodeId(busy.episodeId);
+      active.refresh();
+      return;
+    }
     const ep = await api.createEpisode({ controller_mode: mode, seed: 42, days: 5 });
     try {
       await api.start(ep.id);

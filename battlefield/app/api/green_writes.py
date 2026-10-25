@@ -21,7 +21,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import db
 from ..auth import Caller, allow
@@ -43,8 +43,8 @@ class MatchBody(BaseModel):
 
 class GlEntryCreate(BaseModel):
     account: str
-    debit: float = 0.0
-    credit: float = 0.0
+    debit: float = Field(0.0, ge=0, le=1e10, allow_inf_nan=False)
+    credit: float = Field(0.0, ge=0, le=1e10, allow_inf_nan=False)
     memo: str | None = None
     ref_type: str | None = None
     ref_id: str | None = None

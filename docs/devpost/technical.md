@@ -100,7 +100,7 @@ dollars stolen against dollars blocked against the cost of blocking honest work.
   a `contracts/CHANGELOG.md` line fails CI. The team extension trees `contracts/ext/{red,green,blue,fe}/` are exempt.
 - **Extension points instead of contract churn** (README §16). Each team gets `battlefield/extensions/<area>_*.py`,
   auto-mounted at `/api/x/<area>/...`, and `contracts/ext/<area>/*.sql` tables. A broken extension is logged and
-  skipped rather than taking battlefield down. Examples on main: `battlefield/extensions/blue_crs.py`, `fe_example.py`.
+  skipped rather than taking battlefield down. Example on main: `battlefield/extensions/blue_crs.py`.
 - **Other CI jobs.** `changes` path-filters the run. `python` runs ruff and pytest per service as a 5-way matrix
   against a `postgres:16-alpine` service container. `battlefield-timescale` runs the same battlefield suite on
   `timescale/timescaledb:latest-pg16` with `EXPECT_TIMESCALE=1`. `frontend` runs typecheck, lint and vitest.
@@ -222,7 +222,7 @@ lazily re-seeded from the episode's `turn.ended` events after a restart. When th
 (`runner.py:298-366`). A trip disarms the guard for the rest of that day. Resume or step re-arms it, so an
 over-limit episode gets exactly one more paid turn. Zero-credit DRY_RUN turns never trip it. Lineages add a
 whole-lineage cap (`config.max_credits`, turns + reflections), and `prod-evolve` refuses to start without one (#95).
-Gap found on prod: when blue's audit went live, `/audit` returned no usage, so its ~4k credits per audit counted as 0.
+Gap found on prod: when blue's audit went live, `/audit` returned no usage, so its credits per audit (3.4k–19k) counted as 0.
 #174 (contract) and #176 (code) add `usage` to the `/audit` response; blue's credits count from the deploy containing
 6640354.
 
@@ -572,7 +572,7 @@ The site is public and read-only: anyone can watch, and only an admin, checked o
 
 **Accomplishments that we're proud of**
 - Two live Droid agents on prod: the attacker runs a full attack in about 11 s for about 2.6k credits a turn, and
-  the controller's daily audit runs with strict tool-call identity for about 4k credits a day.
+  the controller's daily audit runs with strict tool-call identity for 3.4k–19k credits per audit.
 - One enforcement point, with race-safe, exactly-once semantics that independent reviewers tried to break with
   kill/restart harnesses before we merged them.
 - 911 Python test functions and 202 frontend tests, including real-concurrency and real-Postgres tests, and the full
@@ -718,7 +718,7 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
    hits the real backend, and the consoles follow the live run. Green runs keyless there.
 10. **"How do you control model spend?"** A per-episode credit guard pauses the episode at `MAX_CREDITS_PER_EPISODE`,
     with exactly one more paid turn after a resume. Prod runs `MAX_CREDITS_PER_EPISODE=375000`; a live-red 10-day
-    episode spends ~25k of red credits, plus ~4k a day for blue's live audit (counted by the guard from the deploy
+    episode spends ~25k of red credits, plus 3.4k–19k per day for blue's live audit (counted by the guard from the deploy
     containing 6640354; before #176 it was recorded as 0). Lineages need their own cap (`prod-evolve` refuses without `MAX_CREDITS=`). One active run at a time.
 11. **"How do you deploy and roll back?"** Merge to `main` builds five images tagged with the SHA. An approval-gated
     job renders `.env` from the `production` environment and rolls compose. Roll back with `git revert` + merge, or by
@@ -768,7 +768,8 @@ honest work costs. Every verdict comes with a reason an auditor can read. We run
 
 ### Contradictions found while writing (for Ad and R)
 Items 1 (README part), 3, 4 and 5 (README part) are fixed by the companion repo-docs refresh
-(`docs/refresh-repo-docs`); the rest stand until someone edits those files.
+(`docs/refresh-repo-docs`). Re-checked on main after #193: the Caddyfile comments are fixed (#183), item 2 is fixed in
+the crunch-fixes PR, and item 4's shared-token line is gone from `battlefield/AGENTS.md`. Item 6 stands.
 1. README §13, `deploy/OWNER-CHECKLIST.md` §2–§3 and the header of `docker-compose.prod.yml` describe Caddy serving
    `api.<domain>` → battlefield and the frontend on Cloudflare Pages. `deploy/Caddyfile` serves only `app.$DOMAIN`
    (`/api/ws` → battlefield, everything else → frontend), and its comment says battlefield's REST API has no public

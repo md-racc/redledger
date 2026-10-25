@@ -4,6 +4,7 @@ import type { RLEvent } from "@/lib/types";
 import type { SyncMsg, SyncState, TrafficRow } from "@/lib/sync/hub";
 import { liveClients } from "@/lib/sync/hub";
 import { blueIdForRule } from "@/lib/arena/roster";
+import type { FeedLink } from "@/lib/ws";
 
 export type TeamKey = "red" | "green" | "blue" | "battlefield";
 export const TEAM_KEYS: TeamKey[] = ["red", "green", "blue", "battlefield"];
@@ -72,6 +73,33 @@ export interface CheckInput {
   trafficCount: number;
   /** the recorded live-red run being replayed on purpose (`?replay=1`) or for want of a backend: reachability is not a failure then */
   replaying?: string | null;
+  /** how events reach this window (live mode): lib/ws.ts's own report of the socket, or of the REST read it falls back to */
+  feed?: FeedLink | null;
+  /** while "connecting": what the proxy last refused with (403, 401, 429), which is not a network failure, so no recorded loop */
+  answer?: string | null;
+  /** status of the followed episode, and how many of its events this window holds: an episode that is not running has nothing new to say */
+  episodeStatus?: string | null;
+  eventsHeld?: number;
+}
+
+/** "Is the event stream delivering?" A quiet stream is a fault only when something is running, or when no way in works. */
+function streamCheck(i: CheckInput, age: (t: number | null) => string): Check {
+  const label = "event stream delivering";
+  const fresh = i.lastEventAt != null && i.now - i.lastEventAt < 60_000;
+  const recent = `last event ${age(i.lastEventAt)}, ${i.eventsInLastMinute} in the last minute`;
+  const f = i.mode === "live" ? i.feed : null;
+  if (!f) return { ok: fresh, label, detail: recent };
+  const via = f.via === "socket" ? " (websocket)" : f.via === "polling" ? " (REST fallback: the websocket would not open)" : "";
+  if (f.via === "down") return { ok: false, label, detail: `no way in: ${f.detail}` };
+  if (fresh) return { ok: true, label, detail: `${recent}${via}` };
+  if (f.via === "connecting") return { ok: null, label, detail: `connecting: ${f.detail}` };
+  const held = i.eventsHeld ?? 0;
+  if (i.episodeStatus && i.episodeStatus !== "running") {
+    return held > 0
+      ? { ok: true, label, detail: `idle: episode ${i.episodeStatus}, ${held} events delivered, nothing new to send${via}` }
+      : { ok: null, label, detail: `idle: episode ${i.episodeStatus}, nothing to deliver yet${via}` };
+  }
+  return { ok: false, label, detail: `${recent}${via}` };
 }
 
 /** The "is it really working" list: each line is a thing we can measure right now. ok === null means "not applicable yet". */
@@ -82,12 +110,12 @@ export function liveChecks(i: CheckInput): Check[] {
   const age = (t: number | null) => (t == null ? "never" : `${Math.max(0, Math.round((i.now - t) / 1000))}s ago`);
   const agentList = i.agents ? Object.entries(i.agents) : [];
   return [
-    { ok: live ? true : i.replaying ? null : false, label: "battlefield reachable through the /api/bf proxy", detail: live ? `GET /health 200 in ${i.healthMs ?? "?"}ms` : i.mode === "connecting" ? "connecting" : i.replaying ? "not asked: replaying the recorded live-red run" : "no answer: showing the recorded loop" },
+    { ok: live ? true : i.replaying ? null : false, label: "battlefield reachable through the /api/bf proxy", detail: live ? `GET /health 200 in ${i.healthMs ?? "?"}ms` : i.mode === "connecting" ? (i.answer ? `refused, not unreachable: ${i.answer}` : "connecting") : i.replaying ? "not asked: replaying the recorded live-red run" : "no answer: showing the recorded loop" },
     { ok: live ? agentList.length > 0 && agentList.every(([, a]) => a?.ok !== false) : null, label: "agents answer /health", detail: agentList.map(([k, a]) => `${k}:${a?.ok === false ? "down" : "up"}`).join(" ") || "-" },
-    { ok: i.lastEventAt != null && i.now - i.lastEventAt < 60_000, label: "event stream delivering", detail: `last event ${age(i.lastEventAt)}, ${i.eventsInLastMinute} in the last minute` },
+    streamCheck(i, age),
     { ok: i.verdicts > 0 ? true : null, label: "the gate is issuing verdicts", detail: `${i.verdicts} gate.verdict events` },
-    { ok: i.sync.link === "stream" ? true : i.sync.link === "polling" ? null : false, label: "relay to the other laptops", detail: `${i.sync.link}, last item ${Math.max(0, Math.round(i.sync.quietMs / 1000))}s ago` },
-    { ok: arena ? true : false, label: "arena laptop connected", detail: arena ? `${arena.id}, spoke ${Math.max(0, Math.round((i.now - new Date(arena.last).getTime()) / 1000))}s ago` : "not seen in the last 30 s" },
+    { ok: i.sync.link === "stream" ? true : i.sync.link === "polling" ? null : false, label: "relay to the other laptops", detail: i.sync.link === "admins" ? "admins only (sign in at /admin)" : `${i.sync.link}, last item ${Math.max(0, Math.round(i.sync.quietMs / 1000))}s ago` },
+    { ok: arena ? true : false, label: "arena laptop connected", detail: arena ? `${arena.id}, spoke ${Math.max(0, Math.round((i.now - new Date(arena.last).getTime()) / 1000))}s ago` : "not seen in the last 30 s: open the arena on the first laptop and sign in at /admin (a viewer's arena shows but does not report)" },
     { ok: i.trafficCount > 0 ? true : null, label: "API calls passing through the proxy", detail: `${i.trafficCount} calls logged` },
   ];
 }

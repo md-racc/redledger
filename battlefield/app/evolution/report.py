@@ -12,9 +12,11 @@ Definitions the report relies on:
   - `recall` of a rule = attacks it fired on / attacks launched in that generation;
   - `missed` = attacks whose outcome is `extracted` (money left and nothing stopped it);
   - learned rules = rule ids prefixed `learned:`; new = ids first seen after the first generation in
-    which any rule fired; retired = ids seen in an earlier headless generation but absent from the
-    latest headless generation in which any rule fired. Demo generations are shorter and red picks
-    differently there, so they never retire a rule (they still count for learned / new).
+    which any rule fired; `retired_rules` = ids seen in an earlier headless generation but absent from
+    the latest headless generation in which any rule fired. That is "did not fire in the latest
+    generation", not a retirement by blue (its playbook decides that, and block/hold rules are never
+    retireable); report.md labels it so, the key name is kept for the frontend. Demo generations are
+    shorter and red picks differently there, so they never count (they still count for learned / new).
 """
 
 from __future__ import annotations

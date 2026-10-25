@@ -30,6 +30,7 @@ def test_render_md_has_every_section_in_order_and_is_deterministic() -> None:
     assert "| 3 (demo) | 50 |" in md
     assert "`evolved:split_v2` (g2, from threshold_split)" in md
     assert "- Learned: `learned:ghost_vendor` (g2)" in md
+    assert "- Not fired in latest generation: " in md and "Retired" not in md  # not blue's retirements
     assert "Partial" not in md
 
 
