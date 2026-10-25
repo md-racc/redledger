@@ -311,6 +311,50 @@ def recurring_drift(req: GateRequest) -> RuleHit | None:
     return None
 
 
+def threshold_split(req: GateRequest) -> RuleHit | None:
+    """One expense split into same-day, same-category parts that each stay under the approval threshold."""
+    if req.action not in EXPENSE_ACTIONS:
+        return None
+    threshold = approval_threshold()
+    amount = money(req.amount)
+    if amount >= threshold:
+        return None
+    current = _row(req, "expense")
+    category = current.get("category")
+    submitted_day = _day(current.get("submitted_day", req.day))
+    if req.context.get("employee_expense_history") is None:
+        return None
+    parts = [
+        money(other.get("amount"))
+        for other in _rows(req, "employee_expense_history")
+        if other.get("status") in {"pending", "approved", "paid"}
+        and _day(other.get("submitted_day")) == submitted_day
+        and isinstance(category, str)
+        and other.get("category") == category
+    ]
+    if not parts:
+        return None
+    involved = len(parts) + 1
+    total = amount + sum(parts, Decimal(0))
+    if total >= threshold:
+        return RuleHit(
+            "threshold_split",
+            3,
+            f"{involved} same-day expenses of one category for this employee total {total} against an approval threshold of {threshold}; each part stays below it.",
+            "block",
+            "amount",
+        )
+    if involved >= 3 and total >= threshold * Decimal(".95"):
+        return RuleHit(
+            "threshold_split",
+            2,
+            f"{involved} same-day expenses of one category for this employee total {total}, within five percent below the approval threshold of {threshold}.",
+            "review",
+            "amount",
+        )
+    return None
+
+
 def employee_bank_matches_vendor(req: GateRequest) -> RuleHit | None:
     if req.action in EXPENSE_ACTIONS and _rows(req, "vendors_sharing_bank_account"):
         return RuleHit("employee_bank_matches_vendor", 2, "Employee and vendor share a payment account; verify ownership.", "review", "identity")
@@ -347,6 +391,7 @@ def already_flagged(req: GateRequest) -> RuleHit | None:
 RULES: list[Rule] = [
     vendor_age_lt_7d,
     near_threshold,
+    threshold_split,
     duplicate_invoice,
     recent_bank_change,
     bank_change_with_open_invoices,

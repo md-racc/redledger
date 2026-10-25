@@ -3,7 +3,7 @@
 import pytest
 
 from gate import engine
-from gate.rules import RuleHit, evaluate
+from gate.rules import RuleHit, evaluate, threshold_split
 
 from .conftest import paid_invoice
 
@@ -295,3 +295,40 @@ async def test_matching_needs_only_invoice_and_proposed_po_not_payment_evidence(
         "vendor_paid_invoices": None,
     }
     assert (await engine.decide(req)).verdict == "allow"
+
+
+def _split_req(gate_request, amount, *, day=5, history="unset"):
+    req = gate_request(action="expenses.approve", amount=amount, day=day)
+    req.context["expense"] = {"id": "e", "employee_id": "emp", "amount": amount, "category": "travel", "submitted_day": day}
+    if history != "unset":
+        req.context["employee_expense_history"] = history
+    return req
+
+
+def _part(amount, *, day=5, category="travel", status="pending"):
+    return {"id": f"p{amount}{category}{day}", "amount": amount, "category": category, "submitted_day": day, "status": status}
+
+
+def test_threshold_split_blocks_same_day_parts_crossing_threshold(gate_request):
+    hit = threshold_split(_split_req(gate_request, 2500, history=[_part(3000)]))
+    assert hit is not None and hit.effect == "block" and "5500" in hit.detail
+
+
+def test_threshold_split_ignores_sums_under_threshold(gate_request):
+    assert threshold_split(_split_req(gate_request, 4500, history=[])) is None
+    assert threshold_split(_split_req(gate_request, 1500, history=[_part(3000)])) is None
+
+
+def test_threshold_split_reviews_three_parts_just_under_threshold(gate_request):
+    hit = threshold_split(_split_req(gate_request, 1600, history=[_part(1600), _part(1600)]))
+    assert hit is not None and hit.effect == "review"
+
+
+def test_threshold_split_ignores_other_categories_days_and_states(gate_request):
+    history = [_part(3000, category="meals"), _part(3000, day=4), _part(3000, status="rejected")]
+    assert threshold_split(_split_req(gate_request, 2500, history=history)) is None
+
+
+def test_threshold_split_needs_history_and_stays_off_near_threshold(gate_request):
+    assert threshold_split(_split_req(gate_request, 2500)) is None
+    assert threshold_split(_split_req(gate_request, 5000, history=[_part(3000)])) is None
