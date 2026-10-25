@@ -65,22 +65,28 @@ logs as sensitive anyway.
 | `make prod-credits EP=` | `credits EP` | sums `turn.ended.factory_credits` per agent and per day; shows the cap and any guard trips |
 | `make prod-record EP= [NAME=]` | `record EP [NAME]` | events → `battlefield/fixtures/episodes/<NAME or EP>.jsonl`, secret-scanned |
 
-## Going live: red only
+## Going live: red, then blue's audit
 
-Green raises before starting Droid until integration packages A/B land, and blue's live audit is
-disabled by its readiness guard (blue's gate LLM also only runs when its `DRY_RUN` is false). So
-the first live configuration runs red's Droid session and keeps green and blue keyless:
+Prod today runs red and blue's daily audit on Droid and keeps green keyless: `DRY_RUN=false`,
+`DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=false`, `DROID_MODEL_RED` and `DROID_MODEL_BLUE` both
+`gpt-5.4-mini`. Red went live first; blue's audit followed on 2026-10-25 after its readiness guard
+was lifted (#157; smoke `ep_f9c695b3144f`). Green's `_droid_turn` still raises before starting
+Droid, and green stays keyless for the hackathon. Blue's gate LLM also needs `BLUE_GATE_LLM_*`
+(provider and API key), which prod leaves unset, so `/gate` stays rules plus learned controls.
 
 1. GitHub `production` environment, **secret**: `FACTORY_API_KEY` (UI or `gh secret set
    FACTORY_API_KEY --env production` in your own terminal; never paste it anywhere else).
-2. **Variables**: `DROID_MODEL_RED` (a pinned low-multiplier model, never `auto`; see
-   `contracts/CHANGELOG.md` Findings for costs), optional `DROID_REASONING_RED` (e.g. `low`),
-   `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=true`. Keep `MAX_CREDITS_PER_EPISODE` set.
+2. **Variables**: `DROID_MODEL_RED` and `DROID_MODEL_BLUE` (pinned low-multiplier models, never
+   `auto`; see `contracts/CHANGELOG.md` Findings for costs), optional `DROID_REASONING_RED` /
+   `DROID_REASONING_BLUE` (e.g. `low`), `DRY_RUN=false`, `DRY_RUN_GREEN=true`,
+   `DRY_RUN_BLUE=false`. Keep `MAX_CREDITS_PER_EPISODE` set. (Red only: `DRY_RUN_BLUE=true`.)
 3. Run the deploy workflow and approve the `production` gate.
-4. Smoke: `make prod-health` (red `dry_run: false`, green/blue `true`), then
+4. Smoke: `make prod-health` (red and blue `dry_run: false`, green `true`), then
    `make prod-episode MODE=enforce SEED=42 DAYS=2`, `make prod-wait EP=…`, `make prod-credits EP=…`.
+   Before #176 `prod-credits` showed blue as 0 and blue's `droid_ok` always read false; from the
+   deploy containing 6640354 blue's audit credits count and `droid_ok` is truthful.
 
-Going back: set `DRY_RUN=true` (or `DRY_RUN_RED=true`) and redeploy.
+Going back: set `DRY_RUN_BLUE=true` (blue keyless) or `DRY_RUN=true` (everything keyless) and redeploy.
 
 
 ```bash
@@ -191,8 +197,10 @@ make prod-lineage-export LN=$LN [GEN=2]   # runs/$LN/{lineage.json,playbooks/,ge
 
 - **No defaults on prod:** `GENS`, `DAYS`, `MODE`, `SEED` and `MAX_CREDITS` must be given. `MAX_CREDITS`
   becomes `config.max_credits` (whole lineage, turns + reflections); `MAX_CREDITS_PER_EPISODE` still
-  caps each generation. Rough cost with red live and green/blue keyless: about 7–9k credits per red turn,
-  so a 5-day generation is about 40–50k plus red's reflection.
+  caps each generation. Rough cost with red live and green/blue keyless (as in `ln_f52a3df83c8d`): about
+  2.7k credits per red turn on `gpt-5.4-mini` (7–9k on earlier models). With blue's audit live, add about
+  4k per day (3,806 and 4,109 in smoke `ep_f9c695b3144f`), so a 5-day generation is now roughly 35k
+  plus red's reflection.
 - **Per-episode cap vs lineage cap:** `MAX_CREDITS_PER_EPISODE` pauses only the generation's episode
   (the lineage stays `running`); `prod-lineage-wait` exits 3 naming it. Lift it with
   `make prod-resume EP=<ep>`, not `prod-lineage-resume`. The lineage cap (`MAX_CREDITS`) pauses the

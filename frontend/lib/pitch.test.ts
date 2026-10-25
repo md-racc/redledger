@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { LiveRuns } from "./arena/liveRuns";
 
-const read = (p: string) => readFileSync(join(__dirname, "..", p), "utf8");
+// Windows checkouts may hold CRLF: the tests care about the words, not the line endings
+const read = (p: string) => readFileSync(join(__dirname, "..", p), "utf8").replace(/\r\n/g, "\n");
 const script = read("docs/pitch-script.md");
 const sponsors = read("docs/sponsors.md");
 const words = (t: string) => t.replace(/[*_`#>|[\]]/g, " ").split(/\s+/).filter(Boolean).length;

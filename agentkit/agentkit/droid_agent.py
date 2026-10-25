@@ -652,7 +652,11 @@ class DroidAgent(ABC):
                         async for ev in stream:
                             if isinstance(ev, (ThinkingDelta, TextDelta)):
                                 emitter.thinking(ev.text)
-                            elif isinstance(ev, ToolCallDelta):  # "completed tool-call input": the earliest sighting
+                            elif isinstance(ev, ToolCallDelta):
+                                # the earliest sighting, but not necessarily the full input: with argument
+                                # streaming the CLI reports the call at detection (often `{}`) and again
+                                # with the full arguments; the registry lets a pending entry's arguments
+                                # complete until the permission request binds them
                                 tu = ev.tool_use
                                 registry.observe(tu.id, tu.name, tu.input, SOURCE_STREAM)
                             elif isinstance(ev, ToolCall):

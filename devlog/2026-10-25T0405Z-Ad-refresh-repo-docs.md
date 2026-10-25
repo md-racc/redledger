@@ -1,0 +1,1 @@
+- 2026-10-25T04:05Z · Ad · docs: README/INTEGRATIONS/AGENTS/CRS.md refreshed for red + blue's audit live on Droid (green keyless), 8 schemes, the CRS hold (ep_0181eda1c921), app.-only edge; Findings: Autonomy.OFF prompts every MCP call (#119); public read-only site live; next: invoice threshold_split control (#175, M), then a short live lineage; blocked: none
