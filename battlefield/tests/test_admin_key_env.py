@@ -70,3 +70,12 @@ def test_local_render_without_domain_allows_blank_admin_key(tmp_path: Path) -> N
     r, out = _render(tmp_path, {})
     assert r.returncode == 0, r.stderr
     assert _values(out)["ADMIN_KEY"] == ""
+
+
+def test_renders_elevenlabs_without_printing_the_key(tmp_path: Path) -> None:
+    secret = "fixture-elevenlabs-key-0123456789"
+    r, out = _render(tmp_path, {"ELEVENLABS_API_KEY": secret, "ELEVENLABS_STT_MODEL": "scribe_v2"})
+    assert r.returncode == 0, r.stderr
+    v = _values(out)
+    assert v["ELEVENLABS_API_KEY"] == secret and v["ELEVENLABS_STT_MODEL"] == "scribe_v2"
+    assert secret not in r.stdout + r.stderr
