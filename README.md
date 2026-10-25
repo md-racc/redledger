@@ -19,7 +19,7 @@ harness keyless: its full logic, no model. Blue's gate is deterministic rules, n
 ## The company
 
 The target is **Meridian Components**, a fictional electronics components distributor: 60 vendors, 40
-employees, 90 days of payment history, and new legitimate vendors and bank changes every few days. Its vendors are component suppliers, so the flagship attack, a supplier's bank details
+employees, 90 days of payment history, and new legitimate vendors and bank changes every few days. Its vendors include component makers, PCB fabs, chip brokers and freight forwarders, so the flagship attack, a supplier's bank details
 "updated" to an account the attacker controls, is the pattern a fake hardware supplier used to take more than
 $120 million from two US tech companies. Cases and sources: [docs/EVIDENCE.md](docs/EVIDENCE.md).
 

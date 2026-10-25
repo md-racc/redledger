@@ -23,12 +23,12 @@ jobs:
         with:
           filters: |
             agentkit: ['agentkit/**']
-            battlefield: ['battlefield/**', 'agentkit/**', 'contracts/**', '.env.example', 'docker-compose.yml', 'deploy/render-env.sh', '.github/workflows/deploy.yml', '.github/workflows/ci.yml', '.github/scripts/check_contracts.py']
+            battlefield: ['battlefield/**', 'docs/recordings/**', 'agentkit/**', 'contracts/**', '.env.example', 'docker-compose.yml', 'deploy/render-env.sh', '.github/workflows/deploy.yml', '.github/workflows/ci.yml', '.github/scripts/check_contracts.py']
             # extension files are owned by their prefix but run battlefield tests
             red: ['red/**', 'agentkit/**']
             green: ['green/**', 'agentkit/**']
             blue: ['blue/**', 'agentkit/**']
-            frontend: ['frontend/**', 'contracts/**']
+            frontend: ['frontend/**', 'contracts/**', 'docs/**']  # pitch/lenders/liveRuns tests read docs/
             contracts: ['contracts/**']
 
   contracts-guard:

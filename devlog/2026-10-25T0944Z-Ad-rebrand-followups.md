@@ -1,0 +1,1 @@
+- 2026-10-25T09:44Z · Ad · chore: red's split vendors follow the seed's naming (category matches name); CI runs frontend tests on docs/ changes; README vendor claim matches the seed; next: judging prep

@@ -16,13 +16,16 @@ from agentkit import LedgerClient
 
 from .base import SchemeBase
 
-_VENDOR_NAMES = [
-    "Summit Facilities Group LLC",
-    "Ridgeline Test & Calibration LLC",
-    "Keystone Facility Partners LLC",
-    "Vanguard Advisory Group LLC",
-    "Cornerstone Building Services LLC",
-    "Ironwood Professional Group LLC",
+# (name, category) pairs in the seed's naming pattern (stem + category descriptor + entity), so a split vendor
+# reads like the company's other facilities/professional suppliers. Stems are outside the seed's pool, so a
+# name never collides with a legit vendor, and the category always matches the name.
+_VENDORS = [
+    ("Wexcombe Facility Services LLC", "facilities"),
+    ("Ridgeline Calibration LLC", "professional"),
+    ("Tolland Building Services Inc.", "facilities"),
+    ("Ambry Advisory LLC", "professional"),
+    ("Harlow Reach HVAC Co.", "facilities"),
+    ("Penrith Test Labs LLC", "professional"),
 ]
 
 
@@ -71,14 +74,14 @@ def _invoice_numbers(latest: str | None, parts: int, seed: str) -> list[str]:
 def _new_vendor(seed: str) -> tuple[dict[str, Any], str]:
     """Deterministic facilities/professional-services vendor body + its name."""
     h = int(hashlib.sha256(seed.encode()).hexdigest(), 16)
-    name = _VENDOR_NAMES[h % len(_VENDOR_NAMES)]
+    name, category = _VENDORS[h % len(_VENDORS)]
     ein_d = _digits(seed + "ein", 9)
     body = {
         "name": name,
         "ein": f"{ein_d[:2]}-{ein_d[2:]}",
         "bank_account": _digits(seed + "acct", 10),
         "bank_routing": _digits(seed + "rout", 9),
-        "category": "facilities" if h % 2 == 0 else "professional",
+        "category": category,
     }
     return body, name
 
