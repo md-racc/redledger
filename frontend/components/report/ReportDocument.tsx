@@ -67,8 +67,7 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
         <dl className="rr-meta">
           <div>
             <dt>Entity tested</dt>
-            <dd>
-              Coastal Supply Co. (synthetic)</dd>
+            <dd>A seeded synthetic company</dd>
           </div>
           <div>
             <dt>Run</dt>
@@ -423,7 +422,7 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
           <span>7</span>Methodology
         </h2>
         <p>
-          <strong>Seeded synthetic company.</strong> Coastal Supply Co. is generated from seed {ep.seed ?? "n/a"}: vendors, employees, purchase orders, open
+          <strong>Seeded synthetic company.</strong> The company is generated from seed {ep.seed ?? "n/a"}: vendors, employees, purchase orders, open
           invoices and a bank account, plus a stream of legitimate daily business (invoices, expenses, bank-detail changes, new vendors). The same seed gives the
           same company and the same legitimate traffic, so runs in different controller modes compare like for like.
         </p>

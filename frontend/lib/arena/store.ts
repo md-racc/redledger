@@ -11,8 +11,8 @@ export type Stage = "loading" | "intro" | "scroll" | "arena";
 
 export type FeedSource = "idle" | "live" | "mock";
 
-/** A card over the arena: the off-vs-on comparison, or the evolution report. */
-export type Panel = "compare" | "evolve" | "report" | null;
+/** A card over the arena: the off-vs-on comparison, the evolution report, the end-of-day report, or what the lenders have said. */
+export type Panel = "compare" | "evolve" | "report" | "lenders" | null;
 
 export interface ShowState { status: ShowStatus; beat: BeatId | null; caption: string | null; sub: string | null; }
 

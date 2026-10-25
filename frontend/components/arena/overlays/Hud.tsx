@@ -109,6 +109,7 @@ export function Hud({ feed, show, pitch }: { feed: Feed; show: ShowController; p
         <button className="btn" onClick={() => setPanel(panel === "compare" ? null : "compare")}>Compare</button>
         <button className="btn" onClick={() => setPanel(panel === "evolve" ? null : "evolve")}>Evolution</button>
         <button className="btn" onClick={() => setPanel(panel === "report" ? null : "report")}>Report</button>
+        <button className="btn" onClick={() => setPanel(panel === "lenders" ? null : "lenders")} title="What the big lenders have said about AI agents in their accounts, with sources (L)">Lenders</button>
         <button className="btn" onClick={() => (arenaFormed ? actions.disperse() : actions.converge())}>
           {arenaFormed ? "Send them back" : "Send agents in"}
         </button>
