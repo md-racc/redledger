@@ -8,12 +8,14 @@
 // events do not carry (cash, AP aging, gate latency, the confusion matrix).
 //
 // With no backend it loops the recorded episode instead and says so (mode "recorded"), so a console can be rehearsed anywhere.
+// If the backend answers but the socket will not open (a network that drops the upgrade, a dev server with no /api/ws), lib/ws.ts
+// reads the events over REST instead and `feed` says which of the two is carrying them.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { loadFixture } from "@/lib/mock";
 import { initialState, reduce } from "@/lib/reducer";
 import type { ControllerMode, RLEvent, UIState } from "@/lib/types";
-import { connect } from "@/lib/ws";
+import { connect, type FeedLink } from "@/lib/ws";
 import { isUnreachable } from "@/lib/arena/activeRun";
 import { loadLineageReport, type LineageReport } from "@/lib/arena/lineage";
 import { ScriptRunner } from "@/lib/arena/script";
@@ -61,6 +63,10 @@ export interface Backstage {
   lastEventAt: number | null;
   /** the recording being replayed (mode "recorded" only), else null */
   recording: string | null;
+  /** how events reach this window (live mode): the socket, or the REST read it falls back to when the socket will not open */
+  feed: FeedLink | null;
+  /** the last refusal from the proxy while the mode is still "connecting" (403 not signed in, 401 token, 429 rate limit), else null */
+  answer: string | null;
   refresh: () => void;
 }
 
@@ -99,6 +105,8 @@ export function useBackstage(want: Want[] = [], opts: BackstageOptions = {}): Ba
   const [lineageSource, setLineageSource] = useState<"live" | "recorded" | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [healthMs, setHealthMs] = useState<number | null>(null);
+  const [feed, setFeed] = useState<FeedLink | null>(null);
+  const [answer, setAnswer] = useState<string | null>(null);
   const lastEvent = useRef<number | null>(null);
   const arrivals = useRef<number[]>([]);
   const wantKey = want.join(",");
@@ -141,10 +149,14 @@ export function useBackstage(want: Want[] = [], opts: BackstageOptions = {}): Ba
         setHealthMs(Math.round(performance.now() - t0));
         setHealth(h);
         setEpisodes(list as EpisodeRow[]);
+        setAnswer(null);
         setMode("live");
       } catch (e) {
-        // only a backend that is really gone (network, timeout, 5xx) means the recorded loop; a 429 or 403 is an answer: ask again
-        if (dead || !isUnreachable(e)) return;
+        if (dead) return;
+        // only a backend that is really gone (network, timeout, 5xx) means the recorded loop; a 429 or 403 is an answer: ask again,
+        // and say what it was, or the console would sit on "connecting" with no word why
+        if (!isUnreachable(e)) { setAnswer(e instanceof ApiError ? `${e.status} ${e.body.replace(/\s+/g, " ").slice(0, 60)}` : e instanceof Error ? e.message : "refused"); return; }
+        setAnswer(null);
         setHealth(null);
         setHealthMs(null);
         setMode("recorded");
@@ -166,10 +178,10 @@ export function useBackstage(want: Want[] = [], opts: BackstageOptions = {}): Ba
   // follow it: a fresh socket (catch-up from event 0) whenever the followed episode changes
   const followId = episode?.id ?? null;
   useEffect(() => {
-    if (mode !== "live" || !followId) return;
+    if (mode !== "live" || !followId) { setFeed(null); return; }
     current.current = followId;
     clear();
-    return connect(followId, push);
+    return connect(followId, push, 0, setFeed);
   }, [mode, followId, clear, push]);
 
   // no backend: loop the recorded episode so a console can be rehearsed offline
@@ -250,5 +262,5 @@ export function useBackstage(want: Want[] = [], opts: BackstageOptions = {}): Ba
     [mode, episode, state.episodeId, state.controllerMode, state.days, state.finished, state.currentDay],
   );
 
-  return { mode, health, episodes, episode: shown, pinned, pin, state, events, agg, lineage, lineageSource, rate, now, healthMs, lastEventAt: lastEvent.current, recording: mode === "recorded" ? recName : null, refresh };
+  return { mode, health, episodes, episode: shown, pinned, pin, state, events, agg, lineage, lineageSource, rate, now, healthMs, lastEventAt: lastEvent.current, recording: mode === "recorded" ? recName : null, feed, answer, refresh };
 }

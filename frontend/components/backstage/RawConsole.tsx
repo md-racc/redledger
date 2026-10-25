@@ -58,8 +58,8 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
   }, [router]);
 
   const checks = useMemo(
-    () => liveChecks({ mode: bs.mode, healthMs: bs.healthMs, agents: bs.health?.agents ?? null, replaying: bs.recording, eventsInLastMinute: bs.rate, lastEventAt: bs.lastEventAt, verdicts: state.verdicts.length, now, sync: { link: sync.link, quietMs: sync.quietMs, state: sync.state }, trafficCount: sync.traffic.length }),
-    [bs.mode, bs.healthMs, bs.health, bs.recording, bs.rate, bs.lastEventAt, state.verdicts.length, now, sync.link, sync.quietMs, sync.state, sync.traffic.length],
+    () => liveChecks({ mode: bs.mode, healthMs: bs.healthMs, agents: bs.health?.agents ?? null, replaying: bs.recording, answer: bs.answer, eventsInLastMinute: bs.rate, lastEventAt: bs.lastEventAt, feed: bs.feed, episodeStatus: episode?.status ?? null, eventsHeld: events.length, verdicts: state.verdicts.length, now, sync: { link: sync.link, quietMs: sync.quietMs, state: sync.state }, trafficCount: sync.traffic.length }),
+    [bs.mode, bs.healthMs, bs.health, bs.recording, bs.answer, bs.rate, bs.lastEventAt, bs.feed, episode?.status, events.length, state.verdicts.length, now, sync.link, sync.quietMs, sync.state, sync.traffic.length],
   );
   const clients = liveClients(sync.state, now);
   const shown = team === "hub" ? [] : teamEvents(team, events).slice(-24).reverse();
@@ -75,9 +75,9 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
     <div className="raw">
       <pre>
         {`redledger backstage :: ${team === "hub" ? "hub" : team.toUpperCase()}     laptop ${clientId()}     ${hhmmss(now)}\n`}
-        {`backend    ${bs.mode === "live" ? `LIVE  health ${bs.healthMs ?? "?"}ms` : bs.mode === "connecting" ? "connecting" : bs.recording ? "REPLAY of the recorded live-red run (docs/recordings)" : "NO ANSWER (recorded loop)"}\n`}
+        {`backend    ${bs.mode === "live" ? `LIVE  health ${bs.healthMs ?? "?"}ms` : bs.mode === "connecting" ? (bs.answer ? `REFUSED  ${bs.answer}` : "connecting") : bs.recording ? "REPLAY of the recorded live-red run (docs/recordings)" : "NO ANSWER (recorded loop)"}\n`}
         {`following  ${episode ? `${episode.id}  ${bs.pinned ? "[pinned]" : "[newest]"}  mode=${episode.controller_mode}  status=${episode.status}  day ${Math.min(episode.current_day, episode.days)}/${episode.days}` : "(no episode yet)"}\n`}
-        {`events     ${events.length} held, ${bs.rate}/min      relay ${sync.link}, ${clients.length} laptop(s): ${clients.map((c) => `${c.id}`).join(" ") || "-"}`}
+        {`events     ${events.length} held, ${bs.rate}/min${bs.feed ? ` via ${bs.feed.via === "polling" ? "REST (socket blocked)" : bs.feed.via}` : ""}      relay ${sync.link}, ${clients.length} laptop(s): ${clients.map((c) => `${c.id}`).join(" ") || "-"}`}
       </pre>
       {bs.mode === "live" && bs.episodes.length > 1 && (
         <div>
