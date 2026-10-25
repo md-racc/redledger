@@ -6,6 +6,7 @@ import { buildDetails, formatValue, type Catalogs } from "@/lib/arena/details";
 import { bridge } from "@/lib/arena/bridge";
 import { rosterOf, ROSTER_BY_ID, TEAM_META } from "@/lib/arena/roster";
 import { useArena } from "@/lib/arena/store";
+import { useAgentRuntime } from "@/lib/arena/runtime";
 import { clip, thoughtsOf } from "@/lib/arena/thinking";
 import type { AgentDetailOverrides, DetailField } from "@/lib/arena/types";
 import type { UIState } from "@/lib/types";
@@ -67,7 +68,9 @@ export function AgentModal({ state, catalogs, overrides }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [shown, open]);
 
-  const details = useMemo(() => (shown ? buildDetails(shown, state, catalogs, overrides) : null), [shown, state, catalogs, overrides]);
+  // model / DRY_RUN per team agent from battlefield's health payload, fetched while a dossier is open
+  const runtime = useAgentRuntime(shown != null);
+  const details = useMemo(() => (shown ? buildDetails(shown, state, { ...catalogs, runtime }, overrides) : null), [shown, state, catalogs, runtime, overrides]);
   // what this agent's team has been thinking: a figure in the arena speaks for its team's agent (agent.thinking, folded per day by the reducer)
   const thoughts = useMemo(() => (details ? thoughtsOf(state, details.team) : []), [state, details]);
   if (!shown || !details) return null;
@@ -129,7 +132,7 @@ export function AgentModal({ state, catalogs, overrides }: Props) {
         </div>
         <footer className="dossier-foot">
           <span>esc to close</span>
-          <span>data: /api/fe · events</span>
+          <span>data: /api/fe · /health · events</span>
         </footer>
       </aside>
     </>
