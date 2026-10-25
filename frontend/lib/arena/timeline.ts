@@ -36,12 +36,17 @@ export const INTRO_SECONDS = 7.5;
 /** the show's flight (beat "open") */
 export const SHOW_INTRO_SECONDS = 5.8;
 
-/** Chapters along the scroll rail: where each one's caption is centred. */
+/**
+ * Chapters along the scroll rail: where each one's caption is centred. The rail (CameraRig.tsx RAIL) is a spline through nine poses,
+ * so pose k sits at rail position k / 8: each chapter is set exactly on its pose (the guards at pose 2, the clients at 4, the
+ * fraudsters at 6). The guards chapter used to sit at 0.2, 40% of the way from the guards' pose to the next one, so the camera was
+ * mid-flight behind the colonnade's roof blocks when it was meant to be looking at them.
+ */
 export const CHAPTERS = [
   { at: 0.0, no: "I", title: "The Palace", line: "Every dollar passes through this rotunda.", body: "A 1915 exhibition hall rebuilt in concrete, now the arena. Every dollar in the ledger passes through its rotunda." },
-  { at: 0.2, no: "II", title: "The Guards", line: "Ten guards stand at the gate.", body: "Ten guards stand between the clerk and the ledger, one for each of blue's main rules. Click any of them." },
-  { at: 0.43, no: "III", title: "The Clients", line: "Twelve counterparties: paid, and robbed.", body: `${COMPANY.name}' vendors and staff: the ones being paid, and the ones being robbed.` },
-  { at: 0.71, no: "IV", title: "The Fraudsters", line: "Eight on the wall. All built.", body: "Eight fraudsters on the wall, a scheme built for each. One mission: get money out the door before the controller notices." },
+  { at: 2 / 8, no: "II", title: "The Guards", line: "Ten guards stand at the gate.", body: "Ten guards stand between the clerk and the ledger, one for each of blue's main rules. Click any of them." },
+  { at: 4 / 8, no: "III", title: "The Clients", line: "Twelve counterparties: paid, and robbed.", body: `${COMPANY.name}' vendors and staff: the ones being paid, and the ones being robbed.` },
+  { at: 6 / 8, no: "IV", title: "The Fraudsters", line: "Eight on the wall. All built.", body: "Eight fraudsters on the wall, a scheme built for each. One mission: get money out the door before the controller notices." },
   { at: 1.0, no: "V", title: "The Arena", line: "Everyone converges.", body: "Everyone converges on the rotunda floor. Run the episode and watch the ledger decide." },
 ] as const;
 
