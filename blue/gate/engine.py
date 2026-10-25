@@ -15,7 +15,7 @@ from agentkit.models import GateRequest, GateResponse
 
 from .cache import VerdictCache
 from .llm import LLMGate
-from .rules import RuleHit, evaluate
+from .rules import RETIREABLE_RULE_IDS, RuleHit, evaluate
 
 TTL = 120
 MAX_ENTRIES = 100_000
@@ -131,7 +131,9 @@ async def _compute(
 ) -> GateResponse:
     started = time.monotonic()
     try:
-        base_hits = [hit for hit in evaluate(req) if hit.id not in retired]
+        # Only note-only rules can ever be retired; a block or hold rule always stands.
+        retired = retired & RETIREABLE_RULE_IDS
+        base_hits = [hit for hit in evaluate(req) if hit.id not in retired or hit.effect != "note"]
         hits = base_hits + list(extra_hits)
         effects = {hit.effect for hit in hits}
         base_effects = {hit.effect for hit in base_hits}
@@ -178,4 +180,5 @@ async def decide(req: GateRequest, *, dry_run: bool = False, extra_hits: tuple[R
 
 
 def explain(req: GateRequest, *, extra_hits: tuple[RuleHit, ...] = (), retired: frozenset[str] = frozenset()) -> dict[str, Any]:
-    return {"hits": [asdict(hit) for hit in evaluate(req) + list(extra_hits) if hit.id not in retired]}
+    retired = retired & RETIREABLE_RULE_IDS
+    return {"hits": [asdict(hit) for hit in evaluate(req) if hit.id not in retired or hit.effect != "note"] + [asdict(hit) for hit in extra_hits]}

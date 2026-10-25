@@ -374,26 +374,15 @@ RULES: list[Rule] = [
 
 
 # Baseline rule ids reflection may retire for a lineage after sustained legit-only fire (#133).
-# Keep in sync with the RuleHit ids above; verification_unavailable and rule_error:* are
-# diagnostics, never retireable.
+# Only note-effect rules qualify: their hits never block or escalate, so retiring one only drops
+# a diagnostic note. Block, review (hold) and unavailable rules are never retireable, whatever the
+# statistics say; verification_unavailable and rule_error:* are diagnostics, never retireable.
 RETIREABLE_RULE_IDS: frozenset[str] = frozenset(
     {
-        "already_flagged_high",
-        "bank_change_with_open_invoices",
-        "duplicate_invoice",
-        "employee_bank_matches_vendor",
-        "inactive_employee",
-        "invalid_po",
         "near_threshold",
-        "no_hr_record",
         "no_po_from_po_vendor",
-        "over_po_amount",
-        "po_vendor_mismatch",
-        "recent_bank_change",
         "recurring_drift",
-        "unverified_vendor_exposure",
         "vendor_age_lt_7d",
-        "vendor_frozen",
     }
 )
 
