@@ -1,4 +1,4 @@
-// Thin REST client for battlefield. Owner: Dev R. Full surface: battlefield /docs and FRONTEND-API.md.
+// Thin REST client for battlefield. Owner: Dev R. Full surface: battlefield /docs and FRONTEND.md ("Battlefield /fe API used by the site").
 // Calls go same-origin to the Next proxy: `/api/bf<path>` → `${BATTLEFIELD_URL}/api<path>`
 // (app/api/bf/[...path]/route.ts), which adds the operator token server-side. No token here, ever.
 import type { ControlsReport } from "./report/types";
