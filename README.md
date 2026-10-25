@@ -39,10 +39,13 @@ the work is done).
 - **CRS identity hold, proven locally.** Against the live CRS sandbox, blue's audit flagged a
   fictional employee whose identity didn't match, and the gate then blocked that employee's next
   expense with `already_flagged_high` while the other two personas' expenses were paid
-  (ep_0181eda1c921 on the local stack, all checks `billable:false`; `blue/CRS.md`). CRS does not
-  run on prod.
-- **Watching the site.** `app.redledger.us` is behind Cloudflare Access. A public read-only mode
-  (anyone watches, only admins act; #152, #159) is built and planned to be switched on.
+  (ep_0181eda1c921 on the local stack, keyless audit with `CRS_LIVE=true`, all checks
+  `billable:false`; `blue/CRS.md`). No CRS call has run on prod: it needs an operator-bound
+  persona employee, and seeded employees never qualify.
+- **Watching the site.** `app.redledger.us` is public and read-only since 2026-10-25 (#152, #159):
+  anyone can open it on their own device and watch runs live. Only an admin signed in at `/admin`
+  can start runs, launch attacks, use voice or resolve escalations; the frontend server enforces
+  that in its `/api/bf` proxy.
 - **Run it with no keys.** `make local-stack AGENTS=mock` (no Docker) or `make mock-agents`, then
   `make episode MODE=enforce SEED=42 DAYS=4` or `make evolve GENS=3 DAYS=5` (§12, §15). Frontend
   alone: `cd frontend && NEXT_PUBLIC_MOCK=true npm run dev`.
@@ -448,7 +451,7 @@ aggregate failed; hypertables stay). CI runs the battlefield suite on both image
 
 **Decision: one VM + Cloudflare in front.** Vultr (sponsor credits) or any $20 box. Docker
 Compose from this repo, Caddy for TLS on the one public hostname `app.<domain>`
-(`deploy/Caddyfile`), Cloudflare for DNS/proxy and Access. The frontend runs as the `frontend`
+(`deploy/Caddyfile`), Cloudflare for DNS/proxy. The frontend runs as the `frontend`
 container on the same VM, not on Cloudflare Pages: its `/api/bf/*` proxy needs a Node runtime
 (below).
 
@@ -463,9 +466,11 @@ hours, switch — nothing in the code cares.
 Edge (`deploy/Caddyfile`): `https://app.<domain>` → Caddy → `frontend:3000`, except
 `wss://app.<domain>/api/ws` → `battlefield:8000` (it still needs a ticket). Battlefield's REST API
 has no public hostname: the frontend server reaches it on the internal network, operators use
-`make prod-*`. Caddy serves only Cloudflare's published IP ranges (origin lock), and Cloudflare
-Access sits in front of `app.`; bearer tokens are not user auth. A public read-only mode (no
-Access; `ADMIN_KEY` gates every action, #152/#159) is built and planned.
+`make prod-*`. Caddy serves only Cloudflare's published IP ranges (origin lock); bearer tokens
+are not user auth. Since 2026-10-25 prod runs the public read-only mode (#152/#159): Cloudflare
+Access lets everyone through, `CF_ACCESS_*` are blank, and `ADMIN_KEY` gates every action (the
+`/admin` login sets a signed cookie; anyone else is a viewer). Before that, Cloudflare Access
+(email PIN) sat in front of `app.`.
 
 **Token scopes** (`contracts/agent-service.md` is canonical). Battlefield picks the expected
 token by whether the request carries `X-Agent`:
