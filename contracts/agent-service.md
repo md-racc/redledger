@@ -134,7 +134,7 @@ POST /gate
 
 POST /audit
   { "episode_id": "ep_…", "day": 3, "inputs": [ … ], "lineage"?: { … }, "debrief"?: { … } }
-  → 200 { "ok": true, "flags_raised": 2, "report_posted": true }
+  → 200 { "ok": true, "flags_raised": 2, "report_posted": true, "usage": { "factory_credits": …, … } | null }
 ```
 Rules:
 - `/gate` must answer within `GATE_TIMEOUT_SEC` (default 8). On timeout battlefield uses

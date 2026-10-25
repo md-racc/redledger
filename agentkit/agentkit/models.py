@@ -176,6 +176,7 @@ class AuditResponse(BaseModel):
     flags_raised: int = 0
     report_posted: bool = False
     summary: str = ""
+    usage: Usage | None = None  # the live audit turn's usage; battlefield charges factory_credits to the episode
 
 
 class AttackCreate(BaseModel):
