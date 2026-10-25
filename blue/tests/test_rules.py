@@ -332,3 +332,38 @@ def test_threshold_split_ignores_other_categories_days_and_states(gate_request):
 def test_threshold_split_needs_history_and_stays_off_near_threshold(gate_request):
     assert threshold_split(_split_req(gate_request, 2500)) is None
     assert threshold_split(_split_req(gate_request, 5000, history=[_part(3000)])) is None
+
+
+def test_no_po_rule_needs_deep_all_po_history_and_a_novel_amount(gate_request):
+    # Issue #133: the old shape (>=3 paid, all with PO) fired 28 times in prod, all on legit
+    # ad-hoc invoices. The rule now also requires >=5 paid and an amount beyond every prior one.
+    req = gate_request(amount=1200)
+    req.context["vendor_paid_invoices"] = [paid_invoice(po_id="po", amount=5000) for _ in range(5)]
+    assert "no_po_from_po_vendor" not in {h.id for h in evaluate(req)}  # amount within history
+
+    req = gate_request(amount=1300)
+    req.context["vendor_paid_invoices"] = [paid_invoice(po_id="po") for _ in range(5)]
+    assert "no_po_from_po_vendor" in {h.id for h in evaluate(req)}  # novel amount, deep all-PO history
+
+    shallow = gate_request(amount=1300)
+    shallow.context["vendor_paid_invoices"] = [paid_invoice(po_id="po") for _ in range(3)]
+    assert "no_po_from_po_vendor" not in {h.id for h in evaluate(shallow)}  # history too shallow
+
+    mixed = gate_request(amount=1300)
+    mixed.context["vendor_paid_invoices"] = [paid_invoice(po_id="po") for _ in range(4)] + [paid_invoice()]
+    assert "no_po_from_po_vendor" not in {h.id for h in evaluate(mixed)}  # vendor has sold without a PO
+
+
+async def test_retired_baseline_rules_do_not_fire_but_the_rest_stand(gate_request):
+    req = gate_request(amount=4920)
+    req.context["vendor"]["created_day"] = req.day
+    base = await engine.decide(req)
+    assert base.verdict == "block"
+    assert {"vendor_age_lt_7d", "near_threshold", "unverified_vendor_exposure"} <= set(base.rules_fired)
+
+    fresh = gate_request(amount=4920)  # a new idempotency key: cached verdicts ignore retired by design
+    fresh.context["vendor"]["created_day"] = fresh.day
+    retired = await engine.decide(fresh, retired=frozenset({"vendor_age_lt_7d", "near_threshold", "unverified_vendor_exposure"}))
+    # The note rules drop out; the block rule is not retireable and still holds the payment.
+    assert retired.rules_fired == ["unverified_vendor_exposure"]
+    assert retired.verdict == "block"

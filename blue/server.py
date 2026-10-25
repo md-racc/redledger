@@ -19,11 +19,11 @@ def extra(app: FastAPI, agent: AuditAgent, settings: AgentSettings) -> None:
 
     @app.post("/gate", response_model=GateResponse, dependencies=[Depends(auth)])
     async def gate(req: GateRequest) -> GateResponse:
-        return await engine.decide(req, dry_run=settings.dry_run, extra_hits=tuple(await playbooks.hits(req)))
+        return await engine.decide(req, dry_run=settings.dry_run, extra_hits=tuple(await playbooks.hits(req)), retired=await playbooks.retired(req))
 
     @app.post("/gate/explain", dependencies=[Depends(auth)])
     async def gate_explain(req: GateRequest):
-        return engine.explain(req, extra_hits=tuple(await playbooks.hits(req)))
+        return engine.explain(req, extra_hits=tuple(await playbooks.hits(req)), retired=await playbooks.retired(req))
 
     @app.post("/audit", response_model=AuditResponse, dependencies=[Depends(auth)])
     async def audit(req: AuditRequest) -> AuditResponse:

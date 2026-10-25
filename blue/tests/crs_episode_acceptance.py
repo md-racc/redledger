@@ -123,9 +123,15 @@ def start_blue(port: int, battlefield_url: str, agent_token: str, log_path: Path
 def provider_log_summary() -> dict:
     """Login and summarize /users/logs without printing any secret or payload."""
     with httpx.Client(base_url=CRS_BASE, timeout=10.0, trust_env=False) as client:
-        login = client.post("/users/login", json={"username": _env("CRS_USERNAME"), "password": _env("CRS_PASSWORD")})
+        login = httpx.Response(0, request=httpx.Request("POST", ""))
+        for attempt in range(4):
+            login = client.post("/users/login", json={"username": _env("CRS_USERNAME"), "password": _env("CRS_PASSWORD")})
+            if login.status_code == 200:
+                break
+            if attempt < 3:
+                time.sleep(5 * (attempt + 1))  # the sandbox 401s briefly after heavy concurrent use
         if login.status_code != 200:
-            raise AssertionError("provider_login_failed")
+            raise AssertionError(f"provider_login_failed: {login.status_code}")
         token = login.json().get("token", "")
         logs = client.get("/users/logs", headers={"Authorization": f"Bearer {token}"})
         if logs.status_code != 200:
@@ -273,7 +279,14 @@ def run() -> dict:
             except subprocess.TimeoutExpired:
                 blue.kill()
 
-    provider = provider_log_summary()
+    try:
+        provider = provider_log_summary()
+    except AssertionError as exc:
+        # Keep the episode-side evidence: an unreachable provider must not discard it.
+        out.update({"provider_logs": None})
+        failures.append(str(exc))
+        out["acceptance_passed"] = False
+        return out
     out["provider_logs"] = provider
     if not provider["all_billable_false"]:
         failures.append("billable_true: provider log entry with billable != false")

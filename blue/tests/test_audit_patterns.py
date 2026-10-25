@@ -126,20 +126,19 @@ async def test_new_vendor_independent_earlier_payment_remains_history(runtime):
     assert agent.outcome("ep", 5).flags_raised == 0
 
 
-async def test_live_path_stays_closed_before_sdk_stream(runtime, monkeypatch):
+async def test_live_path_delegates_to_the_shared_sdk_turn(runtime, monkeypatch):
     from agentkit import DroidAgent
 
     entered = []
 
-    async def forbidden(*args, **kwargs):
+    async def delegated(self, req, emitter):
         entered.append(True)
-        raise AssertionError("SDK stream must remain unreachable")
+        return "delegated", None
 
-    monkeypatch.setattr(DroidAgent, "_droid_turn", forbidden)
+    monkeypatch.setattr(DroidAgent, "_droid_turn", delegated)
     agent, ledger, emitter = runtime(dry_run=False)
     result = await agent.run_turn(turn())
-    assert not result.ok and "Live audit unavailable" in result.summary
-    assert "worker-thread Blue context" in result.summary and "invocation binding" in result.summary
-    assert not entered and not ledger.writes and not emitter.calls
-    assert agent._tool_ids == list(AUDIT_TOOL_IDS)  # A literal allowlist does not qualify live SDK use.
-    assert (await agent.health())["droid_ok"] is False
+    assert entered and "Live audit unavailable" not in result.summary
+    assert ledger.read_counts and not ledger.writes  # _prepare collects the snapshot, then delegates.
+    assert agent._tool_ids == list(AUDIT_TOOL_IDS)
+    assert (await agent.health())["droid_ok"] is False  # Health never probes the SDK.

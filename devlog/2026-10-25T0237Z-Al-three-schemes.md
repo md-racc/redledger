@@ -1,0 +1,1 @@
+- 2026-10-25T02:37Z · Al · red: implement expense_inflation, po_mismatch and amount_drift with deterministic plans and single-write execution; 132 tests pass and ruff clean; next: integration review; blocked: none

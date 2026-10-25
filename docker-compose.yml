@@ -154,6 +154,9 @@ services:
       NEXT_PUBLIC_MOCK: ${NEXT_PUBLIC_MOCK:-false}
       # Server-only: signs the admin cookie; unset in production = nobody is admin (frontend/AGENTS.md).
       ADMIN_KEY: ${ADMIN_KEY:-}
+      # Server-only, admin-only route (/api/voice/transcribe): unset = voice off, typing still works.
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_STT_MODEL: ${ELEVENLABS_STT_MODEL:-}
       # Cloudflare Access JWT check at the origin (frontend middleware). Blank = check disabled
       # (local dev); prod sets both, so a request that didn't pass our Access app gets 403.
       CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
