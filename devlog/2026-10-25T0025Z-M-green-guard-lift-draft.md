@@ -1,0 +1,1 @@
+- 2026-10-25T0025Z · M · green: guard-lift draft prepared (_droid_turn delegates to the shared implementation; DRY_RUN path proven unchanged); stays draft until the budgeted Stage B acceptance on #78 is approved and passes; blocked: D15 budget/runtime approval from Ad
