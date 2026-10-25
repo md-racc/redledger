@@ -1,0 +1,1 @@
+- 2026-10-25T02:42Z · Ad · docs: AGENTS.md §5 and the D15 decision row now reflect live red on prod and blue's merged live audit (#157, prod keyless until Ad flips DRY_RUN_BLUE); next: none; blocked: none

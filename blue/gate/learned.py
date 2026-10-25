@@ -22,6 +22,19 @@ def _ids(value: object) -> set[str]:
     return {item for item in value[:64] if isinstance(item, str) and item in KNOWN} if isinstance(value, list) else set()
 
 
+# A baseline rule is retired for a lineage only after a generation review shows sustained
+# legit-only fire (#133): on_legit at or above this floor with on_red still zero.
+BASELINE_RETIRE_MIN_ON_LEGIT = 3
+
+
+def _baseline_ids(value: object) -> set[str]:
+    return {item for item in value[:64] if isinstance(item, str) and item in rules.RETIREABLE_RULE_IDS} if isinstance(value, list) else set()
+
+
+def baseline_retired(content: dict) -> frozenset[str]:
+    return frozenset(_baseline_ids(content.get("retired_baseline")))
+
+
 def _band(content: dict) -> Decimal:
     try:
         return min(Decimal(".95"), max(Decimal(".80"), rules.money(content.get("near_band", ".95"))))
@@ -39,6 +52,7 @@ def reflect(req: ReflectRequest) -> ReflectResponse:
     if not isinstance(items, list) or len(items) > 2000:
         return ReflectResponse(ok=False, rationale="Review items unavailable; playbook kept.")
     learned, retired, band = _ids(content.get("learned")), _ids(content.get("retired")), _band(content)
+    retired_baseline = _baseline_ids(content.get("retired_baseline"))
     seen = set()
     for item in items:
         if not isinstance(item, dict):
@@ -63,15 +77,30 @@ def reflect(req: ReflectRequest) -> ReflectResponse:
     for row in statistics[:2000] if isinstance(statistics, list) else []:
         if isinstance(row, dict) and type(row.get("on_legit")) is int and row["on_legit"] > 0:
             retired.update(_ids([row.get("rule_id")]))
+        if (
+            isinstance(row, dict)
+            and type(row.get("on_legit")) is int
+            and row["on_legit"] >= BASELINE_RETIRE_MIN_ON_LEGIT
+            and type(row.get("on_red")) is int
+            and row["on_red"] == 0
+        ):
+            retired_baseline.update(_baseline_ids([row.get("rule_id")]))
     enabled = learned - retired
-    if enabled == _ids(content.get("learned")) and retired == _ids(content.get("retired")) and band == _band(content):
+    if (
+        enabled == _ids(content.get("learned"))
+        and retired == _ids(content.get("retired"))
+        and retired_baseline == _baseline_ids(content.get("retired_baseline"))
+        and band == _band(content)
+    ):
         return ReflectResponse(ok=True, rationale="No control change justified; playbook kept.")
     content.update(learned=sorted(enabled), retired=sorted(retired), near_band=float(band), blue_review=marker)
-    return ReflectResponse(
-        ok=True,
-        playbook=content,
-        rationale=f"Retained {len(enabled)} learned review controls; retired {len(retired)} controls with legitimate-item impact.",
-    )
+    if retired_baseline or "retired_baseline" in content:
+        content["retired_baseline"] = sorted(retired_baseline)
+    newly = sorted(retired_baseline - _baseline_ids(req.playbook.content.get("retired_baseline")))
+    rationale = f"Retained {len(enabled)} learned review controls; retired {len(retired)} controls with legitimate-item impact."
+    if newly:
+        rationale += f" Retired baseline rules after legit-only fire: {', '.join(newly)}."
+    return ReflectResponse(ok=True, playbook=content, rationale=rationale)
 
 
 def evaluate(req: GateRequest, content: dict) -> list[rules.RuleHit]:
