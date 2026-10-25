@@ -64,10 +64,10 @@ over the interaction) darkens the rest of the frame. The HUD dims with it. It ea
 | **Launch attack** | the attack console. Live: `POST /episodes/{id}/attack` (queued for red's next turn); with no running episode a paused *sandbox* episode is created and each click forces the scheme and steps one day. Offline: `lib/arena/localAttack.ts` plays it from the mock agents' rules |
 | **Controller off / shadow / enforce** | `PATCH /episodes/{id}/controller`; the HUD shows the mode |
 | **Approve / Block** | an open escalation, against its clock. Approve it and that invoice goes through |
-| **Compare** | off vs on from the runs this session finished (or the run in flight vs its projection). |
+| **Compare** | off vs on from the runs this session finished (or the run in flight vs its projection). The **Real run** tab beside it shows the two recorded live-red runs on our server (seed 42, 10 days: off $10,285 stolen, on $1,824, with a day-by-day bar for each): the numbers the pitch says out loud. The card always opens on *This show* |
 | **Evolution** | `GET /lineages` + `/fe/lineages/{id}/report`, or the recorded report (`public/mocks/lineage-report.json`) |
 | **Report** | the end-of-day report: a chip per day that has one (`report.posted`). With a live backend it is blue's own text (`GET /reports/{id}`), drawn by a small markdown reader (`lib/markdown.ts`, no HTML injected). With a recording there is no text to fetch, so it shows a tally built from that day's events and says so |
-| **raw** (on every card) | a small toggle that opens the JSON the card is built from: the escalation, the evolution report, the report, the dossier |
+| **raw** (on every card) | a small toggle that opens the JSON the card is built from: the escalation, the compare pair, the evolution report, the report, the dossier |
 | **Source / Agents** (top bar) | an honest badge, LIVE, RECORDED, SHOW or REPLAY, and each agent's own `/health`: `live` (a real model, named) or `keyless` (canned turns) (`lib/arena/provenance.ts`). Hover for what it means |
 | **Click an agent** (or pick one in the roster) | the camera goes to them and the dossier opens; the same selection shows on the backstage laptops |
 
@@ -79,5 +79,13 @@ Everything the presenter does is also published to the other laptops (`lib/sync`
 
 `lib/arena/`: `show.ts` (script + director), `showClock.ts`, `script.ts` (timed event scripts with holds for a human),
 `showScripts.ts` (the recorded run re-cut, baseline projection, escalation), `useFeed.ts` (live + recorded feed, acts, sandbox),
-`pacer.ts`, `localAttack.ts`, `headlines.ts`, `compare.ts`, `lineage.ts`, `report.ts`, `provenance.ts`, `focus.ts`.
+`pacer.ts`, `localAttack.ts`, `headlines.ts`, `compare.ts`, `lineage.ts`, `liveRuns.ts`, `report.ts`, `provenance.ts`, `focus.ts`.
 `components/arena/`: `useShow.ts`, `overlays/{ShowBar,ThreatConsole,CompareCard,EvolutionCard,ReportCard,Markdown,Raw}.tsx`.
+
+### Why the show does not play the real runs
+
+The recorded live-red runs (`docs/recordings`, #136) are the real thing, but they are a poor stage show: nine of ten attacks are the same
+duplicate invoice, and the three escalations are bank-change approvals that nobody answers. The show keeps the richer mock-agent
+recording (every scheme, a decision for a human) and labels it as a recording; the real numbers are one click away in the Compare card's
+**Real run** tab. `node tools/gen-live-runs.mjs` rebuilds `public/mocks/live-runs.json` from the recordings (numbers only), and a test keeps
+the two in step.

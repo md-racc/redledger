@@ -12,6 +12,7 @@ data-path dashboard still lives at `/ops`.
 | [backstage.md](backstage.md) | the hidden consoles for the other laptops: red, green, blue and battlefield, live |
 | [voice.md](voice.md) | speak (or type) a fraud scheme in any language: the microphone, the speech-to-text route, what red gets, setup and limits |
 | [pitch-script.md](pitch-script.md) | the spoken pitch for the four-laptop demo: who says what, and what to click |
+| [demo-video.md](demo-video.md) | the three-minute demo video for Devpost: a shot list with the words to say, and what not to cut |
 | [agent-design.md](agent-design.md) | what each of the 30 figures looks like (team base + role kit), how it is built and animated, how to add one |
 | [dossier-modal.md](dossier-modal.md) | the click-to-open modal: placeholders, live data, catalogs, host overrides, every field key |
 | [camera-and-tour.md](camera-and-tour.md) | the intro flight, the scroll rail, chapters, the arena orbit, how to edit waypoints |

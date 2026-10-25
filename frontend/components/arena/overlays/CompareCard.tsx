@@ -3,7 +3,9 @@
 // up in sequence so a room can follow them. Owner: Dev R.
 import { useEffect, useState } from "react";
 import type { CompareSides } from "@/lib/arena/compare";
+import { enforceStory, loadLiveRuns, type LiveRun, type LiveRuns } from "@/lib/arena/liveRuns";
 import type { Score } from "@/lib/types";
+import { Raw } from "./Raw";
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const ease = (k: number) => 1 - Math.pow(1 - k, 3);
@@ -48,29 +50,32 @@ function Column({ title, tag, score, tone, delay }: { title: string; tag?: strin
 }
 
 export function CompareCard({ sides, open, onClose }: { sides: CompareSides | null; open: boolean; onClose: () => void }) {
+  const [tab, setTab] = useState<"show" | "real">("show");
+  // the card always opens on this run (the show's compare beat counts on it); the real run is one click away
+  useEffect(() => { if (open) setTab("show"); }, [open]);
   return (
     <section className={`cmp ${open ? "is-open" : ""}`} role="dialog" aria-label="Controller off versus controller on" aria-hidden={!open}>
-      {open && sides && <Body sides={sides} onClose={onClose} />}
-      {open && !sides && (
-        <div className="cmp-empty">
-          <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
-          <p>Run an episode (or launch an attack) first: there is nothing to compare yet.</p>
+      <header>
+        <span className="cmp-kicker">The difference</span>
+        <div className="cmp-tabs" role="tablist" aria-label="Which runs to compare">
+          <button role="tab" aria-selected={tab === "show"} className={tab === "show" ? "on" : ""} onClick={() => setTab("show")}>This show</button>
+          <button role="tab" aria-selected={tab === "real"} className={tab === "real" ? "on" : ""} onClick={() => setTab("real")}>Real run</button>
         </div>
-      )}
+        <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
+      </header>
+      {open && tab === "show" && sides && <Body sides={sides} />}
+      {open && tab === "show" && !sides && <div className="cmp-empty"><p>Run an episode (or launch an attack) first: there is nothing to compare yet.</p></div>}
+      {open && tab === "real" && <RealRun />}
     </section>
   );
 }
 
-function Body({ sides, onClose }: { sides: CompareSides; onClose: () => void }) {
+function Body({ sides }: { sides: CompareSides }) {
   const saved = Math.max(0, sides.off.dollars_extracted - sides.on.dollars_extracted);
   const leaked = sides.on.dollars_extracted;
   const delta = useCountUp(saved, 3000, 1400);
   return (
     <>
-      <header>
-        <span className="cmp-kicker">The difference</span>
-        <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
-      </header>
       <div className="cmp-cols">
         <Column title="Controller off" tag={sides.offProjected ? "projected" : undefined} score={sides.off} tone="red" delay={200} />
         <div className="cmp-mid" style={{ animationDelay: "2800ms" }}>
@@ -82,7 +87,50 @@ function Body({ sides, onClose }: { sides: CompareSides; onClose: () => void }) 
       </div>
       <footer>
         Same seed, same attacks.{sides.offProjected ? " The controller-off side is projected: every attempt in this run, with nothing gating it." : ""}
+        <Raw data={sides} />
       </footer>
     </>
+  );
+}
+
+/** The two recorded live-red runs, side by side: the numbers the pitch says out loud, on screen. */
+function RealRun() {
+  const [data, setData] = useState<LiveRuns | null | undefined>(undefined);
+  useEffect(() => { let dead = false; void loadLiveRuns().then((d) => { if (!dead) setData(d); }); return () => { dead = true; }; }, []);
+  if (data === undefined) return <div className="cmp-empty"><p>Loading the recorded runs…</p></div>;
+  if (data === null) return <div className="cmp-empty"><p>The recorded live runs could not be read.</p></div>;
+  const { off, enforce } = data.runs;
+  const kept = Math.max(0, off.score.dollars_extracted - enforce.score.dollars_extracted);
+  return (
+    <>
+      <div className="cmp-cols">
+        <Column title="Controller off" tag="live red · recorded" score={off.score} tone="red" delay={100} />
+        <div className="cmp-mid">
+          <b>{usd(kept)}</b>
+          <span>kept by the controller</span>
+          {enforce.score.dollars_extracted > 0 && <em>{usd(enforce.score.dollars_extracted)} still got through</em>}
+        </div>
+        <Column title="Controller on" tag="live red · recorded" score={enforce.score} tone="blue" delay={100} />
+      </div>
+      <div className="cmp-days" aria-label="Money stolen so far, day by day">
+        <DayBars run={off} tone="red" label="off" />
+        <DayBars run={enforce} tone="blue" label="on" />
+      </div>
+      <footer>
+        Recorded on {data.where} on {data.recorded}: the same seed for {off.days} days, controller off and then on. {data.note} {enforceStory(enforce)}
+        <Raw data={data} />
+      </footer>
+    </>
+  );
+}
+
+function DayBars({ run, tone, label }: { run: LiveRun; tone: "red" | "blue"; label: string }) {
+  const max = Math.max(1, ...run.by_day.map((d) => d.extracted));
+  return (
+    <div className={`cmp-daybars tone-${tone}`}>
+      <span>Stolen, {label}</span>
+      <div>{run.by_day.map((d) => <i key={d.day} style={{ height: `${Math.max(3, (d.extracted / max) * 100)}%` }} title={`day ${d.day}: ${usd(d.extracted)}`} />)}</div>
+      <b>{usd(run.score.dollars_extracted)}</b>
+    </div>
   );
 }
