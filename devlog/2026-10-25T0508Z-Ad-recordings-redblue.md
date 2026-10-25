@@ -1,0 +1,1 @@
+- 2026-10-25T05:08Z · Ad · docs: red+blue-live controller off/on pair (seed 42, 6 days, fixed six-scheme plan: off $23,681 extracted / 0 caught; enforce $20,350 / 2 caught) in docs/recordings; next: CRS live run, P8, P9; blocked: none
