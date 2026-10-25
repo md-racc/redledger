@@ -111,7 +111,7 @@ npm run gen:api                              # regenerate REST types from contra
 
 See README §16. For the frontend specifically:
 - Ad-hoc reads: `POST /api/fe/query {sql}` (single SELECT, 5 s cap) while exploring; promote stable queries to an `fe_*` extension route.
-- Your own server-side routes on battlefield: `battlefield/extensions/fe_<name>.py` with `router = APIRouter()`, mounted at `/api/x/fe/...`. `fe_*` is the only prefix allowed to expose no-token public routes (a QR crowd page, a kiosk). `fe_example.py` shows the shape.
+- Your own server-side routes on battlefield: `battlefield/extensions/fe_<name>.py` with `router = APIRouter()`, mounted at `/api/x/fe/...`. `fe_*` is the only prefix allowed to expose no-token public routes (a QR crowd page, a kiosk). See `blue_crs.py` for a real extension; any public `fe_*` route that writes must be designed with care (no unauthenticated writes into agent `inputs`).
 - Your own tables: `contracts/ext/fe/<nn>_<name>.sql`, prefixed `fe_`.
 - Push into the sim: `POST /api/inputs {episode_id, target: red|blue|green, source, payload}` lands in that agent's next turn as `options.inputs`. Whether an agent reacts is up to Al/M; coordinate the payload shape with them in DEVLOG.
 - Custom events: extensions can `bus.emit(..., "x.fe.<name>", {...})`; the reducer keeps them in `state.custom`.
