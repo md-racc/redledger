@@ -1,0 +1,1 @@
+- 2026-10-25T03:52Z · Ad · contracts: /audit response carries optional usage so blue's live audit credits count against the episode/lineage caps (were recorded as 0); next: blue passes it through; blocked: none
