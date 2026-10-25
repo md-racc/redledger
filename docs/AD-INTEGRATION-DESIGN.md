@@ -1,7 +1,7 @@
 # Agent integration design: packages A and B (Ad)
 
 Status: **decided — Ad accepted D1–D14 as recommended on 2026-10-24 (§6).** The live hold is lifted:
-prod runs red live, green and blue keyless (per-agent `DRY_RUN_*`, #75). The contracts in §3 are on main
+prod runs red and blue's audit live (blue since 2026-10-25, #157), green keyless and on hold (per-agent `DRY_RUN_*`, #75). The contracts in §3 are on main
 (#80, #86); `contracts/` supersedes the text below wherever they differ. Input: [`AD-AGENT-INTEGRATION-SPEC.md`](AD-AGENT-INTEGRATION-SPEC.md) and
 its Green/Blue sources. Baseline: main `d0600d4` (#52, escalation e2e, merged unsplit). File:line
 refs from §2 on are main at that commit; §1 is re-verified at a later commit (dated there).
@@ -20,7 +20,7 @@ refs from §2 on are main at that commit; §1 is re-verified at a later commit (
 | 4 turn loop, `TurnLock`, `redact=` | #79 (+ #81 teardown) | merged, live for red on prod |
 | 5 SDK findings | #91 (blue OFF, bounded), #96 (green tool ids); blue live evidence #119, #127 | partly; "OFF prompts on every MCP call" and CANCEL comment still open |
 | 6 green live handler (M) | #93, #94 | merged; live green turn still guarded (`green/agent.py:81-83`) |
-| 7 blue shared adapter (M) | #85, #88, #90 | merged; `live_audit_disabled` still on |
+| 7 blue shared adapter (M) | #85, #88, #90 | merged; guard lifted (#157), live audit on prod since 2026-10-25 |
 | 8 joint acceptance (3-day shadow, all live) | issue #78 | blocked on 6/7 |
 | 9 cleanup | #97 (invariants 2/7, §5 rules, README) | partly; spec + this doc not yet deleted |
 
@@ -460,4 +460,4 @@ Parallelism: 1, then 2a ∥ 3, then 2b ∥ 4, then 6 ∥ 7. Nothing in parallel 
 | D12 | Defer accounting with a durable follow-up; no automatic green GL until a `POST /gl/journals` contract (proposed: accrual, Dr expense / Cr 2000 at approve, Dr 2000 / Cr 1000 at pay, one balanced journal unique on `(episode, ref_type, ref_id, kind)`, settlement needs a confirmed payment) | Accepted |
 | D13 | Prepare returns 200 for a block, with a required `effective` field | Accepted |
 | D14 | DRY_RUN turns also run on the per-turn TurnLoop | Accepted |
-| D15 | Live SDK probe (B-8, PR 5, live half of PR 8) | **Partly lifted** (2026-10-24/25): red runs live on prod (Droid `gpt-5.4-mini`); blue's live audit is merged (#157) but prod keeps `DRY_RUN_BLUE=true` until Ad flips it; green's live probe (B-8) is still on hold |
+| D15 | Live SDK probe (B-8, PR 5, live half of PR 8) | **Partly lifted** (2026-10-24/25): red runs live on prod (Droid `gpt-5.4-mini`); blue's live audit is merged (#157) and runs on prod since 2026-10-25 (`DRY_RUN_BLUE=false`, `gpt-5.4-mini`); green's live probe (B-8) is still on hold |

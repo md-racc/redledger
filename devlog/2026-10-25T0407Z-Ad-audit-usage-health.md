@@ -1,0 +1,1 @@
+- 2026-10-25T04:07Z · Ad · blue: /audit returns the live turn's usage (battlefield charges it to the credit caps, contract #174) and /health droid_ok reports whether droid_sdk is installed (metadata lookup, no import); next: none; blocked: none
