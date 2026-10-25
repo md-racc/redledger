@@ -303,6 +303,9 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .speak-note { margin: 0; font-size: 13px; color: var(--ink-3); }
 .speak-text { width: 100%; box-sizing: border-box; resize: vertical; padding: 9px 11px; border: 1px solid var(--line-2); background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; line-height: 1.4; border-radius: 0; }
 .speak-text:focus { outline: 0; border-color: var(--ink); }
+.speak-try { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-3); }
+.speak-try button { font: inherit; font-size: 13px; padding: 2px 9px; border: 1px solid var(--line-2); background: transparent; color: var(--ink-2); border-radius: 0; cursor: pointer; }
+.speak-try button:hover, .speak-try button:focus-visible { border-color: var(--ink); color: var(--ink); outline: 0; }
 .speak-match { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
 .speak-match select { font: inherit; font-size: 13px; padding: 2px 6px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 0; }
 .speak-act { display: flex; gap: 6px; }
