@@ -1,0 +1,488 @@
+/* The controls assessment (/report/[ep]): an audit deliverable, not the arena. White paper, serif headings, sans tables,
+   printable. Everything is scoped under .rr; the root layout's arena.css still loads, so the page sets its own colors. */
+
+:root {
+  --rr-paper: #ffffff;
+  --rr-desk: #eceae5;
+  --rr-ink: #1b1a17;
+  --rr-muted: #5f5b53;
+  --rr-rule: #d8d4cb;
+  --rr-rule-strong: #1b1a17;
+  --rr-head: #f4f2ee;
+  --rr-bad: #8a1f1a;
+  --rr-bad-bg: #fbf1ef;
+  --rr-good: #255a36;
+  --rr-good-bg: #eef5ef;
+  --rr-warn: #7a5a00;
+  --rr-warn-bg: #fdf6e1;
+  --rr-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+  --rr-sans: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  --rr-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+html:has(.rr),
+body:has(.rr) {
+  background: var(--rr-desk);
+  color: var(--rr-ink);
+}
+
+.rr {
+  min-height: 100vh;
+  background: var(--rr-desk);
+  color: var(--rr-ink);
+  font-family: var(--rr-serif);
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 0 16px 48px;
+  -webkit-font-smoothing: auto;
+}
+
+.rr *,
+.rr *::before,
+.rr *::after {
+  box-sizing: border-box;
+}
+
+/* ---- toolbar (screen only) ---- */
+.rr-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 12px 0;
+  background: var(--rr-desk);
+  font-family: var(--rr-sans);
+  font-size: 13px;
+}
+.rr-toolbar-title {
+  flex: 1;
+  color: var(--rr-muted);
+}
+.rr-back {
+  color: var(--rr-ink);
+  text-decoration: none;
+}
+.rr-back:hover {
+  text-decoration: underline;
+}
+.rr-actions {
+  display: flex;
+  gap: 8px;
+}
+.rr-actions button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--rr-rule-strong);
+  background: var(--rr-paper);
+  color: var(--rr-ink);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.rr-actions button:hover:not(:disabled) {
+  background: var(--rr-ink);
+  color: var(--rr-paper);
+}
+.rr-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- the page ---- */
+.rr-paper {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 56px 64px 40px;
+  background: var(--rr-paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+@media (max-width: 720px) {
+  .rr-paper {
+    padding: 28px 18px;
+  }
+}
+
+.rr h1,
+.rr h2,
+.rr h3 {
+  font-family: var(--rr-serif);
+  color: var(--rr-ink);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  margin: 0;
+}
+.rr h1 {
+  font-size: 30px;
+  line-height: 1.2;
+  margin: 6px 0 12px;
+}
+.rr h2 {
+  font-size: 20px;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--rr-rule-strong);
+}
+.rr h2 > span {
+  display: inline-block;
+  min-width: 1.6em;
+  color: var(--rr-muted);
+  font-weight: 400;
+}
+.rr h3 {
+  font-size: 16px;
+  margin: 0 0 6px;
+}
+.rr p {
+  margin: 0 0 10px;
+}
+.rr code,
+.rr-mono {
+  font-family: var(--rr-mono);
+  font-size: 0.86em;
+}
+.rr-muted {
+  color: var(--rr-muted);
+}
+.rr-small {
+  font-size: 12.5px;
+}
+.rr-kicker {
+  font-family: var(--rr-sans);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rr-bad);
+  margin: 0;
+}
+.rr-lede {
+  font-size: 16.5px;
+  color: #33302a;
+  max-width: 46em;
+}
+.rr-note {
+  font-size: 13.5px;
+  color: var(--rr-muted);
+}
+
+.rr-draft {
+  font-family: var(--rr-sans);
+  font-size: 13px;
+  padding: 8px 12px;
+  margin: -24px 0 24px;
+  background: var(--rr-warn-bg);
+  color: var(--rr-warn);
+  border-left: 3px solid var(--rr-warn);
+}
+
+/* ---- cover ---- */
+.rr-cover {
+  padding-bottom: 20px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--rr-rule);
+}
+.rr-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px 24px;
+  margin: 20px 0;
+  font-family: var(--rr-sans);
+  font-size: 13px;
+}
+.rr-meta dt {
+  color: var(--rr-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.rr-meta dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- sections ---- */
+.rr-section {
+  margin: 0 0 32px;
+}
+
+.rr-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin: 0 0 16px;
+  border: 1px solid var(--rr-rule);
+  font-family: var(--rr-sans);
+}
+@media (max-width: 720px) {
+  .rr-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.rr-kpis > div {
+  padding: 12px 14px;
+  border-right: 1px solid var(--rr-rule);
+}
+.rr-kpis > div:last-child {
+  border-right: 0;
+}
+.rr-kpis dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--rr-muted);
+}
+.rr-kpis dd {
+  margin: 4px 0 0;
+  font-family: var(--rr-serif);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.rr-kpis small {
+  display: block;
+  font-family: var(--rr-sans);
+  font-size: 12px;
+  color: var(--rr-muted);
+}
+.rr-kpis .rr-bad dd {
+  color: var(--rr-bad);
+}
+.rr-kpis .rr-good dd {
+  color: var(--rr-good);
+}
+.rr-summary {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.rr-summary li {
+  margin: 0 0 6px;
+}
+
+/* ---- tables ---- */
+.rr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--rr-sans);
+  font-size: 12.5px;
+  line-height: 1.4;
+  margin: 8px 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+.rr-table caption {
+  caption-side: top;
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--rr-muted);
+  padding-bottom: 4px;
+}
+.rr-table th,
+.rr-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--rr-rule);
+}
+.rr-table thead th {
+  background: var(--rr-head);
+  border-top: 1px solid var(--rr-rule-strong);
+  border-bottom: 1px solid var(--rr-rule-strong);
+  font-weight: 600;
+  font-size: 11.5px;
+}
+.rr-table tbody th {
+  font-weight: 500;
+}
+.rr-table .rr-num {
+  text-align: right;
+  white-space: nowrap;
+}
+.rr-table tr {
+  break-inside: avoid;
+}
+.rr-row-bad td:nth-child(5) {
+  color: var(--rr-bad);
+  font-weight: 600;
+}
+.rr-compact th {
+  width: 40%;
+}
+.rr-models {
+  max-width: 640px;
+}
+.rr-reason {
+  max-width: 22em;
+}
+.rr-evidence td {
+  font-size: 11px;
+}
+.rr-ids {
+  font-family: var(--rr-mono);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.rr-ctl {
+  display: inline-block;
+  margin: 0 4px 2px 0;
+  padding: 0 5px;
+  border: 1px solid var(--rr-rule);
+  border-radius: 2px;
+  font-family: var(--rr-mono);
+  font-size: 10.5px;
+  background: #faf9f6;
+}
+@media screen {
+  .rr-section {
+    overflow-x: auto;
+  }
+}
+
+.rr-rating {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+  border: 1px solid currentColor;
+}
+.rr-rating-effective {
+  color: var(--rr-good);
+  background: var(--rr-good-bg);
+}
+.rr-rating-noisy {
+  color: var(--rr-warn);
+  background: var(--rr-warn-bg);
+}
+.rr-rating-ineffective {
+  color: var(--rr-bad);
+  background: var(--rr-bad-bg);
+}
+.rr-rating-not-tested {
+  color: var(--rr-muted);
+}
+
+/* ---- gaps ---- */
+.rr-gap {
+  padding: 12px 16px;
+  margin: 0 0 12px;
+  border-left: 3px solid var(--rr-bad);
+  background: var(--rr-bad-bg);
+  break-inside: avoid;
+}
+.rr-gap p {
+  margin: 0 0 6px;
+}
+.rr-why {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  font-family: var(--rr-sans);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--rr-bad);
+  border: 1px solid var(--rr-bad);
+  border-radius: 2px;
+  vertical-align: 2px;
+}
+
+.rr-footer {
+  margin-top: 32px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rr-rule);
+  font-family: var(--rr-sans);
+  font-size: 11px;
+  color: var(--rr-muted);
+}
+
+.rr-notice {
+  max-width: 640px;
+  margin-top: 48px;
+}
+
+/* ---- print ---- */
+@page {
+  size: A4;
+  margin: 16mm 14mm 18mm;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 8pt;
+    color: #5f5b53;
+  }
+  @bottom-left {
+    content: "Red Ledger · Controls assessment";
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 8pt;
+    color: #5f5b53;
+  }
+}
+
+@media print {
+  html:has(.rr),
+  body:has(.rr),
+  .rr {
+    background: #fff !important;
+  }
+  .rr {
+    padding: 0;
+    font-size: 10.5pt;
+  }
+  .rr-noprint {
+    display: none !important;
+  }
+  .rr-paper {
+    max-width: none;
+    padding: 0;
+    box-shadow: none;
+  }
+  .rr h1 {
+    font-size: 22pt;
+  }
+  .rr h2 {
+    font-size: 14pt;
+    break-after: avoid;
+  }
+  .rr h3 {
+    break-after: avoid;
+  }
+  .rr-cover {
+    break-after: page;
+    border-bottom: 0;
+  }
+  .rr-break {
+    break-before: page;
+  }
+  .rr-section {
+    overflow: visible;
+  }
+  .rr-table {
+    font-size: 8.5pt;
+  }
+  .rr-table thead {
+    display: table-header-group;
+  }
+  .rr-gap,
+  .rr-rating,
+  .rr-why,
+  .rr-table thead th,
+  .rr-draft {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+.rr-table tfoot td {
+  border-bottom: 1px solid var(--rr-rule);
+}
+.rr-table tfoot .rr-total td {
+  font-weight: 600;
+  border-top: 1px solid var(--rr-rule-strong);
+  border-bottom: 2px solid var(--rr-rule-strong);
+}

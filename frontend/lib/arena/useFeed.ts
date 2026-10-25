@@ -11,6 +11,9 @@
 // launch an attack (a forced scheme on a live backend, played locally without one), flip the controller, decide an
 // escalation. Owner: Dev R.
 //
+// Pitch mode (`pitch()`, lib/arena/pitch.ts): join the run that is going or (admin) start a live enforce episode with no attack plan;
+// escalations are auto-blocked after 40 s until `stopPitch()`; with no backend it plays a real prod recording, not the mock sample.
+//
 // Joining: whenever nothing of its own is on screen, the feed watches the run that is going on the battlefield (polled by
 // useActiveRun; a running episode, or the current generation of a running lineage), so every window shows the current session on
 // load and follows a lineage from generation to generation. A viewer (lib/role.ts) only ever watches: it never creates an episode,
@@ -32,6 +35,7 @@ import { RED_SCHEMES } from "./roster";
 import { publish } from "../sync/client";
 import { ScriptRunner } from "./script";
 import { buildOffAct, buildOnAct, decisionEvent, finalScoreOf, projectBaseline } from "./showScripts";
+import { buildPitchFallback, canApprove, PITCH_FALLBACK, pitchEpisode, planPitch, willAutoBlock, type RecordingInfo } from "./pitch";
 
 const MOCK_ONLY = process.env.NEXT_PUBLIC_MOCK === "true";
 
@@ -78,6 +82,9 @@ export interface ActOptions {
   autoBlockMs?: number;
 }
 
+/** What pitch mode got: a live episode it started, a run it joined, a wait for the operator (viewers), the recording, or a refusal. */
+export type PitchResult = "live" | "joined" | "waiting" | "recorded" | "refused";
+
 export interface Feed {
   state: UIState;
   source: FeedSource;
@@ -102,7 +109,15 @@ export interface Feed {
   /** a judge-picked attack: forced on a live backend, played out locally without one. `spoken` is the judge's own description of it:
    *  red is told in those words, and `schemeId` is the closest built-in scheme that battlefield can be forced to run */
   launchAttack: (schemeId: string, spoken?: Spoken) => Promise<void>;
-  resolveEscalation: (escalationId: string, decision: "approve" | "block") => Promise<void>;
+  resolveEscalation: (escalationId: string, decision: "approve" | "block", by?: string) => Promise<void>;
+  /** pitch mode (lib/arena/pitch.ts): join the run that is going, or (admin) start a live one; the real recording when unreachable.
+   *  Every escalation from here on is auto-blocked after `autoBlockMs` unless a human decides first, until `stopPitch()` */
+  pitch: (opts: { seed: number; autoBlockMs: number }) => Promise<PitchResult>;
+  stopPitch: () => void;
+  /** the real recording being played back (pitch mode's fallback), for the provenance badge; null otherwise */
+  recording: RecordingInfo | null;
+  /** when each open escalation will be auto-blocked (epoch ms), for its countdown */
+  deadlines: Record<string, number>;
   /** subscribe to every event as it is applied */
   subscribe: (fn: (e: RLEvent) => void) => () => void;
   /** watch the run that is going whenever nothing else is on screen (on by default; the show turns it off while it plays) */
@@ -119,6 +134,8 @@ export function useFeed(): Feed {
   const [running, setRunning] = useState(false);
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [backend, setBackend] = useState<Backend>(MOCK_ONLY ? OFFLINE : { state: "checking", agents: null, keyless: false });
+  const [recording, setRecording] = useState<RecordingInfo | null>(null);
+  const [deadlines, setDeadlines] = useState<Record<string, number>>({});
   const listeners = useRef(new Set<(e: RLEvent) => void>());
   const cancel = useRef<() => void>(() => {});
   const episode = useRef<string | null>(null);
@@ -135,12 +152,21 @@ export function useFeed(): Feed {
   /** an admin's run, act or sandbox is being set up: the poller must not attach underneath it */
   const starting = useRef(0);
   const autoBlock = useRef<number | null>(null);
-  const live = useRef({ state, source, mode: "enforce" as ControllerMode, backend });
+  /** pitch mode's auto-block: unlike an act's, it outlives what is on screen (a joined lineage moves to its next generation) */
+  const pitchBlock = useRef<number | null>(null);
+  /** bumped by every pitch request and by stopPitch: a request that is no longer the latest does nothing more */
+  const pitchSeq = useRef(0);
+  const pitchBusy = useRef(0);
+  /** escalations waiting on the act's auto-block; cleared whenever what is on screen changes, so a stale id is never resolved */
+  const autoBlockTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const clearAutoBlocks = () => { autoBlockTimers.current.forEach(clearTimeout); autoBlockTimers.current.clear(); setDeadlines({}); };
+  const live = useRef({ state, source, mode: "enforce" as ControllerMode, backend, recording: null as RecordingInfo | null });
   live.current.state = state;
   live.current.source = source;
   live.current.backend = backend;
+  live.current.recording = recording;
 
-  const resolveRef = useRef<(id: string, d: "approve" | "block") => Promise<void>>(async () => {});
+  const resolveRef = useRef<(id: string, d: "approve" | "block", by?: string) => Promise<void>>(async () => {});
 
   const emit = useCallback((e: RLEvent) => {
     if (e.type === "episode.started") live.current.mode = (e.payload as { controller_mode: ControllerMode }).controller_mode;
@@ -149,11 +175,16 @@ export function useFeed(): Feed {
       const score = (e.payload as { final_score?: Score }).final_score;
       if (score) setRuns((r) => [...r.filter((x) => x.episodeId !== e.episode_id), { episodeId: e.episode_id, mode: live.current.mode, score, projected: false }].slice(-6));
       // a lineage's next generation is attached (and running again) by the poller as soon as it starts
-      if (liveKind.current === "act" || liveKind.current === "attached") setRunning(false);
+      if (liveKind.current === "act" || liveKind.current === "attached" || liveKind.current === "run") setRunning(false);
     }
-    if (e.type === "escalation.opened" && autoBlock.current !== null) {
+    const blockMs = autoBlock.current ?? pitchBlock.current;
+    // only a window that will actually block it counts down to the auto-block: an admin's, or one playing a recording locally.
+    // A viewer of a live run shows the backend's own expiry (the presenter's screen decides).
+    if (e.type === "escalation.opened" && blockMs !== null && willAutoBlock({ mockOnly: MOCK_ONLY, admin: isAdmin(), source: live.current.source })) {
       const id = (e.payload as { escalation_id: string }).escalation_id;
-      setTimeout(() => { void resolveRef.current(id, "block"); }, autoBlock.current);
+      const t = setTimeout(() => { autoBlockTimers.current.delete(t); void resolveRef.current(id, "block", "auto-block"); }, blockMs);
+      autoBlockTimers.current.add(t);
+      setDeadlines((d) => ({ ...d, [id]: Date.now() + blockMs }));
     }
     dispatch(e);
     listeners.current.forEach((fn) => fn(e));
@@ -171,6 +202,7 @@ export function useFeed(): Feed {
     pacer.current.clear();
     liveKind.current = null;
     autoBlock.current = null;
+    clearAutoBlocks();
     setRunning(false);
   }, []);
 
@@ -179,6 +211,7 @@ export function useFeed(): Feed {
     stop();
     dispatch({ type: "__reset" });
     episode.current = null;
+    setRecording(null);
   }, [stop]);
 
   useEffect(() => stop, [stop]);
@@ -233,6 +266,7 @@ export function useFeed(): Feed {
     const mine = ++token.current;
     setRunning(true);
     setSource("mock");
+    setRecording(null);
     const fixture = await loadFixture();
     if (mine !== token.current) return;
     const built = which === "off" ? buildOffAct(fixture, windowMs) : buildOnAct(fixture, windowMs, holdMs);
@@ -255,8 +289,10 @@ export function useFeed(): Feed {
     runners.current = [];
     act.current = null;
     autoBlock.current = null;
+    clearAutoBlocks();
     pacer.current.clear();
     dispatch({ type: "__reset" });
+    setRecording(null);
     episode.current = id;
     liveKind.current = "attached";
     cancel.current = connect(id, pushLive);
@@ -497,6 +533,7 @@ export function useFeed(): Feed {
     const s = live.current.state;
     const fresh = !s.episodeId || s.finished || liveKind.current === "sandbox";
     if (fresh) reset();
+    setRecording(null); // a locally simulated attack is not the prod recording: the badge must not say it is
     setSource((x) => (x === "idle" || x === "live" ? "mock" : x));
     if (fresh) setNote("sandbox · attacks you launch play out locally");
     if (spoken) setNote(`offline · playing the closest built-in scheme to what you said: ${builtIn}`);
@@ -516,16 +553,114 @@ export function useFeed(): Feed {
     runners.current = [...runners.current, r];
   }, [newRunner, reset, sandboxAttack, tellRed]);
 
-  const resolveEscalation = useCallback(async (escalationId: string, decision: "approve" | "block") => {
+  const resolveEscalation = useCallback(async (escalationId: string, decision: "approve" | "block", by = "judge") => {
     const esc = live.current.state.escalations[escalationId];
     if (esc && esc.status !== "open") return;
-    if (!MOCK_ONLY && !isAdmin()) return; // a human decision, but an admin's
+    // a human decision, but an admin's; the auto-block of a recording played in this window only touches this window
+    if (!MOCK_ONLY && !isAdmin() && !(by === "auto-block" && live.current.source !== "live")) return;
+    // a recording's outcomes are what happened: its escalations can only be blocked
+    if (!canApprove({ recording: live.current.recording, source: live.current.source }) && decision === "approve") return;
     publish("decision", { escalation_id: escalationId, decision, action: esc?.action ?? null, amount: esc?.amount ?? null });
-    if (live.current.source === "live") { await api.resolve(escalationId, decision).catch(() => {}); return; }
+    if (live.current.source === "live") { await api.resolve(escalationId, decision, by).catch(() => {}); return; }
     for (const r of runners.current) r.ctx.decisions[escalationId] = decision;
-    emit(decisionEvent({ escalation_id: escalationId, episode_id: live.current.state.episodeId ?? "local", day: live.current.state.currentDay }, decision, "judge"));
+    emit(decisionEvent({ escalation_id: escalationId, episode_id: live.current.state.episodeId ?? "local", day: live.current.state.currentDay }, decision, by));
   }, [emit]);
   resolveRef.current = resolveEscalation;
+
+  // ---- pitch mode --------------------------------------------------------------------------------------------------
+
+  /** The real prod recording (not the mock sample), played on our clock, each escalation held for a human. */
+  const playPitchFallback = useCallback(async () => {
+    const mine = ++token.current;
+    setRunning(true);
+    setSource("mock");
+    setRecording(PITCH_FALLBACK);
+    const fixture = await loadFixture(PITCH_FALLBACK.fixture).catch(() => null);
+    if (mine !== token.current) return;
+    if (!fixture) { setRunning(false); setRecording(null); setNote("pitch · the recording could not be loaded"); return; }
+    const r = newRunner(buildPitchFallback(fixture));
+    act.current = r;
+    runners.current = [r];
+    setNote(`${MOCK_ONLY ? "mock mode" : "backend unreachable"} · a real run recorded on prod · ${PITCH_FALLBACK.episodeId} · ${PITCH_FALLBACK.date}`);
+  }, [newRunner]);
+
+  const pitch = useCallback(async (opts: { seed: number; autoBlockMs: number }): Promise<PitchResult> => {
+    reset();
+    pitchBlock.current = opts.autoBlockMs;
+    follow.current = true;
+    setRunning(true);
+    if (MOCK_ONLY) { await playPitchFallback(); return "recorded"; }
+    const mine = token.current;
+    const req = ++pitchSeq.current;
+    // anything else started meanwhile (reset, a run, an act) or Esc (stopPitch) makes this request stale: it then does nothing more
+    const stale = () => mine !== token.current || req !== pitchSeq.current;
+    starting.current++;
+    pitchBusy.current++;
+    try {
+      let reach: "live" | "offline" = "live";
+      let active: CurrentRun | null = null;
+      try { active = await currentRun(api); } catch (e) {
+        if (stale()) return "refused";
+        // the backend answered but could not say what is running (a 429, a 403): never create an episode blind
+        if (!isUnreachable(e)) { refused("pitch · could not read the run in progress", e); return "refused"; }
+        reach = "offline";
+      }
+      if (stale()) return "refused";
+      const plan = planPitch({ mockOnly: MOCK_ONLY, admin: isAdmin(), reach, active });
+      if (plan === "fallback") { setBackend(OFFLINE); await playPitchFallback(); return "recorded"; }
+      if (plan === "join" && active) {
+        if (await attach({ episodeId: active.episodeId, lineageId: active.lineageId })) return "joined";
+        if (stale()) return "refused";
+        refused("pitch · the run in progress could not be found", null);
+        return "refused";
+      }
+      if (plan === "wait") {
+        // a viewer never starts a run: the poller (useActiveRun) joins it as soon as the operator starts one
+        setRunning(false);
+        setSource("idle");
+        setNote("pitch · waiting for the operator to start the live run");
+        return "waiting";
+      }
+      publish("run", { mode: "enforce", pitch: true, seed: opts.seed });
+      try {
+        const ep = await api.createEpisode(pitchEpisode(opts.seed));
+        if (stale()) return "refused"; // created, never started: not an active run, nothing to clean up
+        episode.current = ep.id;
+        liveKind.current = "run";
+        cancel.current = connect(ep.id, pushLive);
+        await api.start(ep.id);
+        if (stale()) return "refused"; // whatever replaced this request has already closed the socket (stop) or will watch the run
+        setSource("live");
+        setNote(`live · ${ep.id} · seed ${opts.seed} · red picks its own schemes`);
+        api.schemes().then((schemes) => setCatalogs((c) => ({ ...c, schemes }))).catch(() => {});
+        api.fe.vendors(ep.id, "spend").then((vendors) => setCatalogs((c) => ({ ...c, vendors: vendors.slice(0, 12) }))).catch(() => {});
+        return "live";
+      } catch (e) {
+        if (stale()) return "refused";
+        cancel.current();
+        cancel.current = () => {};
+        liveKind.current = null;
+        episode.current = null;
+        const found = parseActiveRun(e);
+        if (found && (await attach(found))) return "joined"; // someone started a run a moment before us: watch it
+        if (stale()) return "refused";
+        if (!found && isUnreachable(e)) { setBackend(OFFLINE); await playPitchFallback(); return "recorded"; }
+        refused(found ? "another run is active and could not be found" : "could not start the live run", e);
+        return "refused";
+      }
+    } finally {
+      starting.current--;
+      pitchBusy.current--;
+    }
+  }, [attach, playPitchFallback, pushLive, refused, reset]);
+
+  const stopPitch = useCallback(() => {
+    pitchSeq.current++;
+    // Esc while the request is in flight: nothing it was about to do (create, start, attach) happens
+    if (pitchBusy.current > 0) { token.current++; setRunning(false); }
+    pitchBlock.current = null;
+    if (autoBlock.current === null) clearAutoBlocks(); // an act's own auto-blocks stay
+  }, []);
 
   const subscribe = useCallback((fn: (e: RLEvent) => void) => {
     listeners.current.add(fn);
@@ -533,8 +668,8 @@ export function useFeed(): Feed {
   }, []);
 
   return useMemo(
-    () => ({ state, source, note, catalogs, running, backend, probe, runs, run, startAct, stop, reset, clearRuns, setPaused, setController, launchAttack, resolveEscalation, subscribe, setFollow }),
-    [state, source, note, catalogs, running, backend, probe, runs, run, startAct, stop, reset, clearRuns, setPaused, setController, launchAttack, resolveEscalation, subscribe, setFollow],
+    () => ({ state, source, note, catalogs, running, backend, probe, runs, run, startAct, stop, reset, clearRuns, setPaused, setController, launchAttack, resolveEscalation, subscribe, setFollow, pitch, stopPitch, recording, deadlines }),
+    [state, source, note, catalogs, running, backend, probe, runs, run, startAct, stop, reset, clearRuns, setPaused, setController, launchAttack, resolveEscalation, subscribe, setFollow, pitch, stopPitch, recording, deadlines],
   );
 }
 

@@ -466,6 +466,59 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .cmp-daybars b { font-family: var(--figures); font-weight: 600; font-size: 18px; font-variant-numeric: lining-nums tabular-nums; align-self: center; }
 @media (max-width: 760px) { .cmp-days { grid-template-columns: 1fr; } .cmp-daybars + .cmp-daybars { border-left: 0; border-top: 1px solid var(--line); } }
 
+/* ───────── pitch mode: a live episode on the main screen (components/arena/overlays/PitchOverlay.tsx) ───────── */
+.pill.live .pill-dot { color: var(--red); animation: blink 1.4s steps(2) infinite; }
+.pitch { position: fixed; inset: 0; z-index: 13; pointer-events: none; opacity: 0; transition: opacity 0.4s var(--ease); }
+.pitch.is-on { opacity: 1; }
+.pitch-strip { position: absolute; left: 50%; top: calc(var(--bar) + 14px); transform: translateX(-50%); display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 2 * var(--pad)); padding: 7px 14px 7px 7px; background: var(--bg); border: 1px solid var(--line-2); font-family: var(--caps); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; overflow: hidden; pointer-events: auto; }
+.pitch-badge { padding: 5px 10px 4px; font-weight: 600; letter-spacing: 0.22em; color: var(--bg); background: var(--ink-3); }
+.pitch-badge.badge-live { background: var(--green); }
+.pitch-badge.badge-live::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; vertical-align: 1px; background: var(--bg); animation: blink 1.2s steps(2) infinite; }
+.pitch-badge.badge-recorded, .pitch-badge.badge-replay { background: var(--amber); }
+.pitch-agents { display: flex; gap: 12px; }
+.pitch-agents b { font-weight: 600; color: var(--tone, var(--ink)); }
+.pitch-ep { font-family: var(--text); text-transform: none; letter-spacing: 0.02em; color: var(--ink-2); }
+.pitch-status { position: absolute; left: 50%; top: calc(var(--bar) + 58px); transform: translateX(-50%); margin: 0; max-width: min(820px, calc(100vw - 2 * var(--pad))); padding: 3px 12px; background: rgba(11, 10, 8, 0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; font-family: var(--figures); font-style: italic; font-size: 14px; color: var(--ink-2); text-shadow: 0 1px 2px var(--bg); }
+.pitch-status em { color: var(--ink); }
+.pitch-dots { font-style: normal; animation: blink 1s steps(2) infinite; }
+.pitch-caption { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); width: min(820px, calc(100vw - 2 * var(--pad))); padding: 18px 26px 18px; background: var(--bg); box-shadow: inset 0 0 0 3px var(--bg), inset 0 0 0 4px var(--tone, var(--line-2)); animation: pitchin 0.3s var(--ease); --tone: var(--line-2); }
+.pitch-caption.tone-red { --tone: var(--red); } .pitch-caption.tone-blue { --tone: var(--blue); } .pitch-caption.tone-amber { --tone: var(--amber); } .pitch-caption.tone-green { --tone: var(--green); }
+.pitch-tag { display: block; margin-bottom: 8px; font-family: var(--caps); font-weight: 600; font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--tone, var(--ink-3)); }
+.pitch-caption p { margin: 0; font-family: var(--figures); font-weight: 600; font-size: clamp(22px, 2.3vw, 34px); line-height: 1.16; letter-spacing: -0.015em; color: var(--ink); }
+.pitch-caption p.is-quote { font-style: italic; font-weight: 500; }
+.pitch-caption small { display: block; margin-top: 9px; font-size: 15px; line-height: 1.4; color: var(--ink-2); }
+@keyframes pitchin { from { opacity: 0; transform: translate(-50%, 10px); } }
+.pitch-end { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(720px, calc(100vw - 2 * var(--pad))); display: flex; flex-direction: column; gap: 16px; padding: 26px 28px 22px; background: var(--panel); box-shadow: inset 0 0 0 3px var(--panel), inset 0 0 0 4px var(--line-2); pointer-events: auto; animation: drop 0.3s var(--ease); }
+.pitch-end .pitch-tag { margin: 0; color: var(--ink-3); }
+.pitch-end h2 { margin: 0; font-family: var(--figures); font-weight: 600; font-size: clamp(28px, 3.4vw, 46px); line-height: 1.05; letter-spacing: -0.02em; color: var(--ink); }
+.pitch-end-tiles { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); }
+.pitch-end-tiles .tile { min-width: 0; }
+.pitch-report { align-self: flex-start; padding: 12px 18px 11px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); font-family: var(--caps); font-weight: 600; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; text-decoration: none; }
+.pitch-report:hover { background: var(--bg); color: var(--ink); }
+.pitch-end small { font-family: var(--figures); font-style: italic; font-size: 13px; color: var(--ink-3); }
+.pitch-end kbd { font-family: var(--text); font-style: normal; color: var(--ink-2); }
+.pitch-x { position: absolute; right: 10px; top: 8px; width: 32px; height: 32px; border: 0; background: none; color: var(--ink-3); font-size: 22px; line-height: 1; }
+.pitch-x:hover { color: var(--ink); }
+.hud-screens { position: absolute; right: var(--pad); top: calc(var(--bar) + 14px); margin: 0; padding: 7px 12px 6px; background: var(--bg); border: 1px solid var(--line); font-family: var(--caps); font-size: 10px; letter-spacing: 0.18em; text-transform: lowercase; color: var(--ink-2); pointer-events: none; }
+.hud.in-pitch .hud-controls { opacity: 0.4; } .hud.in-pitch .hud-controls:hover, .hud.in-pitch .hud-controls:focus-within { opacity: 1; }
+/* the decision is the climax: centred, larger, a draining bar for the clock */
+.escalation.is-pitch { left: 50%; top: calc(var(--bar) + 92px); transform: translateX(-50%); width: min(640px, calc(100vw - 2 * var(--pad))); padding: 26px 28px 22px; z-index: 16; animation: none; }
+.escalation.is-pitch h3 { font-size: clamp(28px, 2.8vw, 38px); }
+.escalation.is-pitch .escalation-tag { font-size: 13px; }
+.escalation.is-pitch .escalation-clock b { font-size: 40px; }
+.escalation.is-pitch .esc-btn { min-height: 72px; }
+.escalation-meter { position: absolute; left: 4px; right: 4px; top: 4px; height: 4px; background: var(--amber); transform-origin: 0 50%; transform: scaleX(var(--left, 1)); transition: transform 0.25s linear; }
+@media (max-width: 900px) {
+  .pitch-strip { top: calc(var(--bar) + 48px); } .pitch-agents { display: none; }
+  .pitch-status { top: calc(var(--bar) + 90px); }
+  .hud-screens { display: none; }
+}
+@media (max-width: 760px) {
+  .pitch-caption { bottom: 140px; padding: 14px 16px; }
+  .escalation.is-pitch { left: var(--pad); right: var(--pad); width: auto; transform: none; top: auto; bottom: 150px; }
+  .pitch-end-tiles { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* the hidden consoles' doors: for an admin only, nearly invisible until the pointer is on them (components/arena/overlays/Doors.tsx) */
 .doors { position: fixed; right: 14px; bottom: 12px; z-index: 6; display: flex; gap: 10px; padding: 6px; opacity: 0.08; transition: opacity 0.3s var(--ease); }
 .doors:hover, .doors:focus-within { opacity: 0.85; }

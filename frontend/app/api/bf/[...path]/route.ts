@@ -2,16 +2,21 @@
 // Adds `Authorization: Bearer ${OPERATOR_TOKEN}` server-side; the browser never holds a token.
 // Both vars are server env (no NEXT_PUBLIC_), read per request, never at build time.
 // The site is public, so the token's power is rationed here (lib/admin.ts): a viewer may only GET/HEAD, anything else is
-// refused before battlefield is contacted, and viewers are rate limited per address (lib/ratelimit.ts). Admins are unchanged.
+// refused before battlefield is contacted, ground-truth reads are refused and origin keys stripped from what a viewer reads
+// (lib/proxy.ts OPERATOR_ONLY, stripGroundTruth), and viewers are rate limited per address (lib/ratelimit.ts). Admins are unchanged.
 import { clientIp, requestRole, type Role } from "@/lib/admin";
 import {
   downstreamResponseHeaders,
   hasBody,
   isCrossSiteMutation,
+  isFinalAnswer,
+  isFinalOnlyPath,
   isOperatorOnlyPath,
   isNullBodyStatus,
   isTimeout,
   jsonError,
+  notFinalYet,
+  stripGroundTruth,
   timeoutFor,
   upstreamConfig,
   upstreamPath,
@@ -30,8 +35,10 @@ async function forwardInner(req: Request, role: Role): Promise<Response> {
   if (role !== "admin") {
     // a viewer reads; changing the sim is for admins only, and battlefield never hears of the attempt
     if (method !== "GET" && method !== "HEAD") return jsonError(403, "viewer");
-    // ground truth (the lineage export) is not for the public, even as a read
+    // ground truth (the lineage export, red's attacks, the origin matrices) is not for the public, even as a read
     if (isOperatorOnlyPath(new URL(req.url).pathname)) return jsonError(403, "viewer");
+    // the controls report is ground truth too, but public once the run has ended (decided below, on battlefield's answer)
+    if (method === "HEAD" && isFinalOnlyPath(new URL(req.url).pathname)) return notFinalYet();
     const rl = limiter("viewer").take(clientIp(req.headers));
     if (!rl.ok) return tooMany(rl.retryAfterSec);
   }
@@ -65,6 +72,19 @@ async function forwardInner(req: Request, role: Role): Promise<Response> {
 
   const headers = downstreamResponseHeaders(upstream.headers);
   headers.set("cache-control", headers.get("cache-control") ?? "no-store");
+  const finalOnly = role !== "admin" && upstream.ok && isFinalOnlyPath(url.pathname);
+  // Battlefield answers the operator, origin columns included; a viewer gets the same JSON without them.
+  if (role !== "admin" && method === "GET" && (headers.get("content-type") ?? "").includes("application/json")) {
+    let parsed: unknown;
+    try {
+      parsed = await upstream.json();
+    } catch (err) {
+      return isTimeout(err) ? jsonError(504, "battlefield timed out") : jsonError(502, "bad battlefield response");
+    }
+    if (finalOnly && !isFinalAnswer(parsed)) return notFinalYet();
+    return Response.json(stripGroundTruth(parsed), { status: upstream.status, statusText: upstream.statusText, headers });
+  }
+  if (finalOnly) return notFinalYet(); // a final-only read that is not JSON can't be checked: refused
   // Stream the upstream body straight through (large /events pages, report markdown, ...).
   const out = isNullBodyStatus(upstream.status) || method === "HEAD" ? null : upstream.body;
   return new Response(out, { status: upstream.status, statusText: upstream.statusText, headers });

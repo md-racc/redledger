@@ -114,7 +114,7 @@ export function liveChecks(i: CheckInput): Check[] {
     { ok: live ? agentList.length > 0 && agentList.every(([, a]) => a?.ok !== false) : null, label: "agents answer /health", detail: agentList.map(([k, a]) => `${k}:${a?.ok === false ? "down" : "up"}`).join(" ") || "-" },
     streamCheck(i, age),
     { ok: i.verdicts > 0 ? true : null, label: "the gate is issuing verdicts", detail: `${i.verdicts} gate.verdict events` },
-    { ok: i.sync.link === "stream" ? true : i.sync.link === "polling" ? null : false, label: "relay to the other laptops", detail: `${i.sync.link}, last item ${Math.max(0, Math.round(i.sync.quietMs / 1000))}s ago` },
+    { ok: i.sync.link === "stream" ? true : i.sync.link === "polling" ? null : false, label: "relay to the other laptops", detail: i.sync.link === "admins" ? "admins only (sign in at /admin)" : `${i.sync.link}, last item ${Math.max(0, Math.round(i.sync.quietMs / 1000))}s ago` },
     { ok: arena ? true : false, label: "arena laptop connected", detail: arena ? `${arena.id}, spoke ${Math.max(0, Math.round((i.now - new Date(arena.last).getTime()) / 1000))}s ago` : "not seen in the last 30 s: open the arena on the first laptop and sign in at /admin (a viewer's arena shows but does not report)" },
     { ok: i.trafficCount > 0 ? true : null, label: "API calls passing through the proxy", detail: `${i.trafficCount} calls logged` },
   ];

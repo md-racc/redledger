@@ -5,10 +5,12 @@
 // NEXT_PUBLIC_* values are inlined at build and one image must serve every environment.
 //
 // A socket is not always possible: a venue network or proxy that drops or swallows the upgrade (the handshake then never answers,
-// so it gets 8 s), a dev server with no `/api/ws`, a ticket that keeps being refused. After two attempts in a row that never
-// delivered a frame the client also reads the same events over
-// REST (`GET /events?after_id=`, through the same proxy) every 1.5 s, and keeps trying the socket underneath; the first frame a
-// socket delivers ends the polling. The reducer is idempotent and polled events are filtered on `id > last`, so the two never double up.
+// so it gets 8 s), a dev server with no `/api/ws`, a ticket that keeps hitting a rate limit or a 5xx. After two attempts in a row
+// that never delivered a frame the client also reads the same events over REST (`GET /events?after_id=`, through the same proxy)
+// every 1.5 s, and keeps trying the socket underneath; the first frame a socket delivers ends the polling. The reducer is
+// idempotent and polled events are filtered on `id > last`, so the two never double up. A ticket refused for a reason waiting
+// won't fix (400/401/403/404: a stale episode, no access) is not worked around: REST would be refused too, so after a few slow
+// retries the attempt ends.
 import { clientId } from "./sync/client";
 import type { RLEvent } from "./types";
 
@@ -25,6 +27,8 @@ export interface FeedLink {
 
 const MIN_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 15_000;
+/** A ticket refused this many times in a row for a reason waiting won't fix (400/401/403/404) ends the attempt. */
+const MAX_REFUSALS = 5;
 /** socket attempts in a row without a frame before the REST fallback starts */
 const POLL_AFTER_FAILS = 2;
 const POLL_MS = 1500;
@@ -32,11 +36,20 @@ const POLL_PAGE = 500;
 /** how long a socket may take to complete its handshake before it counts as failed */
 const HANDSHAKE_MS = 8000;
 
+class TicketError extends Error {
+  constructor(readonly status: number) {
+    super(`ws-ticket → ${status}`);
+  }
+}
+
+/** 4xx other than a timeout or a rate limit: asking again sooner won't change the answer. */
+const isRefusal = (err: unknown) => err instanceof TicketError && err.status >= 400 && err.status < 500 && err.status !== 408 && err.status !== 429;
+
 const HEADERS = () => ({ "X-RL-Client": clientId() });
 
 async function fetchTicket(episodeId: string): Promise<Ticket> {
   const r = await fetch(`/api/bf/ws-ticket?episode_id=${encodeURIComponent(episodeId)}`, { cache: "no-store", headers: HEADERS() });
-  if (!r.ok) throw new Error(`ws-ticket → ${r.status}`);
+  if (!r.ok) throw new TicketError(r.status);
   return r.json();
 }
 
@@ -52,6 +65,7 @@ export function connect(episodeId: string, onEvent: (e: RLEvent) => void, afterI
   let closed = false;
   let last = afterId;
   let attempt = 0;
+  let refusals = 0;
   let fails = 0;
   let why = "no socket yet";
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -95,9 +109,9 @@ export function connect(episodeId: string, onEvent: (e: RLEvent) => void, afterI
     }
   };
 
-  const retry = () => {
+  const retry = (refused = false) => {
     if (closed) return;
-    const delay = Math.min(MAX_BACKOFF_MS, MIN_BACKOFF_MS * 2 ** attempt) * (0.75 + Math.random() * 0.5);
+    const delay = (refused ? MAX_BACKOFF_MS : Math.min(MAX_BACKOFF_MS, MIN_BACKOFF_MS * 2 ** attempt)) * (0.75 + Math.random() * 0.5);
     attempt += 1;
     timer = setTimeout(open, delay);
   };
@@ -108,9 +122,20 @@ export function connect(episodeId: string, onEvent: (e: RLEvent) => void, afterI
     try {
       t = await fetchTicket(episodeId);
     } catch (err) {
-      failed(err instanceof Error ? err.message : "ws-ticket failed");
-      return retry();
+      const reason = err instanceof Error ? err.message : "ws-ticket failed";
+      if (!isRefusal(err)) { refusals = 0; failed(reason); return retry(); }
+      // a stale or unknown episode, or no access: REST would be refused too. Try a few more times slowly, then stop instead of
+      // polling the ticket route forever
+      refusals += 1;
+      if (refusals >= MAX_REFUSALS) {
+        console.warn(`ws: ticket for ${episodeId} refused ${refusals} times; giving up`);
+        tell({ via: "down", detail: `${reason}, ${refusals} times in a row: gave up` });
+        return;
+      }
+      tell({ via: "down", detail: `${reason}: asking again slowly` });
+      return retry(true);
     }
+    refusals = 0;
     if (closed) return;
     const q = `episode_id=${encodeURIComponent(episodeId)}&ticket=${encodeURIComponent(t.ticket)}&after_id=${last}`;
     const sock = new WebSocket(`${t.ws_url}/api/ws?${q}`);
@@ -140,17 +165,22 @@ export function connect(episodeId: string, onEvent: (e: RLEvent) => void, afterI
         clearTimeout(pollTimer);
         tell({ via: "socket", detail: "websocket open" });
       }
-      const e = JSON.parse(m.data);
-      if (e.type === "ping") return;
+      let e: RLEvent & { type: string };
+      try {
+        e = JSON.parse(m.data);
+      } catch {
+        return; // a malformed frame is dropped; the next good one carries on (and after_id catch-up fills any gap on reconnect)
+      }
+      if (!e || typeof e !== "object" || e.type === "ping") return;
       last = Math.max(last, e.id ?? last);
       onEvent(e);
     };
     // Any close we didn't ask for (incl. 4401 bad/expired ticket) → new ticket, reconnect with backoff.
     // `after_id=last` on the next socket replays whatever we missed.
-    sock.onclose = (ev) => {
+    sock.onclose = (ev?: { code?: number }) => {
       clearTimeout(guard);
       if (ws === sock) ws = null;
-      if (!framed) failed(`socket closed before any frame, code ${ev.code}`);
+      if (!framed) failed(`socket closed before any frame, code ${ev?.code ?? "?"}`);
       retry();
     };
   };

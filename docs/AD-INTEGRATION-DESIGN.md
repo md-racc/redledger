@@ -21,7 +21,7 @@ refs from §2 on are main at that commit; §1 is re-verified at a later commit (
 | 5 SDK findings | #91 (blue OFF, bounded), #96 (green tool ids); blue live evidence #119, #127 | partly; "OFF prompts on every MCP call" and CANCEL comment still open |
 | 6 green live handler (M) | #93, #94 | merged; live green turn still guarded (`green/agent.py:81-83`) |
 | 7 blue shared adapter (M) | #85, #88, #90 | merged; guard lifted (#157), live audit on prod since 2026-10-25 |
-| 8 joint acceptance (3-day shadow, all live) | issue #78 | blocked on 6/7 |
+| 8 joint acceptance (3-day shadow, all live) | issue #78 | not run: 6/7 are merged, but green stays keyless by decision (#78), so "all live" is out of scope for the hackathon; the red-and-blue-live off/enforce pair (#193) is the nearest evidence |
 | 9 cleanup | #97 (invariants 2/7, §5 rules, README) | partly; spec + this doc not yet deleted |
 
 ## 0. Summary of position

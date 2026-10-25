@@ -1,5 +1,6 @@
-// The event socket, and the REST read it falls back to when the socket will not open (a venue network that drops the upgrade, a dev
-// server with no /api/ws). Fake socket, fake fetch, fake clock.
+// lib/ws.ts: malformed frames are dropped; a ticket refused for a reason waiting won't fix is retried slowly and then given up; a
+// socket that will not open (refused upgrade, silent handshake, flaky ticket) is worked around by reading /events over REST.
+// Fake socket, fake fetch, fake clock.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { connect, type FeedLink } from "./ws";
 import type { RLEvent } from "./types";
@@ -20,19 +21,23 @@ const ev = (id: number): RLEvent => ({ id, type: "day.started", episode_id: "ep_
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 let eventsCalls: string[];
+let ticketCalls: number;
 let eventsReply: () => Response;
 let ticketReply: () => Response;
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.spyOn(Math, "random").mockReturnValue(0.5); // backoff factor 1.0
+  vi.spyOn(console, "warn").mockImplementation(() => {});
   FakeSocket.all = [];
   eventsCalls = [];
+  ticketCalls = 0;
   eventsReply = () => json([]);
   ticketReply = () => json({ ticket: "t", ws_url: "ws://example.test" });
   vi.stubGlobal("WebSocket", FakeSocket);
+  vi.stubGlobal("sessionStorage", { getItem: () => null, setItem: () => {} });
   vi.stubGlobal("fetch", async (url: string) => {
-    if (url.startsWith("/api/bf/ws-ticket")) return ticketReply();
+    if (url.startsWith("/api/bf/ws-ticket")) { ticketCalls++; return ticketReply(); }
     if (url.startsWith("/api/bf/events")) { eventsCalls.push(url); return eventsReply(); }
     throw new Error(`unexpected ${url}`);
   });
@@ -65,6 +70,17 @@ describe("connect", () => {
     expect(got.map((e) => e.id)).toEqual([1]);
     expect(links.at(-1)!.via).toBe("socket");
     expect(eventsCalls).toHaveLength(0);
+    stop();
+  });
+
+  it("drops a malformed frame and keeps delivering the next ones", async () => {
+    const { got, stop } = start();
+    await settle();
+    const sock = FakeSocket.all[0]!;
+    expect(() => sock.onmessage!({ data: "{not json" })).not.toThrow();
+    sock.send({ type: "ping" });
+    sock.send({ id: 7, type: "day.started" });
+    expect(got).toEqual([{ id: 7, type: "day.started" }]);
     stop();
   });
 
@@ -130,7 +146,7 @@ describe("connect", () => {
     stop();
   });
 
-  it("falls back when the ticket itself is refused", async () => {
+  it("falls back when the ticket route is rate limited", async () => {
     ticketReply = () => json({ error: "rate limited" }, 429);
     eventsReply = () => json([ev(1)]);
     const { got, links, stop } = start();
@@ -139,6 +155,26 @@ describe("connect", () => {
     expect(FakeSocket.all).toHaveLength(0);
     expect(got.map((e) => e.id)).toEqual([1]);
     expect(links.at(-1)!.detail).toMatch(/ws-ticket → 429/);
+    stop();
+  });
+
+  it("keeps retrying a ticket that fails for a reason waiting can fix (rate limit, 5xx)", async () => {
+    ticketReply = () => json({}, 429);
+    const { stop } = start();
+    for (let i = 0; i < 10; i++) await run(20_000);
+    expect(ticketCalls).toBeGreaterThan(5);
+    stop();
+  });
+
+  it("gives up after five refused tickets instead of asking forever, and does not read over REST either", async () => {
+    ticketReply = () => json({}, 404);
+    const { links, stop } = start();
+    for (let i = 0; i < 10; i++) await run(20_000);
+    expect(ticketCalls).toBe(5);
+    expect(FakeSocket.all).toHaveLength(0);
+    expect(eventsCalls).toHaveLength(0); // REST would be refused for the same reason
+    expect(links.at(-1)!.via).toBe("down");
+    expect(links.at(-1)!.detail).toMatch(/ws-ticket → 404, 5 times in a row: gave up/);
     stop();
   });
 

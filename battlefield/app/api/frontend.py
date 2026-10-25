@@ -11,6 +11,7 @@ Endpoint families:
   vendors       — profiles with risk signals, leaderboards
   attacks       — every declared attack with its trail and outcome
   verdicts      — filterable list, rule frequency, confusion matrix (verdict × origin)
+  controls      — the controls assessment report: per control, per scheme, gaps, false positives
   agents        — activity stats per agent per day, credits burned
   compare       — two episodes (same seed, different controller mode) side by side
   lineages      — evolution report and playbook timeline of a lineage (app/evolution/report.py)
@@ -25,12 +26,14 @@ of agents/activity are event-derived anyway. Everything else here is table-deriv
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from .. import db
 from ..auth import bearer
+from ..config import settings
 from ..evolution import report as evo_report
 from ..scoring import score
 from .control import is_replay, replay_score
@@ -198,10 +201,16 @@ async def _replay_timeline(episode_id: str, current_day: int) -> list[dict[str, 
 
 async def _replay_attacks(episode_id: str) -> list[dict[str, Any]]:
     """attacks rows rebuilt from attack.launched/attack.outcome events (no linked ledger rows)."""
+    rows = await db.fetch("SELECT day, type, payload FROM events WHERE episode_id=$1 AND type IN ('attack.launched','attack.outcome') ORDER BY id", episode_id)
+    return _attacks_from_events(episode_id, rows)
+
+
+def _attacks_from_events(episode_id: str, rows: Any) -> list[dict[str, Any]]:
+    """The attack rows `attack.launched`/`attack.outcome` events describe, in launch order. Other event types are ignored."""
     out: dict[str, dict[str, Any]] = {}
-    for r in await db.fetch(
-        "SELECT day, type, payload FROM events WHERE episode_id=$1 AND type IN ('attack.launched','attack.outcome') ORDER BY id", episode_id
-    ):
+    for r in rows:
+        if r["type"] not in ("attack.launched", "attack.outcome"):
+            continue
         p = _d(r["payload"])
         aid = p.get("attack_id")
         if not isinstance(aid, str) or not aid:
@@ -640,3 +649,546 @@ async def lineage_report(lineage_id: str):
     if out is None:
         raise HTTPException(404, "lineage not found")
     return out
+
+
+# ---------------- controls assessment (the report a finance team reads after a run) ----------------
+#
+# One document per episode: what each gate control did against the attacker and against legit work, what each red scheme
+# got away with and why, what the false positives cost, and the ids to trace every number back to rows. Ground truth
+# (which rows are red's) is behind every number, but the answer carries it only as words (`fraud` / `legit`, `on_fraud`,
+# `on_legit`), never as an `origin`-named key: the frontend proxy hands it to a site viewer once the run has ended.
+#
+# Two gatherers feed one pure builder: `_control_facts` reads the ledger tables (live episodes), `_facts_from_events`
+# reads the event stream (replays, and the frontend's mock fixture). In the event version a fraud entity is one red's
+# `ledger.mutation` created, linked to the latest attack red launched that day (red_writes' own rule).
+
+_FINAL_STATUSES = ("finished", "failed")
+_ATTACK_OUTCOMES = ("extracted", "partial", "blocked", "flagged", "failed", "pending")
+_ESC_DECISION = {"approve": "approved", "block": "blocked", "timeout": "timeout"}
+_EVIDENCE_CAP = 200
+
+
+def _r2(x: float) -> float:
+    return round(float(x), 2) + 0.0  # + 0.0: never -0.0
+
+
+def _amount(x: Any) -> float:
+    return float(x) if isinstance(x, int | float) and not isinstance(x, bool) else 0.0
+
+
+def _rules(x: Any) -> list[str]:
+    return [r for r in x if isinstance(r, str) and r] if isinstance(x, list) else []
+
+
+async def _control_facts(episode_id: str) -> dict[str, Any]:
+    """Ledger-table facts for build_controls_report."""
+    attack_rows = await db.fetch("SELECT * FROM attacks WHERE episode_id=$1 ORDER BY day_launched, created_at, id", episode_id)
+    attacks = [
+        {
+            "id": a["id"],
+            "scheme_id": a["scheme_id"],
+            "display_name": a["display_name"],
+            "day_launched": a["day_launched"],
+            "target_amount": float(a["target_amount"]),
+            "outcome": a["outcome"],
+            "amount_extracted": float(a["amount_extracted"]),
+            "detected_day": a["detected_day"],
+        }
+        for a in attack_rows
+    ]
+    # as_of_reveal: the same attribution score.compute uses, so the money split below adds up to dollars_extracted
+    all_changes, changes_by_attack = await score.attributed_changes(episode_id, attack_rows, as_of_reveal=True)
+    fraud: dict[str, str | None] = {}
+    paid: dict[str, set[str]] = defaultdict(set)
+
+    def mark(entity_id: str, attack_id: str | None) -> None:
+        if fraud.get(entity_id) is None:
+            fraud[entity_id] = attack_id
+
+    red_items = await db.fetch(
+        "SELECT id, attack_id, status, vendor_id AS owner FROM invoices WHERE episode_id=$1 AND origin='red' "
+        "UNION ALL SELECT id, attack_id, status, employee_id FROM expenses WHERE episode_id=$1 AND origin='red' ORDER BY id",
+        episode_id,
+    )
+    for r in red_items:
+        mark(r["id"], r["attack_id"])
+        if r["status"] == "paid" and r["attack_id"]:
+            paid[r["attack_id"]].add(r["id"])
+    owners = {r["owner"]: r["attack_id"] for r in red_items if r["attack_id"]}
+    for r in await db.fetch(
+        "SELECT id FROM vendors WHERE episode_id=$1 AND origin='red' UNION ALL SELECT id FROM employees WHERE episode_id=$1 AND origin='red'", episode_id
+    ):
+        mark(r["id"], owners.get(r["id"]))
+    # red vendor changes, the sim invoices stopped while a red bank swap was live (scored as caught, never as a false
+    # positive) and the sim invoices whose payment the swap diverted (scored as extracted)
+    for aid, chs in changes_by_attack.items():
+        for ch in chs:
+            mark(ch["id"], aid)
+            for i in ch["stopped"]:
+                mark(i, aid)
+            for i in ch["paid_invoices"]:
+                mark(i, aid)
+                paid[aid].add(i)
+    for ch in all_changes:
+        mark(ch["id"], None)
+        for i in ch["stopped"] | ch["paid_invoices"]:
+            mark(i, None)
+
+    sim_items = {
+        r["id"]: {"entity_type": r["t"], "amount": float(r["amount"]), "ended_blocked": r["status"] == "blocked"}
+        for r in await db.fetch(
+            "SELECT 'invoice' AS t, id, amount, status FROM invoices WHERE episode_id=$1 AND origin='sim' "
+            "UNION ALL SELECT 'expense', id, amount, status FROM expenses WHERE episode_id=$1 AND origin='sim' "
+            "UNION ALL SELECT 'vendor_change', id, 0::numeric, status FROM vendor_changes WHERE episode_id=$1 AND origin='sim'",
+            episode_id,
+        )
+    }
+    # legit = sim items that are no part of an attack (for the control matrix's fraud/legit split). The false-positive
+    # pool is score.compute's own: every sim item except invoices stopped while a red swap was live (a diverted invoice
+    # stays in it), so false_positives agrees with the score's false_positive_cost and legit_blocked in every mode.
+    legit = {k: v for k, v in sim_items.items() if k not in fraud}
+    not_fp = {i for ch in all_changes for i in ch["stopped"]}
+    fp_pool = {k: v for k, v in sim_items.items() if not (v["entity_type"] == "invoice" and k in not_fp)}
+    verdict_rows = await db.fetch(
+        "SELECT id, day, action, entity_type, entity_id, amount, verdict, reason, rules_fired, enforced FROM verdicts WHERE episode_id=$1 ORDER BY created_at, id",
+        episode_id,
+    )
+    verdicts = [
+        {
+            "id": v["id"],
+            "day": v["day"],
+            "action": v["action"],
+            "entity_type": v["entity_type"],
+            "entity_id": v["entity_id"],
+            "amount": float(v["amount"]) if v["amount"] is not None else None,
+            "verdict": v["verdict"],
+            "reason": v["reason"],
+            "rules": _rules(v["rules_fired"]),
+            "enforced": bool(v["enforced"]),
+        }
+        for v in verdict_rows
+    ]
+    escalations = {
+        r["verdict_id"]: {"id": r["id"], "status": r["status"]}
+        for r in await db.fetch("SELECT id, verdict_id, status FROM escalations WHERE episode_id=$1", episode_id)
+    }
+    flags = db.rows_to_list(await db.fetch("SELECT id, day, entity_type, entity_id, severity FROM flags WHERE episode_id=$1 ORDER BY day, id", episode_id))
+    frozen = {
+        r["vid"]
+        for r in await db.fetch(
+            "SELECT payload->>'vendor_id' AS vid FROM events WHERE episode_id=$1 AND type='vendor.frozen' AND payload ? 'vendor_id' "
+            "UNION SELECT id FROM vendors WHERE episode_id=$1 AND status='frozen'",
+            episode_id,
+        )
+        if r["vid"]
+    }
+    reports = int(await db.fetchval("SELECT COUNT(*) FROM reports WHERE episode_id=$1", episode_id))
+
+    # Where the lost money landed. score.compute's dollars_extracted = payments of red-origin documents + payments a red
+    # bank swap diverted (attributed, as of reveal). Attacker-controlled accounts: a red vendor's or red employee's
+    # bank_account, or the new_value of an approved red bank_account change. Everything else is a real party's account.
+    attacker_accounts = {
+        r["acct"]
+        for r in await db.fetch(
+            "SELECT bank_account AS acct FROM vendors WHERE episode_id=$1 AND origin='red' "
+            "UNION SELECT bank_account FROM employees WHERE episode_id=$1 AND origin='red' "
+            "UNION SELECT new_value FROM vendor_changes WHERE episode_id=$1 AND origin='red' AND field='bank_account' AND status='approved'",
+            episode_id,
+        )
+    }
+    money = [
+        {"amount": float(p["amount"]), "attack_id": p["attack_id"], "to_attacker": p["to_account"] in attacker_accounts}
+        for p in await db.fetch(
+            "SELECT p.amount, p.to_account, COALESCE(i.attack_id, e.attack_id) AS attack_id FROM payments p "
+            "LEFT JOIN invoices i ON i.id=p.invoice_id LEFT JOIN expenses e ON e.id=p.expense_id "
+            "WHERE p.episode_id=$1 AND p.origin_of_source='red' ORDER BY p.id",
+            episode_id,
+        )
+    ]
+    swap_paid: dict[str, str] = {}  # payment id -> attack, each payment once (score.compute's swap_payments)
+    for aid, chs in changes_by_attack.items():
+        for ch in chs:
+            for pid, amt in ch["payments"].items():
+                if pid not in swap_paid:
+                    swap_paid[pid] = aid
+                    money.append({"amount": amt, "attack_id": aid, "to_attacker": True})  # paid to the swapped-in account
+    return {
+        "source": "ledger",
+        "attacks": attacks,
+        "fraud": fraud,
+        "paid": paid,
+        "legit": legit,
+        "verdicts": verdicts,
+        "escalations": escalations,
+        "flags": flags,
+        "frozen": frozen,
+        "reports": reports,
+        "money": money,
+        "fp_pool": fp_pool,
+    }
+
+
+_CONTROL_EVENT_TYPES = [
+    "attack.launched",
+    "attack.outcome",
+    "ledger.mutation",
+    "gate.verdict",
+    "escalation.opened",
+    "escalation.resolved",
+    "flag.raised",
+    "vendor.frozen",
+    "report.posted",
+]
+
+
+def _facts_from_events(episode_id: str, rows: Any) -> dict[str, Any]:
+    """Event-stream facts for build_controls_report (`rows`: {day, type, payload} in id order). Without ledger rows a
+    fraud entity is one red's ledger.mutation created; legit = every other entity a verdict touched."""
+    rows = list(rows)
+    attacks = [
+        {
+            "id": a["id"],
+            "scheme_id": _s(a["scheme_id"]) or "unknown",
+            "display_name": _s(a["display_name"]) or _s(a["scheme_id"]) or "unknown",
+            "day_launched": a["day_launched"],
+            "target_amount": _amount(a["target_amount"]),
+            "outcome": a["outcome"] if a["outcome"] in _ATTACK_OUTCOMES else "pending",
+            "amount_extracted": _amount(a["amount_extracted"]),
+            "detected_day": a["detected_day"] if isinstance(a["detected_day"], int) else None,
+        }
+        for a in _attacks_from_events(episode_id, rows)
+    ]
+    fraud: dict[str, str | None] = {}
+    paid: dict[str, set[str]] = defaultdict(set)
+    latest_attack: dict[int, str] = {}
+    verdicts: list[dict[str, Any]] = []
+    escalations: dict[str, dict[str, Any]] = {}
+    esc_verdict: dict[str, str] = {}
+    flags: list[dict[str, Any]] = []
+    frozen: set[str] = set()
+    reports = 0
+    for r in rows:
+        t, p, day = r["type"], _d(r["payload"]), r["day"]
+        if t == "attack.launched" and _s(p.get("attack_id")):
+            latest_attack[day] = p["attack_id"]
+        elif t == "ledger.mutation" and _s(p.get("entity_id")):
+            eid = p["entity_id"]
+            if p.get("agent") == "red":
+                fraud.setdefault(eid, latest_attack.get(day))
+            elif p.get("action") in ("invoices.pay", "expenses.pay") and fraud.get(eid):
+                paid[fraud[eid]].add(eid)  # type: ignore[index]
+        elif t == "gate.verdict" and _s(p.get("verdict_id")) and p.get("verdict") in ("allow", "block", "escalate"):
+            verdicts.append(
+                {
+                    "id": p["verdict_id"],
+                    "day": day,
+                    "action": _s(p.get("action")),
+                    "entity_type": _s(p.get("entity_type")) or None,
+                    "entity_id": _s(p.get("entity_id")) or None,
+                    "amount": _amount(p.get("amount")) if p.get("amount") is not None else None,
+                    "verdict": p["verdict"],
+                    "reason": _s(p.get("reason")),
+                    "rules": _rules(p.get("rules_fired")),
+                    "enforced": p.get("enforced") is not False,
+                }
+            )
+        elif t == "escalation.opened" and _s(p.get("verdict_id")) and _s(p.get("escalation_id")):
+            escalations[p["verdict_id"]] = {"id": p["escalation_id"], "status": "open"}
+            esc_verdict[p["escalation_id"]] = p["verdict_id"]
+        elif t == "escalation.resolved" and p.get("escalation_id") in esc_verdict:
+            escalations[esc_verdict[p["escalation_id"]]]["status"] = _ESC_DECISION.get(_s(p.get("decision")), "open")
+        elif t == "flag.raised" and _s(p.get("entity_id")):
+            flags.append(
+                {
+                    "id": _s(p.get("flag_id")),
+                    "day": day,
+                    "entity_type": _s(p.get("entity_type")),
+                    "entity_id": p["entity_id"],
+                    "severity": _s(p.get("severity")),
+                }
+            )
+        elif t == "vendor.frozen" and _s(p.get("vendor_id")):
+            frozen.add(p["vendor_id"])
+        elif t == "report.posted":
+            reports += 1
+    legit: dict[str, dict[str, Any]] = {}
+    for v in verdicts:
+        eid = v["entity_id"]
+        if eid and eid not in fraud:
+            item = legit.setdefault(eid, {"entity_type": v["entity_type"] or "", "amount": 0.0, "ended_blocked": False})
+            item["amount"] = max(item["amount"], v["amount"] or 0.0)
+    return {
+        "source": "events",
+        "attacks": attacks,
+        "fraud": fraud,
+        "paid": paid,
+        "legit": legit,
+        "verdicts": verdicts,
+        "escalations": escalations,
+        "flags": flags,
+        "frozen": frozen,
+        "reports": reports,
+        "money": None,  # payee accounts are not in the event stream: the split is unknown for a replay
+    }
+
+
+def _effect(blocks: int, escalations: int, notes: int) -> str:
+    """The control's typical policy: what it did most often (ties go to the stronger action)."""
+    return max((blocks, 2, "block"), (escalations, 1, "escalate"), (notes, 0, "note"))[2]
+
+
+def build_controls_report(ep: dict[str, Any], sc: dict[str, Any], f: dict[str, Any], *, fp_rate: float, fp_flat: float) -> dict[str, Any]:
+    """The controls assessment document (pure: everything comes in through `f`, see _control_facts)."""
+    attacks: list[dict[str, Any]] = f["attacks"]
+    fraud: dict[str, str | None] = f["fraud"]
+    legit: dict[str, dict[str, Any]] = f["legit"]
+    escalations: dict[str, dict[str, Any]] = f["escalations"]
+    by_id = {a["id"]: a for a in attacks}
+    money: list[dict[str, Any]] | None = f.get("money")
+
+    def split(attack_ids: set[str] | None) -> tuple[float | None, float | None]:
+        """(to attacker-controlled accounts, to real parties) for these attacks' payments (None = every payment)."""
+        if money is None:
+            return None, None
+        rows = [m for m in money if attack_ids is None or m["attack_id"] in attack_ids]
+        return _r2(sum(m["amount"] for m in rows if m["to_attacker"])), _r2(sum(m["amount"] for m in rows if not m["to_attacker"]))
+
+    def parts(lost: float, attack_ids: set[str] | None) -> tuple[float | None, float | None]:
+        """(to attacker accounts, to real parties) of `lost`: the real-party part is the rest, so the two always add up."""
+        to_attacker = split(attack_ids)[0]
+        return (None, None) if to_attacker is None else (to_attacker, _r2(lost - to_attacker))
+
+    side = {**{e: "legit" for e in legit}, **{e: "fraud" for e in fraud}}
+
+    verdicts_on: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for v in f["verdicts"]:
+        if v["entity_id"]:
+            verdicts_on[v["entity_id"]].append(v)
+    flags_on: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for fl in f["flags"]:
+        flags_on[fl["entity_id"]].append(fl)
+
+    # ---- controls: one row per rule id the gate fired ----
+    rows: dict[str, dict[str, Any]] = {}
+    for v in f["verdicts"]:
+        eid, kind = v["entity_id"], side.get(v["entity_id"] or "", "other")
+        aid = fraud.get(eid) if eid else None
+        for rule in dict.fromkeys(v["rules"]):
+            c = rows.setdefault(
+                rule,
+                {
+                    "control_id": rule,
+                    "fired": 0,
+                    "blocks": 0,
+                    "escalations": 0,
+                    "notes": 0,
+                    "_fraud": {},
+                    "_legit": {},
+                    "_fraud_stop": set(),
+                    "_legit_stop": set(),
+                    "_schemes": {},
+                    "_ids": [],
+                },
+            )
+            c["fired"] += 1
+            c[{"block": "blocks", "escalate": "escalations"}.get(v["verdict"], "notes")] += 1
+            if len(c["_ids"]) < _EVIDENCE_CAP:
+                c["_ids"].append(v["id"])
+            if kind in ("fraud", "legit") and eid:
+                c[f"_{kind}"][eid] = max(c[f"_{kind}"].get(eid, 0.0), v["amount"] or 0.0)
+                if v["verdict"] != "allow":
+                    c[f"_{kind}_stop"].add(eid)
+            if aid in by_id:
+                c["_schemes"][by_id[aid]["scheme_id"]] = None
+    controls = []
+    for c in rows.values():
+        out = {k: v for k, v in c.items() if not k.startswith("_")}
+        for kind in ("fraud", "legit"):
+            out[f"on_{kind}"] = {"n": len(c[f"_{kind}"]), "dollars": _r2(sum(c[f"_{kind}"].values())), "stopped": len(c[f"_{kind}_stop"])}
+        out["schemes"] = list(c["_schemes"])
+        out["effect"] = _effect(c["blocks"], c["escalations"], c["notes"])
+        out["learned"] = c["control_id"].startswith("learned:")
+        out["verdict_ids"] = c["_ids"]
+        controls.append(out)
+    controls.sort(key=lambda c: (-c["on_fraud"]["stopped"], -c["on_fraud"]["n"], -c["fired"], c["control_id"]))
+
+    # ---- schemes: one row per red scheme attempted, in first-launch order ----
+    entities: dict[str, set[str]] = defaultdict(set)
+    for eid, aid in fraud.items():
+        if aid:
+            entities[aid].add(eid)
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for a in attacks:
+        groups.setdefault(a["scheme_id"], []).append(a)
+    schemes, gaps, evidence = [], [], []
+    for scheme_id, atks in groups.items():
+        ents = set().union(*(entities[a["id"]] for a in atks))
+        vs = sorted((v for e in ents for v in verdicts_on.get(e, [])), key=lambda v: (v["day"], v["id"]))
+        fls = sorted((fl for e in ents for fl in flags_on.get(e, [])), key=lambda fl: (fl["day"], fl["id"]))
+        esc = [escalations[v["id"]] for v in vs if v["id"] in escalations]
+        caught_by = list(dict.fromkeys(r for v in vs if v["verdict"] != "allow" for r in v["rules"]))
+        noted_by = list(dict.fromkeys(r for v in vs if v["verdict"] == "allow" for r in v["rules"]))
+        lat = [a["detected_day"] - a["day_launched"] for a in atks if a["detected_day"] is not None]
+        outcomes = dict.fromkeys(_ATTACK_OUTCOMES, 0)
+        for a in atks:
+            outcomes[a["outcome"]] = outcomes.get(a["outcome"], 0) + 1
+        extracted = _r2(sum(a["amount_extracted"] for a in atks))
+        to_attacker, to_real = parts(extracted, {a["id"] for a in atks})
+        frozen_here = sorted(ents & f["frozen"])
+        row = {
+            "scheme_id": scheme_id,
+            "display_name": atks[0]["display_name"],
+            "attempts": len(atks),
+            "first_day": min(a["day_launched"] for a in atks),
+            "targeted": _r2(sum(a["target_amount"] for a in atks)),
+            "extracted": extracted,
+            "lost": extracted,
+            "to_attacker_accounts": to_attacker,
+            "to_real_parties": to_real,
+            "outcomes": outcomes,
+            "caught_by": caught_by,
+            "noted_by": noted_by,
+            "flags": len(fls),
+            "vendors_frozen": len(frozen_here),
+            "escalations": {s: sum(1 for e in esc if e["status"] == s) for s in ("approved", "blocked", "timeout", "open")},
+            "detection_latency_days": round(sum(lat) / len(lat), 2) if lat else None,
+        }
+        schemes.append(row)
+        evidence.append(
+            {
+                "scheme_id": scheme_id,
+                "attack_ids": [a["id"] for a in atks],
+                "entity_ids": sorted(ents)[:_EVIDENCE_CAP],
+                "verdict_ids": [v["id"] for v in vs][:_EVIDENCE_CAP],
+                "escalation_ids": [e["id"] for e in esc],
+                "flag_ids": [fl["id"] for fl in fls if fl["id"]],
+            }
+        )
+        if extracted > 0:
+            paid_ents = set().union(*(f["paid"].get(a["id"], set()) for a in atks)) or ents
+            pv = [v for e in paid_ents for v in verdicts_on.get(e, [])]
+            if any(escalations.get(v["id"], {}).get("status") == "approved" for v in pv):
+                why = "escalation approved"
+            elif any(v["verdict"] != "allow" and not v["enforced"] for v in pv):
+                why = "not enforced"
+            elif any(v["verdict"] == "allow" and v["rules"] for v in pv):
+                why = "note only"
+            elif fls or frozen_here:
+                why = "audit only"
+            else:
+                why = "no control fired"
+            gaps.append(
+                {
+                    "scheme_id": scheme_id,
+                    "display_name": row["display_name"],
+                    "extracted": extracted,
+                    "why": why,
+                    "controls_on_paid": list(dict.fromkeys(r for v in pv for r in v["rules"])),
+                    "caught_elsewhere": caught_by,
+                    "audit_detected": bool(fls or frozen_here),
+                    "paid_entity_ids": sorted(paid_ents)[:_EVIDENCE_CAP],
+                }
+            )
+    gaps.sort(key=lambda g: -g["extracted"])
+
+    # ---- false positives: each legit item once, by its worst outcome (score.compute's rule) ----
+    fp_items = []
+    for eid, item in f.get("fp_pool", legit).items():
+        vs = verdicts_on.get(eid, [])
+        stops = [v for v in vs if v["verdict"] != "allow"]
+        blocked = (
+            item["ended_blocked"]
+            or any(v["verdict"] == "block" for v in vs)
+            or any(escalations.get(v["id"], {}).get("status") in ("blocked", "timeout") for v in vs)
+        )
+        escalated = any(v["verdict"] == "escalate" for v in vs)
+        if not (blocked or escalated):
+            continue
+        fp_items.append(
+            {
+                "entity_type": item["entity_type"],
+                "entity_id": eid,
+                "amount": _r2(item["amount"]),
+                "verdict": "block" if blocked else "escalate",
+                "rules": list(dict.fromkeys(r for v in stops for r in v["rules"])),
+                "reason": stops[-1]["reason"] if stops else "ended blocked",
+                "day": min((v["day"] for v in stops), default=None),
+                "enforced": any(v["enforced"] for v in stops) if stops else True,
+                "cost": _r2(item["amount"] * fp_rate + fp_flat if blocked else fp_flat),
+                "verdict_ids": [v["id"] for v in stops],
+            }
+        )
+    fp_items.sort(key=lambda i: (-i["cost"], i["entity_id"]))
+
+    status = ep.get("status")
+    lost = _r2(_amount(sc.get("dollars_extracted")))
+    lost_parts = parts(lost, None)
+    gate = {k: sum(1 for v in f["verdicts"] if v["verdict"] == k) for k in ("allow", "block", "escalate")}
+    gate["total"] = len(f["verdicts"])
+    gate["escalations"] = {s: sum(1 for e in escalations.values() if e["status"] == s) for s in ("approved", "blocked", "timeout", "open")}
+    return {
+        "episode": {
+            k: ep.get(k)
+            for k in ("id", "seed", "controller_mode", "days", "status", "current_day", "lineage_id", "generation", "created_at", "started_at", "finished_at")
+        },
+        "final": status in _FINAL_STATUSES,
+        "source": f["source"],
+        "score": sc,
+        # money lost to fraud (= score.dollars_extracted) by where it landed; None for a replay (no payee accounts)
+        "lost": lost,
+        "to_attacker_accounts": lost_parts[0],
+        "to_real_parties": lost_parts[1],
+        # lost money no scheme row accounts for (a red payment with no attack, or a revealed attack's frozen figures),
+        # so the scheme table reconciles: sum(schemes[].lost) + unattributed == lost
+        "unattributed": _r2(lost - sum(s["lost"] for s in schemes)),
+        "totals": {
+            "attempted": _r2(sum(a["target_amount"] for a in attacks)),
+            "extracted": _r2(_amount(sc.get("dollars_extracted"))),
+            "blocked": _r2(_amount(sc.get("dollars_blocked"))),
+            "attacks": len(attacks),
+            "schemes": len(schemes),
+            "schemes_with_loss": len(gaps),
+            "controls_seen": len(controls),
+        },
+        "gate": gate,
+        "controls": controls,
+        "schemes": schemes,
+        "gaps": gaps,
+        "false_positives": {
+            "cost": _r2(_amount(sc.get("false_positive_cost"))),
+            "legit_blocked": sum(1 for i in fp_items if i["verdict"] == "block"),
+            "legit_escalated": sum(1 for i in fp_items if i["verdict"] == "escalate"),
+            "total_items": len(fp_items),
+            "items": fp_items[:50],
+            "penalty": {"rate": fp_rate, "flat": fp_flat},
+        },
+        "audit": {
+            "flags_raised": len(f["flags"]),
+            "flags_on_fraud": sum(1 for fl in f["flags"] if fl["entity_id"] in fraud),
+            "flags_on_legit": sum(1 for fl in f["flags"] if fl["entity_id"] in legit),
+            "vendors_frozen": len(f["frozen"]),
+            "fraud_vendors_frozen": len(f["frozen"] & set(fraud)),
+            "reports": f["reports"],
+        },
+        "evidence": evidence,
+    }
+
+
+@router.get("/episodes/{episode_id}/controls")
+async def controls_report(episode_id: str):
+    """Controls assessment for an episode: per gate control (what it fired on, fraud vs legit, its effect), per red
+    scheme (attempts, outcomes, which controls caught it, detection latency), gaps (schemes that extracted money and
+    why), false positives (cost, items), blue's audit activity and evidence ids. Money in dollars. Money lost to fraud
+    (`lost` = score.dollars_extracted, and per scheme) is split by where it landed: `to_attacker_accounts` (a red
+    vendor's/employee's account or an approved red bank change's new account) vs `to_real_parties` (an overpayment to a
+    real vendor or employee on a fraudulent document); both null for a replay. `final` = the run has
+    ended (status finished/failed); the frontend serves it to site viewers only then. A replay is derived from its events."""
+    ep = await _ep(episode_id)
+    if is_replay(episode_id):
+        rows = await db.fetch(
+            "SELECT day, type, payload FROM events WHERE episode_id=$1 AND type = ANY($2::text[]) ORDER BY id", episode_id, _CONTROL_EVENT_TYPES
+        )
+        facts = _facts_from_events(episode_id, rows)
+    else:
+        facts = await _control_facts(episode_id)
+    return build_controls_report(ep, await _score(episode_id), facts, fp_rate=settings.fp_penalty_rate, fp_flat=settings.fp_flat_penalty)
