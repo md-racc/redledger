@@ -362,9 +362,12 @@ async def compute(episode_id: str) -> dict[str, Any]:
     fp_cost = (
         sum(float(r["amount"]) for r in legit_blocked_rows) * settings.fp_penalty_rate + (len(legit_blocked_rows) + legit_escalated) * settings.fp_flat_penalty
     )
+    # Seed history's paid status_day/paid_day can land on days 0..10 (company.seed_episode draws them
+    # independently of the episode clock): those were paid by the seed, not processed by green.
     legit_processed = int(
         await db.fetchval(
-            "SELECT COUNT(*) FROM invoices WHERE episode_id=$1 AND origin='sim' AND status='paid' AND status_day >= 0 AND NOT (id = ANY($2::text[]))",
+            "SELECT COUNT(*) FROM invoices i WHERE i.episode_id=$1 AND i.origin='sim' AND i.status='paid' AND i.status_day >= 0 AND NOT (i.id = ANY($2::text[])) "
+            "AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND p.paid_by='seed')",
             episode_id,
             diverted,
         )

@@ -555,3 +555,13 @@ async def test_null_attack_id_change_still_uses_same_day_fallback(episode: str) 
     assert (await _attack(linked))["outcome"] == "blocked"
     assert (await _attack(legacy))["outcome"] == "blocked"
     assert (await score.compute(episode))["dollars_blocked"] == 5_000
+
+
+async def test_seed_history_is_not_legit_processed(episode: str) -> None:
+    """Seeded invoices can carry a paid status_day inside the episode window; they were paid by the
+    seed, so an untouched day-0 episode has processed nothing."""
+    from seed.company import seed_episode
+
+    await seed_episode(episode, 42)
+    assert await db.fetchval("SELECT COUNT(*) FROM invoices WHERE episode_id=$1 AND status='paid' AND status_day >= 0", episode) > 0
+    assert (await score.compute(episode))["legit_processed"] == 0
