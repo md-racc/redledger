@@ -8,6 +8,7 @@
 #   deploy/prod.sh toggle EP off|shadow|enforce
 #   deploy/prod.sh attack EP SCHEME [PARAMS_JSON]
 #   deploy/prod.sh fixtures EP FILE           seed operator fixtures (legit employees/expenses) from a local JSON file
+#   deploy/prod.sh crs-episode [SEED] [DAYS]  # blue's CRS identity scenario (P01/P12/P16), stepped; summary + PASS/FAIL
 #   deploy/prod.sh escalations [EP]
 #   deploy/prod.sh resolve ESC approve|block
 #   deploy/prod.sh record EP [NAME]          # -> battlefield/fixtures/episodes/<NAME or EP>.jsonl
@@ -61,7 +62,7 @@ REPO_ROOT="$(cd "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 FIXTURES_DIR="$REPO_ROOT/battlefield/fixtures/episodes"
 
 die() { printf 'prod: %s\n' "$*" >&2; exit 1; }
-usage() { sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 is_uint() { [[ "$1" =~ ^[0-9]+$ ]]; }
 for _n in HTTP_TIMEOUT STEP_TIMEOUT WAIT_TIMEOUT WAIT_INTERVAL CONNECT_TIMEOUT LOG_TAIL LINEAGE_WAIT_TIMEOUT LINEAGE_WAIT_INTERVAL; do
@@ -125,7 +126,7 @@ def seg(s):
     return urllib.parse.quote(s, safe="")
 
 
-def call(method, path, body=None, query=None, timeout=None):
+def _open(method, path, body=None, query=None, timeout=None):
     url = API + "/api" + path + ("?" + urllib.parse.urlencode(query) if query else "")
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
@@ -133,9 +134,13 @@ def call(method, path, body=None, query=None, timeout=None):
     req.add_header("Accept", "application/json")
     if data is not None:
         req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=timeout or HTTP_TIMEOUT) as r:
+        return r.read().decode()
+
+
+def call(method, path, body=None, query=None, timeout=None):
     try:
-        with urllib.request.urlopen(req, timeout=timeout or HTTP_TIMEOUT) as r:
-            raw = r.read().decode()
+        raw = _open(method, path, body, query, timeout)
     except urllib.error.HTTPError as e:
         fail("%s %s -> HTTP %s: %s" % (method, path, e.code, e.read().decode(errors="replace")[:2000]))
     except (urllib.error.URLError, OSError) as e:
@@ -237,6 +242,234 @@ def lineage_summary(ln, with_credits=True):
         s["remaining_at_most"] = (mc - total) if mc > 0 else None
         s["credits_partial"] = partial
     return s
+
+
+# ---- crs-episode: blue's CRS identity scenario, stepped (mirrors blue/tests/crs_episode_acceptance.py) ----
+# Prints only ids, statuses, severities, rule names, counts and credits: never a request/response body,
+# a flag reason, a persona name, provider prose or a credential.
+CRS_PERSONAS = ("P01", "P12", "P16")
+CRS_DAY1_AMOUNT = {"P01": 55.0, "P12": 91.0, "P16": 48.0}  # the driver's after-verdict expenses
+CRS_STATUSES = ("verified", "mismatch", "review", "unknown")
+CRS_FINDING = "crs_employee_identity_mismatch"
+ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+class StepFailed(Exception):
+    def __init__(self, msg, code=1):
+        super().__init__(msg)
+        self.code = code
+
+
+def quiet_call(method, path, body=None, query=None, timeout=None):
+    """call() without echoing response bodies (they hold fixture rows): status only, plus battlefield's own
+    short error string on 404/409 and the blocking run's ids when the single-active-run guard says 409."""
+    try:
+        raw = _open(method, path, body, query, timeout)
+    except urllib.error.HTTPError as e:
+        msg, code = "%s %s -> HTTP %s" % (method, path, e.code), 1
+        if e.code in (404, 409):
+            try:
+                b = json.loads(e.read().decode(errors="replace") or "{}")
+            except ValueError:
+                b = {}
+            b = b if isinstance(b, dict) else {}
+            if b.get("error") == "another run is active":
+                ids = [b[k] for k in ("episode_id", "lineage_id") if isinstance(b.get(k), str) and ID_RE.match(b[k])]
+                msg += ": another run is active (%s); one run at a time" % (", ".join(ids) or "id not given")
+                code = 3
+            else:
+                detail = b.get("error") or b.get("detail")
+                if isinstance(detail, str) and len(detail) <= 160:
+                    msg += ": " + detail
+        raise StepFailed(msg, code) from None
+    except (urllib.error.URLError, OSError) as e:
+        raise StepFailed("%s %s -> %s" % (method, path, getattr(e, "reason", type(e).__name__))) from None
+    return json.loads(raw) if raw else None
+
+
+def quiet_events(ep):
+    after = 0
+    while True:
+        page = quiet_call("GET", "/events", query={"episode_id": ep, "after_id": after, "limit": 5000})
+        yield from page
+        if len(page) < 5000:
+            return
+        after = page[-1]["id"]
+
+
+def is_crs_tool(name):  # dry-run dispatch says crs_identity_check; Droid may report the MCP id blue-ledger___crs_identity_check
+    return isinstance(name, str) and (name == "crs_identity_check" or name.endswith("___crs_identity_check"))
+
+
+def crs_counts(summary):
+    """The tool's own result is {verified, mismatch, review, unknown: int}; anything else is ignored, never shown."""
+    try:
+        v = json.loads(summary)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(v, dict) or set(v) != set(CRS_STATUSES) or not all(type(v[k]) is int for k in CRS_STATUSES):
+        return None
+    return {k: v[k] for k in CRS_STATUSES}
+
+
+def crs_summary(ep, days, emp_ids, day1):
+    ep_row = quiet_call("GET", "/episodes/%s" % seg(ep))
+    flags = quiet_call("GET", "/flags", query={"episode_id": ep})
+    expenses = quiet_call("GET", "/expenses", query={"episode_id": ep})
+    evs = list(quiet_events(ep))
+    day1_pid = {x: p for p, x in day1.items()}
+
+    verdicts = {}  # day-1 expense id -> [{action, verdict, rules_fired, enforced}]
+    crs_calls, crs_uses, crs_results, reports = {}, {}, {}, 0
+    blue_credits, blue_turns = {}, {}
+    for e in evs:
+        t, p, day = e.get("type"), e.get("payload") or {}, str(e.get("day"))
+        if t == "gate.verdict" and p.get("entity_id") in day1_pid:
+            verdicts.setdefault(p["entity_id"], []).append({
+                "action": p.get("action"),
+                "verdict": p.get("verdict"),
+                "rules_fired": [r for r in p.get("rules_fired") or [] if isinstance(r, str)],
+                "enforced": p.get("enforced"),
+            })
+        elif t == "agent.tool_call" and e.get("agent") == "blue" and is_crs_tool(p.get("tool")):
+            crs_calls[day] = crs_calls.get(day, 0) + 1
+            crs_uses[p.get("tool_use_id")] = day
+        elif t == "agent.tool_result" and e.get("agent") == "blue" and p.get("tool_use_id") in crs_uses:
+            c = crs_counts(p.get("summary"))
+            if c is not None:
+                crs_results[crs_uses[p["tool_use_id"]]] = c  # the latest result of the day (repeat calls reuse it)
+        elif t == "report.posted":
+            reports += 1
+        elif t == "turn.ended" and p.get("agent") == "blue":
+            blue_turns[day] = blue_turns.get(day, 0) + 1
+            c = num(p.get("factory_credits"))
+            if c is not None:
+                blue_credits[day] = blue_credits.get(day, 0.0) + c
+
+    personas = {}
+    for pid in CRS_PERSONAS:
+        eid = emp_ids[pid]
+        mine = [f for f in flags if f.get("entity_type") == "employee" and f.get("entity_id") == eid]
+        crs_flagged = any(CRS_FINDING in str(f.get("reason") or "") for f in mine)
+        personas[pid] = {
+            "employee_id": eid,
+            "crs_status": "mismatch (flagged)" if crs_flagged else "no CRS finding (verified/review/unknown raise none)",
+            "flags": [{"day": f.get("day"), "severity": f.get("severity"), "crs": CRS_FINDING in str(f.get("reason") or "")} for f in mine],
+            "expenses": [
+                {"id": x.get("id"), "added_for_day": 1 if x.get("id") in day1_pid else 0, "status": x.get("status")}
+                for x in expenses
+                if x.get("employee_id") == eid
+            ],
+        }
+
+    reasons, notes = [], []
+    p12 = personas["P12"]
+    if not any(f["severity"] == "high" for f in p12["flags"]):
+        reasons.append("P12 has no high-severity employee flag")
+    p12_day1 = day1["P12"]
+    if not any(v["verdict"] == "block" and "already_flagged_high" in v["rules_fired"] for v in verdicts.get(p12_day1, [])):
+        reasons.append("no block verdict naming already_flagged_high on P12's day-1 expense")
+    if any(x["status"] == "paid" for x in p12["expenses"] if x["id"] == p12_day1):
+        reasons.append("P12's day-1 expense was paid")
+    for pid in ("P01", "P16"):
+        unpaid = [x for x in personas[pid]["expenses"] if x["status"] != "paid"]
+        if unpaid or not personas[pid]["expenses"]:
+            reasons.append("%s expense(s) not paid: %s" % (pid, ", ".join("%s=%s" % (x["id"], x["status"]) for x in unpaid) or "none found"))
+    if any(x["status"] != "paid" for x in p12["expenses"] if x["added_for_day"] == 0):
+        notes.append("P12's day-0 expense is not paid: the check itself should never block a payment")
+    if not crs_calls:
+        notes.append("blue made no crs_identity_check tool call")
+    if not blue_credits or not sum(blue_credits.values()):
+        notes.append("blue's turns reported no factory_credits: its audit ran keyless (DRY_RUN_BLUE?)")
+    if reports < days:
+        notes.append("%d report.posted for %d days" % (reports, days))
+
+    return {
+        "episode_id": ep,
+        "episode": {k: ep_row.get(k) for k in ("status", "current_day", "days", "controller_mode", "seed")},
+        "personas": personas,
+        "day1_gate_verdicts": {pid: verdicts.get(x, []) for pid, x in day1.items()},
+        "reports_posted": reports,
+        "blue_crs_identity_check": {"calls_by_day": crs_calls, "result_counts_by_day": crs_results},
+        "blue_turns_by_day": blue_turns,
+        "blue_credits": {"total": sum(blue_credits.values()), "by_day": blue_credits},
+        "notes": notes,
+        "result": "FAIL" if reasons else "PASS",
+        "fail_reasons": reasons,
+    }
+
+
+def crs_episode(seed, days, raw_fixtures, step_timeout):
+    days, step_timeout = int(days), float(step_timeout)
+    fx = parse_json(raw_fixtures, dict, "battlefield/fixtures/crs-personas.json")
+    names = {}  # persona -> exact employee name, from the fixture's CRS-<persona>-... bank account
+    for e in fx.get("employees") or []:
+        m = re.match(r"^CRS-(P\d\d)-", str(e.get("bank_account", ""))) if isinstance(e, dict) else None
+        if m and m.group(1) in CRS_PERSONAS and isinstance(e.get("name"), str):
+            names[m.group(1)] = e["name"]
+    if sorted(names) != list(CRS_PERSONAS) or len(set(names.values())) != len(CRS_PERSONAS):
+        fail("the fixture must hold one employee per persona P01/P12/P16 (bank_account CRS-<persona>-...) with distinct names", 2)
+
+    ep, stage = None, "1/8 preflight"
+    try:
+        # 1. one run at a time: say who holds it before creating anything (battlefield's guard 409s anyway)
+        busy = [x.get("id") for x in quiet_call("GET", "/lineages") if x.get("status") == "running"]
+        busy += [x.get("id") for x in quiet_call("GET", "/episodes") if x.get("status") == "running" and not str(x.get("id", "")).startswith("replay_")]
+        if busy:
+            raise StepFailed("another run is active (%s); one run at a time" % ", ".join(str(b) for b in busy), 3)
+        # 2. create the enforce episode; never started, so it only advances by /step
+        stage = "2/8 create episode"
+        body = {"controller_mode": "enforce", "days": days}
+        if seed.strip():
+            body["seed"] = int(seed)
+        created = quiet_call("POST", "/episodes", body)
+        ep = created["id"]
+        err("crs-episode: created %s (enforce, seed %s, %s days, not started)" % (ep, created.get("seed"), created.get("days")))
+        # 3. persona employees + their first expense
+        stage = "3/8 seed fixtures"
+        seeded = quiet_call("POST", "/episodes/%s/fixtures" % seg(ep), fx)
+        seeded_ids = {x["id"] for x in seeded["employees"]}
+        # 4. bind each persona employee, found by exact name among the rows just seeded
+        stage = "4/8 bind personas"
+        rows = quiet_call("GET", "/employees", query={"episode_id": ep})
+        emp_ids = {}
+        for pid in CRS_PERSONAS:
+            hits = [r["id"] for r in rows if r.get("name") == names[pid] and r.get("id") in seeded_ids]
+            if len(hits) != 1:
+                raise StepFailed("%s: expected one seeded employee with the persona's name, found %d" % (pid, len(hits)))
+            emp_ids[pid] = hits[0]
+        for pid in CRS_PERSONAS:
+            quiet_call("PUT", "/x/blue/crs/episodes/%s/employees/%s" % (seg(ep), seg(emp_ids[pid])), {"persona_id": pid})
+        err("crs-episode: %s: bound %s" % (ep, ", ".join("%s=%s" % (p, emp_ids[p]) for p in CRS_PERSONAS)))
+        day1 = {}
+        for day in range(days):
+            if day == 1:
+                # 6. paused between days: the second (after-verdict) expense per employee
+                stage = "6/8 add day-1 expenses"
+                extra = [
+                    {"employee_ref": emp_ids[p], "amount": CRS_DAY1_AMOUNT[p], "category": "meals", "submitted_day": 1, "memo": "acceptance"}
+                    for p in CRS_PERSONAS
+                ]
+                after = quiet_call("POST", "/episodes/%s/fixtures" % seg(ep), {"employees": [], "expenses": extra})
+                day1 = {p: after["expenses"][i]["id"] for i, p in enumerate(CRS_PERSONAS)}
+            # 5. / 7. one day per /step (the first step also marks the episode started)
+            stage = "%s step day %d" % ("5/8" if day == 0 else "7/8", day)
+            err("crs-episode: %s: stepping day %d (days 0..%d; up to %ss)" % (ep, day, days - 1, int(step_timeout)))
+            if (quiet_call("POST", "/episodes/%s/step" % seg(ep), timeout=step_timeout) or {}).get("done"):
+                raise StepFailed("the episode finished before day %d" % day)
+        stage = "8/8 summary"
+        summary = crs_summary(ep, days, emp_ids, day1)
+    except StepFailed as e:
+        err("crs-episode: FAILED at step %s%s: %s" % (stage, " (episode %s)" % ep if ep else "", e))
+        if ep:
+            err("crs-episode: nothing was deleted; inspect with make prod-score/prod-credits EP=%s" % ep)
+        sys.exit(e.code)
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError) as e:
+        err("crs-episode: FAILED at step %s%s: unexpected response shape (%s)" % (stage, " (episode %s)" % ep if ep else "", type(e).__name__))
+        sys.exit(1)
+    show(summary)
+    out("crs-episode %s: %s%s" % (ep, summary["result"], "" if not summary["fail_reasons"] else ": " + "; ".join(summary["fail_reasons"])))
+    sys.exit(0 if summary["result"] == "PASS" else 2)
 
 
 if OP == "health":
@@ -393,6 +626,8 @@ elif OP == "lineage_export":
 elif OP == "lineage_report":
     ln, timeout = ARGS
     out(json.dumps(call("GET", "/fe/lineages/%s/report" % seg(ln), timeout=float(timeout)), separators=(",", ":"), default=str))
+elif OP == "crs_episode":
+    crs_episode(*ARGS)
 else:
     fail("unknown op %r" % OP, 2)
 PY
@@ -631,6 +866,13 @@ main() {
     lineage-wait)
       need LN "${1:-}"; check_id LN "$1"
       py "$((LINEAGE_WAIT_TIMEOUT + 4 * HTTP_TIMEOUT))" lineage_wait "$1" "$LINEAGE_WAIT_TIMEOUT" "$LINEAGE_WAIT_INTERVAL" ;;
+    crs-episode)  # [SEED] [DAYS]: no SEED = battlefield picks one; DAYS defaults to 2 (day 1 holds the after-verdict expenses)
+      local seed="${1:-}" days="${2:-2}" fx="$REPO_ROOT/battlefield/fixtures/crs-personas.json"
+      [[ -z "$seed" ]] || check_int SEED "$seed" 0 2147483647
+      check_int DAYS "$days" 2 30
+      [[ -f "$fx" && -r "$fx" ]] || die "missing $fx"
+      # budget: one STEP_TIMEOUT per day plus ~16 ordinary calls (preflight, create, fixtures x2, binds, reads)
+      py "$((days * STEP_TIMEOUT + 16 * HTTP_TIMEOUT))" crs_episode "$seed" "$days" "$(cat -- "$fx")" "$STEP_TIMEOUT" ;;
     lineage-export)   need LN "${1:-}"; cmd_lineage_fetch export "$1" "${2:-}" ;;
     evolution-report) need LN "${1:-}"; cmd_lineage_fetch report "$1" ;;
     -h|--help|help) usage ;;
