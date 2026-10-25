@@ -62,6 +62,9 @@ const ALIAS: Record<string, string> = {
   bank_change_requested: "recent_bank_change",
 };
 
+/** Why one rule makes the controller stop, in plain words; null for a rule this file does not know. */
+export const ruleWhy = (rule: string): string | null => WHY[ALIAS[rule] ?? rule] ?? null;
+
 const pretty = (id: string) => id.replace(/^[a-z_]*:/, "").replace(/[._]/g, " ");
 
 export function explainEscalation(esc: Pick<Escalation, "action" | "amount" | "reason">, verdict?: Pick<VerdictCard, "rules_fired" | "reason"> | null): EscalationExplained {

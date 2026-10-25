@@ -4,6 +4,7 @@
 import { useEffect, useRef } from "react";
 import { useArena } from "@/lib/arena/store";
 import { subscribeTimeline, timeline } from "@/lib/arena/timeline";
+import { useRole } from "@/lib/role";
 
 const Letters = ({ text, base }: { text: string; base: number }) => (
   <>
@@ -13,7 +14,9 @@ const Letters = ({ text, base }: { text: string; base: number }) => (
   </>
 );
 
-export function TitleOverlay({ onShow }: { onShow: () => void }) {
+export function TitleOverlay({ onShow, onPitch }: { onShow: () => void; onPitch?: () => void }) {
+  // pitch mode starts a live episode, which only an admin can do (a viewer can still press P to join the run in progress)
+  const admin = useRole() === "admin";
   const stage = useArena((s) => s.stage);
   const skip = useArena((s) => s.setSkipIntro);
   const root = useRef<HTMLElement>(null);
@@ -71,6 +74,12 @@ export function TitleOverlay({ onShow }: { onShow: () => void }) {
           <span>90-second show</span>
           <i className="pill-dot" aria-hidden>▶</i>
         </button>
+        {admin && onPitch && (
+          <button className="pill live" onClick={onPitch} title="Pitch mode: a live episode, narrated from its real events (P)">
+            <span>Live pitch</span>
+            <i className="pill-dot" aria-hidden>●</i>
+          </button>
+        )}
       </div>
     </section>
   );
