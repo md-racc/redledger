@@ -318,13 +318,14 @@ async def test_lost_money_is_split_by_where_it_landed(episode: str) -> None:
     async with _client() as c:
         rep = (await c.get(f"/api/fe/episodes/{episode}/controls", headers=f.auth())).json()
     assert not (_keys(rep) & GROUND_TRUTH_KEYS)
-    assert rep["lost"] == rep["score"]["dollars_extracted"] == round(4380 + 1824.22 + 900 + 500, 2)
+    # #207: a blocked swap's decoy paid into the real account scores $0, so it is in neither part
+    assert rep["lost"] == rep["score"]["dollars_extracted"] == round(4380 + 900 + 500, 2)
     assert rep["to_attacker_accounts"] == 4380 + 900
-    assert rep["to_real_parties"] == round(1824.22 + 500, 2)
+    assert rep["to_real_parties"] == 500
     schemes = {s["scheme_id"]: s for s in rep["schemes"]}
     assert (schemes["ghost_vendor"]["lost"], schemes["ghost_vendor"]["to_attacker_accounts"], schemes["ghost_vendor"]["to_real_parties"]) == (4380, 4380, 0)
-    assert schemes["bank_swap"]["lost"] == round(1824.22 + 900, 2)
-    assert (schemes["bank_swap"]["to_attacker_accounts"], schemes["bank_swap"]["to_real_parties"]) == (900, 1824.22)
+    assert schemes["bank_swap"]["lost"] == 900
+    assert (schemes["bank_swap"]["to_attacker_accounts"], schemes["bank_swap"]["to_real_parties"]) == (900, 0)
     assert (schemes["duplicate_invoice"]["to_attacker_accounts"], schemes["duplicate_invoice"]["to_real_parties"]) == (0, 500)
     for s in rep["schemes"]:
         assert round(s["to_attacker_accounts"] + s["to_real_parties"], 2) == s["lost"] == s["extracted"]
