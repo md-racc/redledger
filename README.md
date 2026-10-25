@@ -6,6 +6,9 @@ control sits in the ledger, not in the agent's prompt.**
 
 Built for Cal Hacks 13.0.
 
+![The arena: red's fraudsters, green's clerks and blue's guards around the ledger, live on app.redledger.us](docs/img/arena.jpg)
+
+
 ## Live site and status
 
 [app.redledger.us](https://app.redledger.us) is public and read-only: anyone can watch a run, and only a
@@ -15,6 +18,8 @@ through, what false positives cost, and how much reached accounts the attacker c
 
 Red and blue's daily audit run live on Factory's Droid SDK (`gpt-5.4-mini`). Green, the clerk, runs on the same
 harness keyless: its full logic, no model. Blue's gate is deterministic rules, not a model.
+
+![An escalation: red asked to change a vendor's bank account while bills are open; the controller holds it and a person decides](docs/img/escalation.jpg)
 
 ## The company
 
