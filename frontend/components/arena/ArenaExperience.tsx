@@ -29,6 +29,7 @@ import { CompareCard } from "./overlays/CompareCard";
 import { EvolutionCard } from "./overlays/EvolutionCard";
 import { Hud } from "./overlays/Hud";
 import { LabelLayer } from "./overlays/LabelLayer";
+import { LendersCard } from "./overlays/LendersCard";
 import { ReportCard } from "./overlays/ReportCard";
 import { Loader } from "./overlays/Loader";
 import { PopLayer } from "./overlays/PopLayer";
@@ -168,10 +169,23 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // a card (compare, evolution, report) belongs to the arena: scrolling back up to the tour closes it
+  // a card (compare, evolution, report) belongs to the arena: scrolling back up to the tour closes it. The lenders card is the
+  // exception: the pitch opens with it, over the title, before anyone has scrolled (L opens it from anywhere).
   useEffect(() => {
-    if (stage !== "arena" && panel && !inShow) setPanel(null);
+    if (stage !== "arena" && panel && panel !== "lenders" && !inShow) setPanel(null);
   }, [stage, panel, inShow, setPanel]);
+
+  // L: what the big lenders have said, with sources (the pitch's opening beat)
+  useEffect(() => {
+    if (inShow) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      if ((e.key === "l" || e.key === "L") && !e.metaKey && !e.ctrlKey && !e.altKey) setPanel(useArena.getState().panel === "lenders" ? null : "lenders");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [inShow, setPanel]);
 
   // escape closes a card
   useEffect(() => {
@@ -216,6 +230,7 @@ export default function ArenaExperience({ agentDetails, autoConverge = true }: P
       <CompareCard sides={sides} open={panel === "compare"} onClose={() => setPanel(null)} />
       <EvolutionCard open={panel === "evolve"} driven={inShow} preferLive={feed.backend.state === "live"} onClose={() => setPanel(null)} />
       <ReportCard state={feed.state} live={feed.source === "live"} open={panel === "report"} onClose={() => setPanel(null)} />
+      <LendersCard open={panel === "lenders"} onClose={() => setPanel(null)} />
       <ShowBar show={show} />
       <AgentModal state={feed.state} catalogs={feed.catalogs} overrides={agentDetails} />
       <LabelLayer />

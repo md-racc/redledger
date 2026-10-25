@@ -47,7 +47,7 @@ knows still maps to some guard (`guardForRule`, stable per id), so a new rule on
 
 ### Green: 12 clients
 
-Id = `green:client_01` … `client_12`. They are slots for Coastal Supply Co.'s counterparties. An entity is bound to a slot
+Id = `green:client_01` … `client_12`. They are slots for the synthetic company's counterparties. An entity is bound to a slot
 by a stable hash (`greenIdFor(entityId)`), so the same vendor or attack always lands on the same client. When
 `GET /fe/episodes/{ep}/vendors` answers, the top 12 vendors by spend fill the slots in order (name, category, risk in the
 dossier).

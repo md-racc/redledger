@@ -69,7 +69,7 @@ Two layers:
 ### `GET /fe/episodes/{ep}/snapshot`
 Company-at-a-glance. Cheap; poll every few seconds if you like.
 ```json
-{ "episode": {...}, "company": { "name": "Coastal Supply Co.", "cash_position": 412033.12, "employees_active": 40,
+{ "episode": {...}, "company": { "name": "Synthetic Co.", "cash_position": 412033.12, "employees_active": 40,
   "vendors": { "active": 61, "frozen": 1, "new_this_episode": 2 }, "paid_last_day": 18822.4 },
   "ap": { "open": { "n": 14, "total": 61200.5 }, "overdue": { "n": 2, "total": 4100 } },
   "controls": { "mode": "enforce", "open_escalations": 1 },

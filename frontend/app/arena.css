@@ -311,12 +311,12 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .speak-act { display: flex; gap: 6px; }
 
 /* ───────── compare + evolution ───────── */
-.cmp, .evo, .rep { position: fixed; z-index: 13; left: var(--pad); right: var(--pad); bottom: var(--pad); width: auto; max-width: 1180px; margin-inline: auto; padding: 4px; background: var(--panel); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(20px); transition: opacity 0.25s var(--ease), transform 0.3s var(--ease), visibility 0s 0.3s; }
-.cmp.is-open, .evo.is-open, .rep.is-open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; transition-delay: 0s; }
-.cmp header, .evo header, .rep header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
+.cmp, .evo, .rep, .lnd { position: fixed; z-index: 13; left: var(--pad); right: var(--pad); bottom: var(--pad); width: auto; max-width: 1180px; margin-inline: auto; padding: 4px; background: var(--panel); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(20px); transition: opacity 0.25s var(--ease), transform 0.3s var(--ease), visibility 0s 0.3s; }
+.cmp.is-open, .evo.is-open, .rep.is-open, .lnd.is-open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; transition-delay: 0s; }
+.cmp header, .evo header, .rep header, .lnd header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
 .cmp-kicker { font-family: var(--caps); font-weight: 600; font-size: 11px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink); }
-.cmp header .icon-btn, .evo header .icon-btn, .rep header .icon-btn { margin-left: auto; width: 28px; height: 28px; }
-.cmp footer, .evo footer, .rep footer { padding: 11px 16px; border-top: 1px solid var(--line-2); font-size: 13px; line-height: 1.5; color: var(--ink-3); }
+.cmp header .icon-btn, .evo header .icon-btn, .rep header .icon-btn, .lnd header .icon-btn { margin-left: auto; width: 28px; height: 28px; }
+.cmp footer, .evo footer, .rep footer, .lnd footer { padding: 11px 16px; border-top: 1px solid var(--line-2); font-size: 13px; line-height: 1.5; color: var(--ink-3); }
 .cmp-cols { display: grid; grid-template-columns: 1fr minmax(180px, 0.45fr) 1fr; }
 .cmp-col { padding: 16px 18px 12px; opacity: 0; animation: cmpin 0.4s var(--ease) forwards; }
 .cmp-col.is-red { box-shadow: inset 0 2px 0 var(--red); }
@@ -333,6 +333,25 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
 .cmp-mid em { font-style: normal; font-size: 13px; color: var(--red); }
 @keyframes cmpin { to { opacity: 1; } }
 .cmp-empty { display: flex; align-items: center; gap: 12px; padding: 16px; } .cmp-empty p { margin: 0; font-size: 14px; color: var(--ink-2); }
+
+/* ───────── the lenders card ───────── */
+.lnd { max-height: calc(100vh - var(--bar) - 2 * var(--pad)); overflow: auto; scrollbar-width: thin; }
+.lnd-intro { margin: 0; padding: 12px 16px; font-size: 14px; line-height: 1.55; color: var(--ink-2); border-bottom: 1px solid var(--line); }
+.lnd a { color: var(--ink); text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.lnd a:hover, .lnd a:focus-visible { text-decoration-color: var(--ink); outline: 0; }
+.lnd-cols { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.lnd-col { padding: 14px 16px; border-left: 1px solid var(--line); font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.lnd-col:first-child { border-left: 0; }
+.lnd-col h4 { margin: 0 0 6px; font-family: var(--caps); font-weight: 600; font-size: 14px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink); line-height: 1.1; }
+.lnd-col p { margin: 0 0 8px; }
+.lnd-col .lnd-chip { display: inline-block; font-family: var(--caps); font-weight: 500; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber); border: 1px solid var(--amber); padding: 3px 7px; }
+.lnd-col .lnd-not { font-family: var(--figures); font-style: italic; font-size: 13px; color: var(--ink-3); }
+.lnd-src { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 12px; }
+.lnd-src li span { margin-left: 6px; color: var(--ink-3); }
+.lnd footer p { margin: 0 0 6px; }
+.lnd footer .lnd-disc { color: var(--ink-3); font-size: 12px; }
+@media (max-width: 1100px) { .lnd-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lnd-col:nth-child(odd) { border-left: 0; } .lnd-col { border-top: 1px solid var(--line); } }
+@media (max-width: 640px) { .lnd-cols { grid-template-columns: 1fr; } .lnd-col { border-left: 0; } }
 
 .evo-src { font-family: var(--caps); font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--amber); border: 1px solid var(--amber); padding: 3px 7px; }
 .evo-wait { margin: 0; padding: 16px; font-size: 14px; color: var(--ink-2); }

@@ -132,7 +132,7 @@ function greenDetails(id: string, s: UIState, c: Catalogs, live: boolean): Agent
     id, team: "green", role: TEAM_META.green.singular,
     title: v?.name ?? spec.name,
     caption: v ? `vendor · ${v.id}` : `client slot · ${String(idx + 1).padStart(2, "0")}`,
-    story: v ? `${v.category ?? "Vendor"} counterparty of Coastal Supply Co.` : spec.blurb,
+    story: v ? `${v.category ?? "Vendor"} counterparty of the company` : spec.blurb,
     status: frozen ? { label: "frozen", tone: "bad" } : live ? { label: v?.status ?? "active", tone: "ok" } : null,
     placeholder: !v && !live,
     sections: [
