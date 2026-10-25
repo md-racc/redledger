@@ -100,11 +100,13 @@ function RealRun() {
   if (data === undefined) return <div className="cmp-empty"><p>Loading the recorded runs…</p></div>;
   if (data === null) return <div className="cmp-empty"><p>The recorded live runs could not be read.</p></div>;
   const { off, enforce } = data.runs;
-  // money lost per the live controls report (#207 scoring), not the recordings' pre-#207 scoreboards (lib/arena/liveRuns.ts)
+  // money lost per the live controls report, not the recordings' superseded scoreboards (lib/arena/liveRuns.ts)
   const offScore = runScore(off);
   const onScore = runScore(enforce);
   const kept = Math.max(0, offScore.dollars_extracted - onScore.dollars_extracted);
-  const notes = [off, enforce].map((r) => r.controls_report).filter((r) => !!r);
+  const fromReport = !!(off.controls_report && enforce.controls_report);
+  // the evidence toggle shows the figures the card is drawn from, not the recordings' superseded scoreboards
+  const evidence = { recorded: data.recorded, where: data.where, runs: Object.fromEntries([off, enforce].map((r) => [r.mode, { episode_id: r.episode_id, seed: r.seed, days: r.days, score: runScore(r), lost_by_day: lostByDay(r), escalations: r.escalations }])) };
   return (
     <>
       <div className="cmp-cols">
@@ -122,8 +124,8 @@ function RealRun() {
       </div>
       <footer>
         Recorded on {data.where} on {data.recorded}: the same seed for {off.days} days, controller off and then on. {data.note} {enforceStory(enforce)}
-        {notes.length > 0 && <> Money lost is from the {notes[0]!.source}: it counts only what reached an account the attacker controls. {enforce.controls_report?.note}</>}
-        <Raw data={data} />
+        {fromReport && <> Figures from the {enforce.controls_report!.source}, which counts money as lost only when it reached an account the attacker controls. {enforce.controls_report!.note}</>}
+        <Raw data={evidence} />
       </footer>
     </>
   );

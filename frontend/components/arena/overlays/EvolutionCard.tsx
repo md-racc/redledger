@@ -4,7 +4,7 @@
 // free play. Pulses the agents a note is about in the arena. Owner: Dev R (Ad since 2026-10-25).
 // Which lineage: `?lineage=<id>`, else the pinned showcase lineage, else the newest finished one (lib/arena/lineage.ts).
 import { useEffect, useRef, useState } from "react";
-import { evoLead } from "@/lib/arena/evoSummary";
+import { evoLead, plainRationale, ruleWords, schemeTakes, takeLabel } from "@/lib/arena/evoSummary";
 import { money } from "@/lib/arena/headlines";
 import { blueControlsAfter, cardLineage, evolvedIn, loadLineageReport, notesAfter, prettyId, visibleGenerations, type EvoAgent, type GenReport, type LineageReport, type LoadedLineage } from "@/lib/arena/lineage";
 import { subscribeShowClock } from "@/lib/arena/showClock";
@@ -98,9 +98,10 @@ const maxMoney = (gens: GenReport[]) => Math.max(1, ...gens.flatMap((g) => [g.sc
 
 function Generation({ g, report, k, max, detail }: { g: GenReport; report: LineageReport; k: number; max: number; detail: boolean }) {
   const notes = notesAfter(report, g.generation);
-  const mix = Object.entries(g.red_mix);
-  /** blue's controls that caught red in this generation, by name (the simple view's one line about blue) */
-  const caught = g.blue_rules.filter((r) => r.on_red > 0).map((r) => pretty(r.rule_id));
+  // per-scheme amounts reconciled with the headline (lib/arena/evoSummary.ts): the chips never add up to more than "Stolen"
+  const takes = schemeTakes(g);
+  /** blue's controls that caught red in this generation, in words (the simple view's one line about blue) */
+  const caught = g.blue_rules.filter((r) => r.on_red > 0).map((r) => ruleWords(r.rule_id));
   const evolved = evolvedIn(report, g.generation);
   const controls = blueControlsAfter(report, g.generation);
   const versions = (a: EvoAgent) => Math.max(0, ...(report.playbooks[a] ?? []).filter((v) => v.generation <= g.generation).map((v) => v.version));
@@ -110,7 +111,7 @@ function Generation({ g, report, k, max, detail }: { g: GenReport; report: Linea
       {g.demo ? (
         <p className="evo-demo">
           The run you just watched starts here: agents arrive carrying their evolved playbooks
-          <span> red v{versions("red")} · blue v{versions("blue")} · green v{versions("green")}</span>
+          {detail && <span> red v{versions("red")} · blue v{versions("blue")} · green v{versions("green")}</span>}
         </p>
       ) : (
         <>
@@ -120,28 +121,27 @@ function Generation({ g, report, k, max, detail }: { g: GenReport; report: Linea
           </div>
           <h5 className="evo-sub">{detail ? "Red tried · blue's controls" : "Red tried"}</h5>
           <ul className="evo-chips">
-            {mix.map(([id, m]) => {
-              const won = (m.outcomes.extracted ?? 0) + (m.outcomes.partial ?? 0) > 0;
-              const result = won ? `stole ${money(m.amount_extracted)}` : "stopped";
-              return <li key={id} className={won ? "win" : "lose"}>{id.startsWith("evolved:") && <i>NEW</i>}{pretty(id)}<em>{detail ? `${m.launched}× · ${result}` : result}</em></li>;
+            {takes.map((t) => {
+              const result = takeLabel(t);
+              return <li key={t.id} className={t.stolen > 0 ? "win" : "lose"}>{t.id.startsWith("evolved:") && <i>NEW</i>}{pretty(t.id)}<em>{detail ? `${t.launched}× · ${result}` : result}</em></li>;
             })}
-            {detail && g.blue_rules.map((r) => <li key={r.rule_id} className="rule">{r.rule_id.startsWith("learned:") && <i>LEARNED</i>}{pretty(r.rule_id)}<em>{r.on_red ? "caught" : "fired"} {r.fired}×{r.precision != null ? ` · precision ${r.precision.toFixed(2)}` : ""}{r.recall != null ? ` · recall ${r.recall.toFixed(2)}` : ""}</em></li>)}
+            {detail && g.blue_rules.map((r) => <li key={r.rule_id} className="rule" title={r.rule_id}>{r.rule_id.startsWith("learned:") && <i>LEARNED</i>}{ruleWords(r.rule_id)}<em>{r.on_red ? "caught" : "fired"} {r.fired}×{r.precision != null ? ` · precision ${r.precision.toFixed(2)}` : ""}{r.recall != null ? ` · recall ${r.recall.toFixed(2)}` : ""}</em></li>)}
           </ul>
           {!detail && caught.length > 0 && <p className="evo-caught">Blue caught red with: {caught.join(", ")}</p>}
           <h5 className="evo-sub">Then they rewrote their playbooks</h5>
           <div className="evo-notes" style={{ opacity: clamp01((k - 0.45) * 4) }}>
             {notes.length === 0 && <p className="evo-quiet">No playbook changes.</p>}
             {notes.map((nt) => (
-              <p key={nt.agent + nt.version} className={`note tone-${TONE[nt.agent]}`}>
-                <b>{nt.agent} v{nt.version}</b>
-                <span>{nt.rationale ? nt.rationale.replace(/_/g, " ") : "rewrote its playbook"}</span>
+              <p key={nt.agent + nt.version} className={`note tone-${TONE[nt.agent]}`} title={detail ? nt.rationale : undefined}>
+                <b>{nt.agent}{detail && ` v${nt.version}`}</b>
+                <span>{plainRationale(nt.agent, nt.rationale, g.score.dollars_extracted)}</span>
                 {detail && <small>{nt.chips.slice(0, 3).join("  ·  ")}</small>}
               </p>
             ))}
             {evolved.map((e) => <p key={e.scheme_id} className="note tone-red"><b>new scheme</b><span>{pretty(e.scheme_id)}, evolved from {pretty(e.parent)}</span></p>)}
-            {controls.on.length > 0 && <p className="note tone-blue"><b>{controls.basis === "playbook" ? "controls switched on" : "rules first fired"}</b><span>{controls.on.map(pretty).join(", ")}</span></p>}
-            {controls.off.length > 0 && <p className="note tone-blue"><b>controls switched off</b><span>{controls.off.map(pretty).join(", ")}</span></p>}
-            {detail && controls.quiet.length > 0 && <p className="note tone-blue"><b>not fired after this generation</b><span>{controls.quiet.map(pretty).join(", ")}</span></p>}
+            {controls.on.length > 0 && <p className="note tone-blue"><b>{controls.basis === "playbook" ? "controls switched on" : "rules first fired"}</b><span>{controls.on.map(ruleWords).join(", ")}</span></p>}
+            {controls.off.length > 0 && <p className="note tone-blue"><b>controls switched off</b><span>{controls.off.map(ruleWords).join(", ")}</span></p>}
+            {detail && controls.quiet.length > 0 && <p className="note tone-blue"><b>not fired after this generation</b><span>{controls.quiet.map(ruleWords).join(", ")}</span></p>}
           </div>
         </>
       )}

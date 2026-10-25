@@ -22,6 +22,11 @@ type State =
   | { kind: "missing" }
   | { kind: "error"; message: string };
 
+/** Download and Print are for the final report only: a pending run (viewer) or a draft (admin, run still going) is not the assessment. */
+export function reportExportable(state: { kind: string; report?: { final?: boolean } }): boolean {
+  return state.kind === "ready" && state.report?.final === true;
+}
+
 export function ReportView({ ep }: { ep: string }) {
   const [state, setState] = useState<State>({ kind: "loading" });
 
@@ -66,8 +71,11 @@ export function ReportView({ ep }: { ep: string }) {
     };
   }, [ep]);
 
+  const exportable = reportExportable(state);
+  const notYet = exportable ? undefined : "Available when the run ends";
+
   const download = useCallback(() => {
-    if (state.kind !== "ready") return;
+    if (state.kind !== "ready" || !state.report.final) return;
     const blob = new Blob([JSON.stringify(state.report, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -89,10 +97,10 @@ export function ReportView({ ep }: { ep: string }) {
           Controls assessment{MOCK ? " (mock data: the recorded demo run)" : ""}
         </span>
         <span className="rr-actions">
-          <button type="button" onClick={download} disabled={state.kind !== "ready"}>
+          <button type="button" onClick={download} disabled={!exportable} title={notYet}>
             Download JSON
           </button>
-          <button type="button" onClick={() => window.print()} disabled={state.kind !== "ready"}>
+          <button type="button" onClick={() => window.print()} disabled={!exportable} title={notYet}>
             Print / Save PDF
           </button>
         </span>

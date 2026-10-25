@@ -47,7 +47,7 @@ Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md
 >
 > This is running live, right now.
 >
-> And this isn't hypothetical. *(Press L.)* Last week Axios reported that big US banks are finding AI agents they never vetted inside customer accounts, and that they can't yet tell a good one from a rogue one. We test the version that's already inside the books.
+> And this isn't hypothetical. *(Press L.)* On October 22, Axios reported that big US banks are finding AI agents they never vetted inside customer accounts, and that they can't yet tell a good one from a rogue one. We test the version that's already inside the books.
 
 ### M — 1:30 to 2:45 (laptop 3, the defense, and the numbers)
 
@@ -69,7 +69,7 @@ Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md
 
 ### Ad — 2:45 to 3:45 (laptop 4, it's real, plus the track line)
 
-> This isn't a mockup. It's five services and a database, hosted on Vultr behind Cloudflare. Only the ledger service can touch the database. Every agent has its own key, can't see the scoreboard, and never sees which rows are fraud. Every deploy goes through eight CI checks and a manual production approval, and there are about fifteen hundred automated tests. Red and blue run on Factory's Droid SDK, and a red turn costs about a cent.
+> This isn't a mockup. It's five services and a database, hosted on Vultr behind Cloudflare. Only the ledger service can touch the database. Every agent has its own key, can't see the scoreboard, and never sees which rows are fraud. Every deploy goes through eight CI checks and a manual production approval, and there are about fifteen hundred automated tests. Red and blue run on Factory's Droid SDK, and a red turn costs about 2,800 Factory credits.
 >
 > *(Read the one line for this judge's track from §2.)*
 >
@@ -87,7 +87,7 @@ Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md
 | What about false positives? | M | They're scored: $50 plus 2% of the amount for every legitimate payment blocked. Blocking everything loses. |
 | What isn't done? | Ad | On prod the clerk runs our logic without a model; its live Droid turn is built but off until it passes acceptance. Blue doesn't learn new rules yet. |
 | What would a company do with this? | Ad | Point its AP agent at this ledger, let red attack it for a few simulated weeks, and read the controls report: what fired, what got through, what it cost. |
-| How much does it cost? | Ad | Cents per simulated day. A red turn is about 2,800 Factory credits. |
+| How much does it cost? | Ad | About 10,000 Factory credits per simulated day: a red turn is about 2,800 and blue's audit about 4,000. |
 | Why does it look like this? | R | *(R's own words on the design.)* |
 | Which banks said that? | R | *(Press L.)* Each one is on the card with its source. Wells Fargo has said nothing we could find, and Morgan Stanley says it hasn't seen one. |
 

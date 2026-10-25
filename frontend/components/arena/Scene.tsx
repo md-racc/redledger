@@ -41,13 +41,14 @@ function ProgressBridge({ onProgress }: { onProgress: Props["onProgress"] }) {
   return null;
 }
 
-/** Applies the quality level to the live renderer: shadow map size and cadence, and built-in tone mapping when the post chain is off. */
+/** Applies the quality level to the live renderer: shadow map cadence, and built-in tone mapping when the post chain is off.
+ *  It never touches `gl.shadowMap.enabled` (the Canvas turns shadows on once): toggling it at runtime without recompiling every
+ *  material binds the wrong texture to the shadow samplers and blacks out the scene (lib/arena/quality.ts). */
 function QualityApplier({ level }: { level: 0 | 1 | 2 | 3 }) {
   const gl = useThree((s) => s.gl);
   const q = QUALITY[level];
   const frame = { n: 0 };
   useEffect(() => {
-    gl.shadowMap.enabled = q.shadows;
     gl.shadowMap.autoUpdate = false;
     gl.shadowMap.needsUpdate = true;
     gl.toneMapping = q.post === "off" ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
@@ -55,7 +56,7 @@ function QualityApplier({ level }: { level: 0 | 1 | 2 | 3 }) {
   }, [gl, q]);
   useFrame(() => {
     // the sun is fixed: refresh the shadow map every few frames instead of every frame
-    if (q.shadows && ++frame.n % q.shadowEvery === 0) gl.shadowMap.needsUpdate = true;
+    if (++frame.n % q.shadowEvery === 0) gl.shadowMap.needsUpdate = true;
   });
   return null;
 }
@@ -96,7 +97,8 @@ export default function Scene({ subscribe, feedActive, onSim, onProgress, tallie
       <ProgressBridge onProgress={onProgress} />
       <QualityApplier level={level} />
       {!pinned && <Governor start={start} onLevel={setLevel} />}
-      <Lights shadowSize={q.shadowMap} />
+      {/* the map size stays at the starting level's: a new size remounts the sun mid-run, so a step down only slows the refresh */}
+      <Lights shadowSize={QUALITY[start].shadowMap} />
       <SkyDome />
       <Water />
       <Palace onGround={onGround} />

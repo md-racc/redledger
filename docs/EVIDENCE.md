@@ -104,8 +104,6 @@ The site is public and read-only; only an admin can act (#152, #159).
 
 ## 3. Re-check before using
 
-- **`SUBMISSION.md` placeholder:** `⟦CRS-LIVE⟧` is still in the text. Fill it only if the table demo happened;
-  otherwise delete the sentence.
 - **Pitch lines** "None of blue's rules fired" and "$18.5k → $93.6k": check against the live Evolution card for
   `ln_f52a3df83c8d` ($18,534 → $93,568 in the live report on 2026-10-25; the old "$19k → $98k" was the pre-#207 export). On that card red's per-attack chips use the stored
   `attacks.amount_extracted` while "Stolen" uses #207 scoring, so chips can sum to more than the total; and the

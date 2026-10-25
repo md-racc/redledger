@@ -124,4 +124,32 @@ describe("live checks", () => {
     const none = liveChecks({ ...base, mode: "recorded", healthMs: null, sync: sync("stream", true) });
     expect(none[0]!.ok).toBe(false);
   });
+
+  it("shows a viewer the relay and arena checks as neutral 'admin only' lines, never FAIL", () => {
+    for (const input of [{ ...base, sync: sync("admins", false) }, { ...base, viewer: true, sync: sync("connecting", false) }]) {
+      const c = liveChecks(input);
+      for (const label of ["relay to the other laptops", "arena laptop connected"]) {
+        const x = c.find((y) => y.label === label)!;
+        expect(x.ok).toBeNull();
+        expect(x.adminOnly).toBe(true);
+        expect(x.detail).toBe("admin only");
+      }
+      expect(c.some((x) => x.ok === false)).toBe(false);
+    }
+    // an admin's missing arena laptop is still a failure
+    expect(liveChecks({ ...base, viewer: false, sync: sync("stream", false) }).find((x) => x.label === "arena laptop connected")!.ok).toBe(false);
+  });
+});
+
+describe("demoPlan", () => {
+  it("pins every day to a scheme that shows on screen, cycling", async () => {
+    const { demoPlan, DEMO_PLAN_CYCLE } = await import("./raw");
+    const p = demoPlan(30);
+    expect(p).toHaveLength(30);
+    expect(p[0]).toEqual({ day: 0, scheme_id: "bank_swap" });
+    expect(p[6]!.scheme_id).toBe("bank_swap");
+    for (const x of p) expect(DEMO_PLAN_CYCLE).toContain(x.scheme_id as (typeof DEMO_PLAN_CYCLE)[number]);
+    expect(p.map((x) => x.scheme_id)).not.toContain("duplicate_invoice");
+    expect(demoPlan(0)).toEqual([]);
+  });
 });

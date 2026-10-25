@@ -38,11 +38,11 @@ Everything below ran on the live, hosted system (app.redledger.us) with red on F
 | Same run, controller **on** (enforce) | The ledger held the bank change for independent verification ("destination change overlaps open invoices"). **$0** lost (controls report). |
 | 5 generations × 8 days, red learning between generations | Red found that invoices split under the approval limit got paid, and shifted to them. Extraction rose from **$18.5k to $93.6k** a generation, and no control caught it. |
 | Red **and** blue's audit live, a fixed six-scheme plan, 6 days, before the split rule existed | **$18,526** lost with the controller on. $13,800 of it was one split invoice. |
-| After we added a gate rule for the split (#206): 3 generations × 4 days, red and blue's audit live | **$0** stolen in every generation. The split was caught 3 of 3 times. |
+| After we added a gate rule for the split (#206): 3 generations × 4 days, red and blue's audit live | **$0** stolen in every generation. Red's one split attempt was blocked (all 3 invoices), and red stopped splitting. |
 
 The sandbox's most useful result was a control gap that nobody on the team saw coming. A red agent found it on its own in a few simulated weeks, and the fix was a ledger rule, not a better prompt.
 
-**What it cost:** a red turn runs about 2,800 Factory credits and a blue audit about 4,000. A full simulated day costs cents.
+**What it cost:** a red turn runs about 2,800 Factory credits and a blue audit about 4,000. A simulated day with both live agents runs about 10,000 credits.
 
 ## What we don't claim
 
@@ -59,7 +59,7 @@ Five services and Postgres, hosted on a Vultr VM behind Cloudflare. Only the led
 
 - **Hyphenate (Autonomous Systems for Finance).** The clerk works accounts payable end to end, and a person sees only the calls that need judgment: an escalation with a reason and 90 seconds to answer. What makes that autonomy trustworthy is measured, not promised: an adversary, a dollar score in both directions, and a control the agent cannot talk its way past.
 - **Factory (Droid SDK).** Three Droid sessions with different trust levels. Red runs at high autonomy. Green and blue run at autonomy off, so every tool call raises a permission request, and the handler turns that request into a ledger-checked decision. Idempotency keys are the SDK's own tool-use IDs. We measured credits per turn on prod and recorded each SDK behavior we proved.
-- **Microsoft (Built for the Real World).** The problem costs US businesses $3B a year in BEC alone. The system is hosted, CI-gated, isolated per agent, publicly viewable, and has run live adversarial episodes on prod since October 24.
+- **Microsoft (Built for the Real World).** Business email compromise alone cost $3.05B in losses reported to the FBI in 2025. The system is hosted, CI-gated, isolated per agent, publicly viewable, and has run live adversarial episodes on prod since October 24.
 - **CRS (identity and fraud).** Ghost employees are a real payroll fraud (a Puerto Rico case diverted $1.2M through two fictitious employees). Blue checks employee identity against the CRS sandbox. In a live prod run (ep_9cbc3362d44e), a flagged identity mismatch led the gate to block that employee's next expense.
 - **Armadin (security).** The attacker is an agent with an insider's view. It picks its schemes, adapts between generations, and found a gap the defenders missed. The isolation that keeps it honest is enforced in code: per-agent tokens, ground truth hidden from every agent, an audit trail for every refused call.
 - **Most Technically Advanced.** A preparation protocol that lets an agent learn the verdict before it acts without a second source of truth. Ledger-side enforcement. Lineages of episodes where agents rewrite their playbooks from debriefs that reveal only resolved attacks, so ground truth never leaks during play.
