@@ -14,6 +14,7 @@ from agentkit import ctx, make_agent_app
 from agentkit.sync import TurnLock
 from audit import readiness, tools
 from audit.agent import AUDIT_TOOL_IDS, AuditAgent
+from audit.readiness import sdk_installed
 
 from .audit_helpers import turn
 
@@ -59,7 +60,7 @@ async def test_actual_shared_registry_construction_with_unit_sdk(fake_sdk, runti
     assert all(r["schema_matches"] for r in report["tools"])
     assert agent._tool_ids == list(AUDIT_TOOL_IDS)  # Pinned literals, live-verified (#119).
     assert not ledger.writes and not ledger.read_counts and not emitter.calls
-    assert (await agent.health())["droid_ok"] is False  # Health never probes; see agent.py.
+    assert (await agent.health())["droid_ok"] is sdk_installed()  # installed-or-not only; health never imports the SDK
     assert readiness.live_readiness(sdk_available=True).ready is True
 
 
@@ -166,7 +167,7 @@ async def test_health_is_truthful_without_sdk_or_probe(runtime, monkeypatch, dry
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://blue") as client:
         response = await client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "agent": "blue", "model": agent.s.droid_model, "droid_ok": False, "dry_run": dry_run}
+    assert response.json() == {"ok": True, "agent": "blue", "model": agent.s.droid_model, "droid_ok": sdk_installed(), "dry_run": dry_run}
     assert not ledger.writes and not ledger.read_counts and not emitter.calls
 
 

@@ -14,6 +14,7 @@ from agentkit.config import AgentSettings
 from agentkit.invocation import current_registry, strict_identity
 from audit import tools
 from audit.agent import AUDIT_TOOL_IDS, AuditAgent
+from audit.readiness import sdk_installed
 
 from .audit_helpers import FakeLedger, bound_session, turn
 from .test_shared_invocation import SDK_ID, shared_bridge
@@ -228,4 +229,4 @@ async def test_live_turn_runs_the_shared_sdk_session(runtime, sdk, monkeypatch):
     assert sdk.trace[:2] == ["config", "session"] and "stream" in sdk.trace
     assert "Live audit unavailable" not in result.summary
     assert not ledger.writes  # The synthetic stream issues no tool calls.
-    assert (await subject.health())["droid_ok"] is False  # Health never probes the SDK.
+    assert (await subject.health())["droid_ok"] is sdk_installed()  # installed-or-not only; health never imports the SDK

@@ -1,0 +1,1 @@
+- 2026-10-25T04:13Z · Ad · docs: blue's live audit is on in prod and green stays keyless across README, INTEGRATIONS, Devpost track docs, pitch script, PROD-OPS/ENVIRONMENT and the design doc; credits/droid_ok wording follows #176; next: none; blocked: none
