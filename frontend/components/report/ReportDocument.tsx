@@ -435,6 +435,7 @@ export function ReportDocument({ report: r, models }: { report: ControlsReport; 
           fraudulent items that ended blocked or rejected, or sat behind a frozen vendor. False positives charge each legitimate item once, by its worst outcome.
           Detection latency is days from launch to the first block, escalation or flag on the scheme&apos;s items.
           {r.source === "events" ? " This run is a replay: its figures are derived from the recorded event stream rather than ledger rows." : ""}
+          {r.source === "fixture" ? " This is a sample built from the recorded production run; the split by where the money landed was filled in by hand from the run's turn summaries, because the event stream does not record payee accounts." : ""}
         </p>
       </section>
 

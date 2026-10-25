@@ -114,7 +114,8 @@ export interface ControlsReport {
     finished_at?: string | null;
   };
   final: boolean;
-  source: "ledger" | "events";
+  /** ledger rows (live), the event stream (replay), or the hand-built mock fixture (NEXT_PUBLIC_MOCK) */
+  source: "ledger" | "events" | "fixture";
   score: Score;
   /** = score.dollars_extracted */
   lost: number;
