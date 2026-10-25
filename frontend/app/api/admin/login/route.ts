@@ -27,6 +27,8 @@ export async function POST(req: Request): Promise<Response> {
   if (text.length > 2048) return Response.json({ error: "too large" }, { status: 413, headers: noStore });
   let key: unknown;
   try { key = (JSON.parse(text) as { key?: unknown } | null)?.key; } catch { return Response.json({ error: "bad json" }, { status: 400, headers: noStore }); }
+  // again, now that the body is in: requests that sent it slowly must not race past a cap reached meanwhile
+  if (failures.blocked()) return tooMany(failures.retryAfterSec());
   if (!keyMatches(key, s.key)) {
     failures.record();
     return Response.json({ error: "bad key" }, { status: 401, headers: noStore });

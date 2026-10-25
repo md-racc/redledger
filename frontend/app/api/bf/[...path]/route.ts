@@ -8,6 +8,7 @@ import {
   downstreamResponseHeaders,
   hasBody,
   isCrossSiteMutation,
+  isOperatorOnlyPath,
   isNullBodyStatus,
   isTimeout,
   jsonError,
@@ -29,6 +30,8 @@ async function forwardInner(req: Request, role: Role): Promise<Response> {
   if (role !== "admin") {
     // a viewer reads; changing the sim is for admins only, and battlefield never hears of the attempt
     if (method !== "GET" && method !== "HEAD") return jsonError(403, "viewer");
+    // ground truth (the lineage export) is not for the public, even as a read
+    if (isOperatorOnlyPath(new URL(req.url).pathname)) return jsonError(403, "viewer");
     const rl = limiter("viewer").take(clientIp(req.headers));
     if (!rl.ok) return tooMany(rl.retryAfterSec);
   }

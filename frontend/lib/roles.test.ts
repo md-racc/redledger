@@ -7,7 +7,7 @@ import * as loginRoute from "@/app/api/admin/login/route";
 import * as logoutRoute from "@/app/api/admin/logout/route";
 import * as whoamiRoute from "@/app/api/whoami/route";
 import { ADMIN_COOKIE, signAdminToken } from "./admin";
-import { LOGIN_FAILURES_PER_WINDOW, MAX_SYNC_STREAMS, VIEWER_BURST, syncStreamSlots } from "./ratelimit";
+import { LOGIN_FAILURES_PER_WINDOW, MAX_SYNC_STREAMS, VIEWER_BURST, loginFailures, syncStreamSlots } from "./ratelimit";
 import * as streamRoute from "@/app/api/sync/stream/route";
 
 const KEY = "test-admin-key-0123456789abcdef-0123456789";
@@ -190,6 +190,44 @@ describe("login, logout, whoami", () => {
   });
 });
 
+describe("the lineage export (operator only: ground truth)", () => {
+  const variants = [
+    "/api/bf/lineages/ln_1/export",
+    "/api/bf/lineages/ln_1/export/",
+    "/api/bf/lineages/ln_1/export?format=json",
+    "/api/bf/lineages/ln_1/export//",
+    "/api/bf/lineages/ln_1/%65xport",
+    "/api/bf/lineages/ln_1/EXPORT",
+    "/api/bf/Lineages/ln_1/Export/?x=1",
+    "/api/bf/lineages/ln%201/export",
+    "/api/bf/%6Cineages/ln_1/export",
+  ];
+
+  it("is refused to a viewer without contacting battlefield, however it is spelled", async () => {
+    for (const p of variants) {
+      for (const method of ["GET", "HEAD"]) {
+        const res = await proxyRoute.GET(req(method, p));
+        expect(res.status, `${method} ${p}`).toBe(403);
+        if (method === "GET") expect(await res.json(), p).toEqual({ error: "viewer" });
+      }
+    }
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("is forwarded for an admin", async () => {
+    const res = await proxyRoute.GET(req("GET", "/api/bf/lineages/ln_1/export", { admin: true }));
+    expect(res.status).toBe(200);
+    expect(String(upstream.mock.calls[0]![0])).toBe("http://battlefield:8000/api/lineages/ln_1/export");
+  });
+
+  it("does not catch the lineage reads the screens use", async () => {
+    for (const p of ["/api/bf/lineages", "/api/bf/lineages/ln_1", "/api/bf/fe/lineages/ln_1/report", "/api/bf/fe/lineages/ln_1/timeline"]) {
+      expect((await proxyRoute.GET(req("GET", p))).status, p).toBe(200);
+    }
+    expect(upstream).toHaveBeenCalledTimes(4);
+  });
+});
+
 describe("production hardening", () => {
   const prod = () => vi.stubEnv("NODE_ENV", "production");
   const whoami = async (cookie?: string) => (await (await whoamiRoute.GET(new Request(`${BASE}/api/whoami`, { headers: cookie ? { cookie } : {} }))).json()).role;
@@ -236,6 +274,18 @@ describe("production hardening", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("checks the global cap again after a slow body, so the right key can't race past it", async () => {
+    let send: (s: string) => void = () => {};
+    const body = new ReadableStream<Uint8Array>({ start(c) { send = (s) => { c.enqueue(new TextEncoder().encode(s)); c.close(); }; } });
+    const slow = new Request(`${BASE}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": freshIp() }, body, duplex: "half" } as RequestInit);
+    const pending = loginRoute.POST(slow); // passes the first check, then waits for its body
+    for (let i = 0; i < LOGIN_FAILURES_PER_WINDOW; i++) loginFailures().record(); // meanwhile the cap fills
+    send(JSON.stringify({ key: KEY }));
+    const res = await pending;
+    expect(res.status).toBe(429);
+    expect(res.headers.get("set-cookie")).toBeNull();
   });
 
   it("caps concurrent /api/sync/stream connections", async () => {
