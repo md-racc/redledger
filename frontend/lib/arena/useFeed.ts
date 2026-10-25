@@ -10,9 +10,16 @@
 // and fanned out to listeners (the Director) event by event. It also owns what a judge can do to a running episode:
 // launch an attack (a forced scheme on a live backend, played locally without one), flip the controller, decide an
 // escalation. Owner: Dev R.
+//
+// Joining: whenever nothing of its own is on screen, the feed watches the run that is going on the battlefield (polled by
+// useActiveRun; a running episode, or the current generation of a running lineage), so every window shows the current session on
+// load and follows a lineage from generation to generation. A viewer (lib/role.ts) only ever watches: it never creates an episode,
+// and the recording plays only when the backend is genuinely unreachable (activeRun.ts `isUnreachable`), never on a 409 or a 403.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api } from "../api";
-import { currentEpisodeOfLineage, lineageIsLive, parseActiveRun, type ActiveRun } from "./activeRun";
+import { currentEpisodeOfLineage, currentRun, isUnreachable, parseActiveRun, shouldJoin, type ActiveRun, type CurrentRun } from "./activeRun";
+import { useActiveRun } from "./useActiveRun";
+import { isAdmin } from "../role";
 import { loadFixture } from "../mock";
 import { initialState, reduce } from "../reducer";
 import type { ControllerMode, RLEvent, Score, UIState } from "../types";
@@ -94,6 +101,8 @@ export interface Feed {
   resolveEscalation: (escalationId: string, decision: "approve" | "block") => Promise<void>;
   /** subscribe to every event as it is applied */
   subscribe: (fn: (e: RLEvent) => void) => () => void;
+  /** watch the run that is going whenever nothing else is on screen (on by default; the show turns it off while it plays) */
+  setFollow: (on: boolean) => void;
 }
 
 const OFFLINE: Backend = { state: "offline", agents: null, keyless: false };
@@ -117,7 +126,10 @@ export function useFeed(): Feed {
   const token = useRef(0);
   /** what a live episode is: a continuous run, a show act, a sandbox the judge steps by hand, or someone else's run we are watching */
   const liveKind = useRef<"run" | "act" | "sandbox" | "attached" | null>(null);
-  const followTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** join the active run when idle (see the header); off while the show plays */
+  const follow = useRef(true);
+  /** an admin's run, act or sandbox is being set up: the poller must not attach underneath it */
+  const starting = useRef(0);
   const autoBlock = useRef<number | null>(null);
   const live = useRef({ state, source, mode: "enforce" as ControllerMode, backend });
   live.current.state = state;
@@ -132,7 +144,8 @@ export function useFeed(): Feed {
     if (e.type === "episode.ended") {
       const score = (e.payload as { final_score?: Score }).final_score;
       if (score) setRuns((r) => [...r.filter((x) => x.episodeId !== e.episode_id), { episodeId: e.episode_id, mode: live.current.mode, score, projected: false }].slice(-6));
-      if (liveKind.current === "act" || (liveKind.current === "attached" && !followTimer.current)) setRunning(false);
+      // a lineage's next generation is attached (and running again) by the poller as soon as it starts
+      if (liveKind.current === "act" || liveKind.current === "attached") setRunning(false);
     }
     if (e.type === "escalation.opened" && autoBlock.current !== null) {
       const id = (e.payload as { escalation_id: string }).escalation_id;
@@ -147,7 +160,6 @@ export function useFeed(): Feed {
   const pushLive = useCallback((e: RLEvent) => pacer.current.push(e), []);
 
   const stop = useCallback(() => {
-    if (followTimer.current) { clearInterval(followTimer.current); followTimer.current = null; }
     cancel.current();
     cancel.current = () => {};
     runners.current = [];
@@ -197,7 +209,8 @@ export function useFeed(): Feed {
       const keyless = list.length > 0 && list.every((a) => a?.ok !== false && a?.dry_run === true);
       setBackend({ state: "live", agents, keyless });
       setNote((n) => (n.startsWith("checking") || n.startsWith("backend unreachable") ? `backend live${keyless ? " · keyless agents" : ""}` : n));
-    } catch {
+    } catch (e) {
+      if (!isUnreachable(e)) return; // the backend answered (a 429, say): it is there, ask again later
       setBackend(OFFLINE);
       setNote((n) => (n.startsWith("checking") || n.startsWith("backend live") ? "backend offline · recorded run" : n));
     }
@@ -228,60 +241,81 @@ export function useFeed(): Feed {
   /**
    * Battlefield allows one active run at a time. When it says another run is active (409), watch that one: the operator runs the
    * live episode or lineage and the screen simply shows it. A lineage moves from one generation's episode to the next, so it is
-   * followed until it finishes. Returns false when there is nothing to watch (the caller falls back to the recording).
+   * followed until it finishes (by the poller below, which moves to each new generation's episode). Returns false when there is
+   * nothing to watch.
    */
+  const watch = useCallback((id: string) => {
+    token.current++; // whatever was loading or stepping for what was on screen is void
+    cancel.current();
+    cancel.current = () => {};
+    runners.current = [];
+    act.current = null;
+    autoBlock.current = null;
+    pacer.current.clear();
+    dispatch({ type: "__reset" });
+    episode.current = id;
+    liveKind.current = "attached";
+    cancel.current = connect(id, pushLive);
+    setSource("live");
+    setRunning(true);
+    setNote(`live · watching the run already in progress · ${id}`);
+    api.schemes().then((schemes) => setCatalogs((c) => ({ ...c, schemes }))).catch(() => {});
+  }, [pushLive]);
+
   const attach = useCallback(async (found: ActiveRun): Promise<boolean> => {
-    const lineage = found.lineageId ? await api.lineage(found.lineageId).catch(() => null) : null;
+    const lineage = !found.episodeId && found.lineageId ? await api.lineage(found.lineageId).catch(() => null) : null;
     const first = found.episodeId ?? currentEpisodeOfLineage(lineage);
     if (!first) return false;
-    const mine = ++token.current;
-    const watch = (id: string) => {
-      cancel.current();
-      pacer.current.clear();
-      dispatch({ type: "__reset" });
-      episode.current = id;
-      liveKind.current = "attached";
-      cancel.current = connect(id, pushLive);
-      setSource("live");
-      setNote(`live · watching the run already in progress · ${id}`);
-      api.schemes().then((schemes) => setCatalogs((c) => ({ ...c, schemes }))).catch(() => {});
-    };
     watch(first);
-    setRunning(true);
-    if (found.lineageId) {
-      followTimer.current = setInterval(() => {
-        if (mine !== token.current) return;
-        void api.lineage(found.lineageId!).then((l) => {
-          if (mine !== token.current) return;
-          const id = currentEpisodeOfLineage(l);
-          if (id && id !== episode.current) watch(id);
-          if (!lineageIsLive(l) && followTimer.current) { clearInterval(followTimer.current); followTimer.current = null; setRunning(false); }
-        }).catch(() => {});
-      }, 3000);
-    }
     return true;
-  }, [pushLive]);
+  }, [watch]);
 
   /** Is another run going already? (asking first spares battlefield an empty episode and the consoles a decoy) */
   const findBusy = useCallback(async (): Promise<ActiveRun | null> => {
-    try {
-      const list = await api.listEpisodes();
-      const busy = list.find((e) => e.status === "running" && !String(e.id).startsWith("replay_"));
-      return busy ? { episodeId: busy.id, lineageId: busy.lineage_id ?? null } : null;
-    } catch { return null; }
+    try { return await currentRun(api); } catch { return null; }
   }, []);
 
-  /** Create a real episode and run its days on our own clock: one POST /step per `perDay`, escalations auto-blocked. */
+  /**
+   * Every poll of the active run (useActiveRun): join it when nothing of ours is on screen. Not while the show plays, not over an
+   * admin's own run, act or sandbox until it has finished, not over the recording or locally played attacks while they play.
+   */
+  const followActive = useCallback((found: CurrentRun | null) => {
+    if (MOCK_ONLY) return;
+    const join = shouldJoin(found, {
+      liveKind: liveKind.current,
+      episodeId: episode.current,
+      finished: live.current.state.finished,
+      playingLocal: !!act.current || runners.current.length > 0,
+      follow: follow.current && !paused.current && starting.current === 0,
+    });
+    if (join && found) watch(found.episodeId);
+  }, [watch]);
+
+  useActiveRun({ enabled: !MOCK_ONLY, onPoll: followActive });
+
+  const setFollow = useCallback((on: boolean) => { follow.current = on; }, []);
+
+  /** The backend answered but would not start what we asked (not a network failure): say so, and play no recording instead. */
+  const refused = useCallback((what: string, e: unknown) => {
+    setRunning(false);
+    setNote(`${what} · the backend said ${(e as { status?: unknown } | null)?.status ?? "no"}`);
+  }, []);
+
+  /**
+   * Create a real episode and run its days on our own clock: one POST /step per `perDay`, escalations auto-blocked. False only
+   * when the backend is unreachable (the caller then plays the recording).
+   */
   const startLive = useCallback(async (which: "off" | "on", windowMs: number, autoBlockMs: number): Promise<boolean> => {
     const mine = ++token.current;
     setRunning(true);
     setSource("live");
+    starting.current++;
     try {
-      // someone else's run holds the battlefield: this act cannot run live, so play it from the recording without creating a decoy
-      if (await findBusy()) {
+      // someone else's run holds the battlefield: this act cannot run live without colliding, so the screen watches that run
+      const busy = await findBusy();
+      if (busy) {
         if (mine !== token.current) return true;
-        await startRecorded(which, windowMs, autoBlockMs);
-        setNote((n) => `${n} · the backend is busy with another run`);
+        if (!(await attach(busy))) refused("another run is active and could not be found", null);
         return true;
       }
       const mode: ControllerMode = which === "off" ? "off" : "enforce";
@@ -299,18 +333,9 @@ export function useFeed(): Feed {
           if (mine !== token.current) return;
           const t0 = performance.now();
           try { await api.step(ep.id); } catch (e) {
-            // someone else's run holds the battlefield (one active run at a time): this act cannot run live, so play it from the recording
-            if (mine === token.current && parseActiveRun(e)) {
-              cancel.current();
-              cancel.current = () => {};
-              pacer.current.clear();
-              dispatch({ type: "__reset" });
-              liveKind.current = null;
-              autoBlock.current = null;
-              episode.current = null;
-              await startRecorded(which, windowMs, autoBlockMs);
-              setNote((n) => `${n} · the backend is busy with another run`);
-            }
+            // someone else's run holds the battlefield (one active run at a time): this act cannot run live, so watch that run
+            const found = mine === token.current ? parseActiveRun(e) : null;
+            if (found) await attach(found);
             return; // any other failed day ends the act; the show moves on
           }
           if (mine !== token.current) return;
@@ -318,15 +343,21 @@ export function useFeed(): Feed {
         }
       })();
       return true;
-    } catch {
-      return false; // not reachable after all: the caller falls back to the recording
+    } catch (e) {
+      if (isUnreachable(e)) return false; // not reachable after all: the caller falls back to the recording
+      if (mine === token.current) refused("could not start a live act", e);
+      return true;
+    } finally {
+      starting.current--;
     }
-  }, [findBusy, pushLive, startRecorded]);
+  }, [attach, findBusy, pushLive, refused]);
 
   const startAct = useCallback(async (which: "off" | "on", windowMs = FREE_PLAY_WINDOW_MS, holdMs = FREE_PLAY_HOLD_MS, opts: ActOptions = {}) => {
     reset();
-    publish("act", { act: which, live: !!opts.live });
-    if (opts.live) {
+    // a viewer's show is always the recording: only admins create episodes
+    const goLive = !!opts.live && (MOCK_ONLY || isAdmin());
+    publish("act", { act: which, live: goLive });
+    if (goLive) {
       const ok = await startLive(which, windowMs, opts.autoBlockMs ?? holdMs);
       if (ok) return;
       setBackend(OFFLINE);
@@ -336,35 +367,46 @@ export function useFeed(): Feed {
   }, [reset, startLive, startRecorded]);
 
   const run = useCallback(async (mode: ControllerMode = "enforce") => {
+    if (!MOCK_ONLY && !isAdmin()) return; // viewers watch the current run; they never start one (the proxy refuses it anyway)
     reset();
     publish("run", { mode });
     setRunning(true);
     if (!MOCK_ONLY) {
-      const busy = await findBusy();
-      if (busy && (await attach(busy))) return; // another run is going: watch it instead of starting one
+      starting.current++;
       try {
-        const ep = await api.createEpisode({ controller_mode: mode, seed: SHOW_SEED, days: 5 });
-        episode.current = ep.id;
-        liveKind.current = "run";
-        cancel.current = connect(ep.id, pushLive);
-        await api.start(ep.id);
-        setSource("live");
-        setNote(`live · ${ep.id}`);
-        api.schemes().then((schemes) => setCatalogs((c) => ({ ...c, schemes }))).catch(() => {});
-        api.fe.vendors(ep.id, "spend").then((vendors) => setCatalogs((c) => ({ ...c, vendors: vendors.slice(0, 12) }))).catch(() => {});
-        return;
-      } catch (e) {
-        cancel.current();
-        liveKind.current = null;
-        const found = parseActiveRun(e);
-        if (found && (await attach(found))) return; // another run is going: watch it
-        if (!found) setBackend(OFFLINE);
-        else setNote("another run is active and could not be found · recorded run");
+        const busy = await findBusy();
+        if (busy && (await attach(busy))) return; // another run is going: watch it instead of starting one
+        try {
+          const ep = await api.createEpisode({ controller_mode: mode, seed: SHOW_SEED, days: 5 });
+          episode.current = ep.id;
+          liveKind.current = "run";
+          cancel.current = connect(ep.id, pushLive);
+          await api.start(ep.id);
+          setSource("live");
+          setNote(`live · ${ep.id}`);
+          api.schemes().then((schemes) => setCatalogs((c) => ({ ...c, schemes }))).catch(() => {});
+          api.fe.vendors(ep.id, "spend").then((vendors) => setCatalogs((c) => ({ ...c, vendors: vendors.slice(0, 12) }))).catch(() => {});
+          return;
+        } catch (e) {
+          cancel.current();
+          liveKind.current = null;
+          const found = parseActiveRun(e);
+          if (found && (await attach(found))) return; // another run is going: watch it
+          // the backend answered (a 409 whose run can't be found, a 403, a 4xx): no recording in place of the live run
+          if (found || !isUnreachable(e)) {
+            episode.current = null;
+            refused(found ? "another run is active and could not be found" : "could not start a run", e);
+            return;
+          }
+          setBackend(OFFLINE);
+        }
+      } finally {
+        starting.current--;
       }
     }
     await startRecorded(mode === "off" ? "off" : "on", FREE_PLAY_WINDOW_MS, FREE_PLAY_HOLD_MS);
     if (!MOCK_ONLY && live.current.backend.state !== "live") setNote("backend unreachable · recorded run");
-  }, [attach, findBusy, pushLive, reset, startRecorded]);
+  }, [attach, findBusy, pushLive, refused, reset, startRecorded]);
 
   const setPaused = useCallback((p: boolean) => { paused.current = p; }, []);
   const clearRuns = useCallback(() => setRuns([]), []);
@@ -372,6 +414,7 @@ export function useFeed(): Feed {
   // ---- what a judge can do -----------------------------------------------------------------------------------------
 
   const setController = useCallback(async (mode: ControllerMode) => {
+    if (!MOCK_ONLY && !isAdmin()) return; // only admins change the sim
     live.current.mode = mode;
     publish("controller", { mode, route: "user" });
     if (live.current.source === "live" && episode.current) { await api.setController(episode.current, mode); return; }
@@ -382,6 +425,7 @@ export function useFeed(): Feed {
   /** A live sandbox: a paused episode the judge drives. Each attack is forced for red's next turn and the day is stepped at once. */
   const sandboxAttack = useCallback(async (schemeId: string) => {
     setRunning(true);
+    starting.current++;
     try {
       if (liveKind.current !== "sandbox" || !episode.current || live.current.state.finished) {
         const busy = liveKind.current === "attached" ? null : await findBusy();
@@ -408,11 +452,13 @@ export function useFeed(): Feed {
         setNote(`attack queued on the run in progress: ${schemeId} · red picks it up on its next turn`);
       }
     } finally {
+      starting.current--;
       setRunning(false);
     }
   }, [attach, findBusy, pushLive, reset]);
 
   const launchAttack = useCallback(async (schemeId: string) => {
+    if (!MOCK_ONLY && !isAdmin()) return; // only admins change the sim
     const backendUp = live.current.backend.state === "live";
     publish("launch", { scheme: schemeId, name: RED_SCHEMES.find((s) => s.key === schemeId)?.name ?? schemeId, mode: live.current.state.controllerMode, route: backendUp ? "backend" : "local" });
     // a continuous live run: the scheme is queued for red's next turn
@@ -453,6 +499,7 @@ export function useFeed(): Feed {
   const resolveEscalation = useCallback(async (escalationId: string, decision: "approve" | "block") => {
     const esc = live.current.state.escalations[escalationId];
     if (esc && esc.status !== "open") return;
+    if (!MOCK_ONLY && !isAdmin()) return; // a human decision, but an admin's
     publish("decision", { escalation_id: escalationId, decision, action: esc?.action ?? null, amount: esc?.amount ?? null });
     if (live.current.source === "live") { await api.resolve(escalationId, decision).catch(() => {}); return; }
     for (const r of runners.current) r.ctx.decisions[escalationId] = decision;
@@ -466,8 +513,8 @@ export function useFeed(): Feed {
   }, []);
 
   return useMemo(
-    () => ({ state, source, note, catalogs, running, backend, probe, runs, run, startAct, stop, reset, clearRuns, setPaused, setController, launchAttack, resolveEscalation, subscribe }),
-    [state, source, note, catalogs, running, backend, probe, runs, run, startAct, stop, reset, clearRuns, setPaused, setController, launchAttack, resolveEscalation, subscribe],
+    () => ({ state, source, note, catalogs, running, backend, probe, runs, run, startAct, stop, reset, clearRuns, setPaused, setController, launchAttack, resolveEscalation, subscribe, setFollow }),
+    [state, source, note, catalogs, running, backend, probe, runs, run, startAct, stop, reset, clearRuns, setPaused, setController, launchAttack, resolveEscalation, subscribe, setFollow],
   );
 }
 

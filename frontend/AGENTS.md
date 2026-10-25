@@ -22,8 +22,8 @@ yours; nothing in the backend dictates look or tone.
 - The browser never holds a token. Every REST call goes same-origin to `/api/bf/*`, a Next
   route handler that mirrors battlefield `/api/*` and adds `OPERATOR_TOKEN` server-side
   (`app/api/bf/[...path]/route.ts`). The socket uses a 60 s single-use ticket from
-  `/api/bf/ws-ticket`. The app is private behind Cloudflare Access or a VPN for the hackathon;
-  don't build user auth.
+  `/api/bf/ws-ticket`. The site can run public (no Cloudflare Access): anyone with the URL is a
+  **viewer**, our laptops are **admins** (see "Viewers and admins" below); don't build user accounts.
 - **Never put a token in a `NEXT_PUBLIC_` var.** `NEXT_PUBLIC_*` referenced from client code is
   inlined into the JS bundle at build. Server-only vars (`BATTLEFIELD_URL`, `OPERATOR_TOKEN`)
   are read per request in route handlers (`dynamic = "force-dynamic"`), so one image serves
@@ -39,6 +39,20 @@ the `CF_Authorization` cookie. Failure → `403` (`{"error":"forbidden"}` under 
 `forbidden` elsewhere). Why: the Caddy IP allowlist admits any Cloudflare zone, including one an
 attacker points at our origin IP; only our Access app can mint this JWT. Both vars unset → check
 off (local dev, mock, CI; one warning at startup in production). Never log the token or claims.
+
+## Viewers and admins
+
+Server-enforced in `lib/admin.ts`. `/admin` posts `ADMIN_KEY` (server env, never `NEXT_PUBLIC_`) to
+`POST /api/admin/login`, which sets `rl_admin` (HttpOnly, SameSite=Strict, Secure in production, 7 days,
+HMAC-SHA256 keyed by `ADMIN_KEY`; rotating the key logs everyone out). `POST /api/admin/logout` clears it,
+`GET /api/whoami` → `{role}`. The `/api/bf` proxy lets a viewer GET/HEAD only (anything else → `403
+{"error":"viewer"}` before battlefield is contacted) and rate limits viewers per address
+(`lib/ratelimit.ts`; ws-ticket too); `POST /api/sync` is admin-only. Failed logins are capped per address and
+globally (20/min, then every login 429s until the minute ends); open `/api/sync/stream`s are capped at 500.
+`ADMIN_KEY` unset: everyone is admin outside production (`next dev`, mock dev); in production (`NODE_ENV=production`)
+nobody is, and a key under 32 characters counts as unset; a runtime `NEXT_PUBLIC_MOCK` is never trusted. The UI reads `useRole()` (`lib/role.ts`) and disables what a
+viewer can't do; every window (arena, backstage, /ops) joins the active run on load
+(`lib/arena/useActiveRun.ts`) and never creates one for a viewer.
 
 ## Data model in one paragraph
 
