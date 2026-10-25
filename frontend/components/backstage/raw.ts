@@ -70,6 +70,8 @@ export interface CheckInput {
   now: number;
   sync: { link: string; quietMs: number; state: SyncState };
   trafficCount: number;
+  /** the recorded live-red run being replayed on purpose (`?replay=1`) or for want of a backend: reachability is not a failure then */
+  replaying?: string | null;
 }
 
 /** The "is it really working" list: each line is a thing we can measure right now. ok === null means "not applicable yet". */
@@ -80,7 +82,7 @@ export function liveChecks(i: CheckInput): Check[] {
   const age = (t: number | null) => (t == null ? "never" : `${Math.max(0, Math.round((i.now - t) / 1000))}s ago`);
   const agentList = i.agents ? Object.entries(i.agents) : [];
   return [
-    { ok: live, label: "battlefield reachable through the /api/bf proxy", detail: live ? `GET /health 200 in ${i.healthMs ?? "?"}ms` : i.mode === "connecting" ? "connecting" : "no answer: showing the recorded loop" },
+    { ok: live ? true : i.replaying ? null : false, label: "battlefield reachable through the /api/bf proxy", detail: live ? `GET /health 200 in ${i.healthMs ?? "?"}ms` : i.mode === "connecting" ? "connecting" : i.replaying ? "not asked: replaying the recorded live-red run" : "no answer: showing the recorded loop" },
     { ok: live ? agentList.length > 0 && agentList.every(([, a]) => a?.ok !== false) : null, label: "agents answer /health", detail: agentList.map(([k, a]) => `${k}:${a?.ok === false ? "down" : "up"}`).join(" ") || "-" },
     { ok: i.lastEventAt != null && i.now - i.lastEventAt < 60_000, label: "event stream delivering", detail: `last event ${age(i.lastEventAt)}, ${i.eventsInLastMinute} in the last minute` },
     { ok: i.verdicts > 0 ? true : null, label: "the gate is issuing verdicts", detail: `${i.verdicts} gate.verdict events` },

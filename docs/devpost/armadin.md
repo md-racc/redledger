@@ -200,7 +200,7 @@ Related fixes whose finder the PR does **not** name (don't attribute them to a v
 | P3 | Evolution view in the frontend from real data | R (#117) | PARTIAL: the EvolutionCard loads the real report | "The evolution card shows the latest real lineage report" (§6) |
 | P4 | Agents live on Droid | M | Blue audit LIVE (#157); green NOT DOING (Ad's decision, #78) | "Red and blue live on Droid; green on the same harness, keyless" |
 | P5 | Prod on the TimescaleDB image | Ad | NOT DOING for the hackathon unless it lands | "TimescaleDB proven in CI; prod on Postgres 16" |
-| P6 | CRS live demo | M | Acceptance PASSED locally (ep_0181eda1c921); table demo pending | "Recorded acceptance run ep_0181eda1c921; live at the table on request" (crs.md) |
+| P6 | CRS live demo | M / Ad | PASSED on prod with blue's live audit (ep_9cbc3362d44e, #197); local acceptance earlier (ep_0181eda1c921); live at the table still to do | "Recorded on prod 2026-10-25 (ep_9cbc3362d44e); live at the table on request" (crs.md) |
 | P7 | Public read-only site (no Access) | Ad | DONE, LIVE since ~04:30Z 2026-10-25 (#152, #159) | — |
 | P8 | Invoice threshold-split control in blue | M (#175) | ASKED | "Red found a gap in invoice split detection; the expense version is shipped (#173)." Until then: "threshold splitting on invoices evades the gate; the audit catches it next day at best" |
 | P9 | Short live lineage after P8 to show blue closing the gap | Ad | PLANNED after P8 | Keep the P1 story: "the sandbox surfaced a real gap" |

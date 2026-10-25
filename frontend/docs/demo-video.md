@@ -1,35 +1,30 @@
 # Demo video: a three-minute storyboard
 
-The Devpost entry needs a demo video of at most three minutes (`INTEGRATIONS.md` §4). This is a shot list you can record straight from
-the site, with the words to say. Every line is a line from [pitch-script.md](pitch-script.md) or a number from the claims ledger, so
-nothing here says more than the site shows. Read the **say it straight** notes before you record.
+The Devpost entry needs a demo video of at most three minutes (`INTEGRATIONS.md` §4). This is a shot list you can record straight from the site. The words are the lines of [pitch-script.md](pitch-script.md), cut to three minutes, and each row names the **sponsor feature** the judges for that prize are listening for ([sponsors.md](sponsors.md) has the proof). Read **Say it straight** before you record.
 
-**Setup.** One laptop, a 1920×1080 window, a real GPU (not a remote desktop), the arena at `/` with `?q=3` for full quality. Press `S`
-for the show where a row says *show*. Record the screen and your voice in one take per row, so a bad row is one retake. Keep the
-backstage consoles (`/backstage/red`, `/green`, `/blue`) open in three more windows for row 6.
+**Setup.** One laptop, a 1920×1080 window, a real GPU (not a remote desktop), the arena at `/` with `?q=3`. Press `S` where a row says *show*. Record the screen and your voice together, one take per row, so a bad row is one retake. Keep the red and blue backstage consoles open in two more windows for row 5. Put the sponsor names on screen as small lower-thirds the moment you say them.
 
-| # | Time | Screen | What to do | Say |
-|---|---|---|---|---|
-| 1 | 0:00–0:14 | the title and the flight over the Palace | start the page, let the intro run | "Would you let an AI pay your company's bills? Now, would you still say yes if someone was actively trying to trick it? That's the part nobody tests. So we built the crash-test lab. This is Red Ledger." |
-| 2 | 0:14–0:30 | the scroll tour: guards, clients, fraudsters | press `S` (the show) | "A small company, Coastal Supply Co. Three AI agents, one shared ledger. Green pays the bills. Blue guards the money. Red tries to steal it. Ten guards, twelve clients, and eight fraud schemes." |
-| 3 | 0:30–0:58 | the show's controller-off act, then controller-on | let the show run; do not click | "Round one: no guard. Watch the red number climb. Rewind. Same company, same crime, guard on. Now the blue number climbs instead. That's money stopped." Caption on screen says the show is a recording: leave it in. |
-| 4 | 0:58–1:12 | the **Your decision** card | click **Block** | "And when blue isn't sure, it does what a good employee does. It asks a person. If nobody answers, it blocks." |
-| 5 | 1:12–1:32 | **Compare**, then the **Real run** tab | open Compare, say the first line, click **Real run** | "Same crime, different ending. And here's a real run: red live, ten days, same seed. No controller, about ten thousand dollars lost. Controller on, about eighteen hundred. Not zero." |
-| 6 | 1:32–1:55 | the three backstage consoles, side by side | click a guard in the arena (the same selection lights up on the other screens) | "Everything I click shows up on these three screens. Those are the real consoles, one per team: green's payments, blue's verdicts with their reasons, red's tape." |
-| 7 | 1:55–2:15 | the **Evolution** card | open it | "We let red run five generations against our controls, live, with its first five schemes. It found the one scheme nothing flagged, invoices split just under the approval limit, and leaned on it harder every round: about nineteen thousand dollars in round one, about ninety-seven thousand in round five. That's what the lab is for. It found a hole before anyone hired an agent." |
-| 8 | 2:15–2:42 | **Launch attack**, then **Speak a scheme** | click **Launch attack**, press **Speak a scheme**, say a sentence in another language, pause (it stops by itself), click **Launch it** | "Anyone can try to break it. Say a scheme in your own words, in any language. ElevenLabs turns it into text, red reads it, and the closest of its eight schemes runs. Watch the guards." Then cut to the backstage red and blue consoles for two seconds. |
-| 9 | 2:42–3:00 | the arena, the HUD's **Source** and **Agents** badges in frame | stop on the arena | "To be straight about where we are: red and blue are live agents. Green runs its full logic keyless on the same harness. The show is a recording, and the learning card is a recorded live run. Would I hire an AI to run accounts payable? Not today. Not without proof. Now you can get proof." |
+| # | Time | Screen | What to do | Say | Sponsor on screen |
+|---|---|---|---|---|---|
+| 1 | 0:00–0:16 | the title and the flight over the Palace | start the page, let the intro run | "It's Friday, 4:55 p.m. An email lands: 'We've changed banks. Please update our account.' A tired clerk might pay it. An AI would pay it faster. Everyone is building the agent that pays your bills. Nobody is testing it against someone trying to steal. So we built the crash-test lab. This is Red Ledger." | |
+| 2 | 0:16–0:32 | the scroll tour: guards, clients, fraudsters | press `S` | "Meet Coastal Supply Co.: sixty vendors, ninety days of history, one ledger, three AI agents. Green pays the bills. Blue guards the money. Red wants it. All three are built on Factory's Droid SDK." | **Factory** Droid SDK |
+| 3 | 0:32–1:00 | the show's controller-off act, then controller-on, then **Your decision** | let the show run; click **Block** | "No guard: watch the red number climb. Same crime, guard on: the blue number climbs. That's money stopped. When blue isn't sure, it asks a person. That's Hyphenate's test, knowing when to ask. Nobody answers? Blocked." The caption saying it is a recording stays in. | **Hyphenate** |
+| 4 | 1:00–1:20 | **Compare**, then the **Real run** tab | open Compare, click **Real run** | "Here's a real run. Red live, ten days, same seed: about ten thousand dollars gone with no controller, about eighteen hundred with one. Not zero, and we'll say so." | |
+| 5 | 1:20–1:45 | the red and blue backstage consoles, side by side | click a guard in the arena; point at red's thinking lines, then blue's verdict log | "Red's reasoning streams in as it thinks: live on Factory's Droid SDK. Every verdict blue gives is a row in an append-only log, built as Tiger Data TimescaleDB hypertables and tested on the real thing in CI." | **Factory**, **Tiger Data** |
+| 6 | 1:45–2:10 | the **Evolution** card | open it | "But red can't cheat. That's what makes this a range for Armadin: it can't see which rows are fraud, grade itself, or pose as blue. Then we let it learn: five generations, live. It found the hole nothing flagged, invoices split just under the limit: about nineteen thousand dollars in round one, about ninety-seven thousand in round five. That's what a lab is for." | **Armadin** |
+| 7 | 2:10–2:35 | **Launch attack**, then **Speak a scheme** | press **Speak a scheme**, say a sentence in another language, pause (it stops by itself), click **Launch it**, cut to the red and blue consoles for two seconds | "Your turn: say an attack in your own words, in any language. ElevenLabs' speech-to-text hears it and names the language. Red reads your sentence and runs the closest of its eight schemes." | **ElevenLabs** |
+| 8 | 2:35–3:00 | the arena with the **Source** and **Agents** badges in frame, then the deck's **Built with our sponsors** slide | stop on the arena, then cut to the slide | "To be straight about where we are: red and blue's audit are live. Green is keyless on the same harness. The show is a recording. Under the glass: one Vultr VM behind Cloudflare, an approval-gated deploy. Would I hire an AI to pay that email? Not today. Not without proof. Now you can get proof." | **Vultr**, and all six names |
 
 ## Say it straight (do not cut these)
 
 - The 90-second show is **a recording** (mock agents). The caption says so; the row 3 voice-over says so.
 - Red is **live** (Factory's Droid SDK), and so is blue's daily audit. Green runs its full logic **keyless** on the same harness. Blue's gate is deterministic rules, not a model.
 - Blue **asks a person** for a bank swap; the human, or the timeout, does the blocking. Do not say blue "blocks" it.
-- "Ten guards" is the arena roster, not an exact count of blue's rules. Blue switches on pre-written learned controls; it does not write rules.
+- Tiger Data: TimescaleDB is proven **in CI**; **production runs plain Postgres 16**. Never say "in production".
+- ElevenLabs: the ledger says it was never tested against the real service. Record one real transcription first. If it fails, use a **Try** chip and cut the ElevenLabs sentence.
 - "Eight schemes built" follows `red/schemes` on `main` and the claims ledger (`docs/devpost/hyphenate.md` §4, #181). The five-generation result is on the first five.
-- Voice needs the speech key on the server. If the console says voice is not set up, use a **Try** chip: the beat is the same.
+- CRS is not in this video: it needs a separate live table demo ([sponsors.md](sponsors.md)).
 
 ## After recording
 
-Cut to 3:00 or under, add the repo URL on the last frame, and export 1080p. Do not put keys, tokens or the admin page (`/admin`) on
-screen.
+Cut to 3:00 or under, add the repo URL on the last frame, and export 1080p. Do not put keys, tokens or the admin page (`/admin`) on screen.

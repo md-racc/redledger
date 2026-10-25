@@ -12,9 +12,10 @@ import type { ControllerMode } from "@/lib/types";
 import type { ShowController } from "../useShow";
 import type { PitchController } from "../usePitch";
 import { SIDE_SCREENS } from "@/lib/arena/pitch";
+import { Doors } from "./Doors";
 import { Raw } from "./Raw";
 import { ThreatConsole } from "./ThreatConsole";
-import { useRole } from "@/lib/role";
+import { isAdmin, useRole } from "@/lib/role";
 
 const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const MODES: ControllerMode[] = ["off", "shadow", "enforce"];
@@ -36,7 +37,7 @@ export function Hud({ feed, show, pitch }: { feed: Feed; show: ShowController; p
   const brandClick = () => {
     const now = performance.now();
     clicks.current = [...clicks.current.filter((t) => now - t < 700), now];
-    if (clicks.current.length >= 3) { clicks.current = []; window.open("/backstage", "_blank", "noopener"); }
+    if (clicks.current.length >= 3) { clicks.current = []; if (isAdmin()) window.open("/backstage", "_blank", "noopener"); }
   };
   const [threat, setThreat] = useState(false);
   const { state, source } = feed;
@@ -119,13 +120,15 @@ export function Hud({ feed, show, pitch }: { feed: Feed; show: ShowController; p
         <p className="hud-note">{feed.note}{model === "fallback" ? " · stand-in palace" : ""}</p>
       </section>
 
-      {inPitch && (
+      {/* the side screens on stage, named for the audience; an admin's screen only, like the doors (the consoles stay hidden from viewers) */}
+      {inPitch && admin && (
         <p className="hud-screens" title="The other screens on stage: red's and blue's own consoles">
           {SIDE_SCREENS.map((d, i) => <span key={d}>{i > 0 && " · "}{d}</span>)}
         </p>
       )}
 
       <EscalationBar feed={feed} pitch={inPitch} />
+      <Doors show={stage === "arena" && !inShow} />
     </div>
   );
 }

@@ -518,3 +518,10 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 0; }
   .escalation.is-pitch { left: var(--pad); right: var(--pad); width: auto; transform: none; top: auto; bottom: 150px; }
   .pitch-end-tiles { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* the hidden consoles' doors: for an admin only, nearly invisible until the pointer is on them (components/arena/overlays/Doors.tsx) */
+.doors { position: fixed; right: 14px; bottom: 12px; z-index: 6; display: flex; gap: 10px; padding: 6px; opacity: 0.08; transition: opacity 0.3s var(--ease); }
+.doors:hover, .doors:focus-within { opacity: 0.85; }
+.door { width: 7px; height: 7px; padding: 0; border: 0; border-radius: 0; transform: rotate(45deg); cursor: pointer; background: var(--ink-3); }
+.door-red { background: var(--red); } .door-blue { background: var(--blue); }
+@media (hover: none) { .doors { opacity: 0.14; } }

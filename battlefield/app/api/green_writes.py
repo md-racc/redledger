@@ -67,9 +67,9 @@ async def _invoice_context(inv: dict[str, Any]) -> dict[str, Any]:
         ),
         hide=True,
     )
-    pending = db.rows_to_list(
+    pending = db.rows_to_list(  # blocked parts stay in: a blocked split attempt is still evidence against its siblings
         await db.fetch(
-            "SELECT * FROM invoices WHERE episode_id=$1 AND vendor_id=$2 AND status IN ('pending','matched','approved') AND id<>$3 "
+            "SELECT * FROM invoices WHERE episode_id=$1 AND vendor_id=$2 AND status IN ('pending','matched','approved','blocked') AND id<>$3 "
             "ORDER BY received_day DESC, id LIMIT 20",
             ep,
             inv["vendor_id"],

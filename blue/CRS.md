@@ -3,11 +3,11 @@
 This replaces B2's unsupported EIN/vendor lookup with approved fictional employee checks.
 End-to-end acceptance **passed locally** against the live CRS sandbox on 2026-10-25
 (ep_0181eda1c921, keyless audit with `CRS_LIVE=true`, see "Episode acceptance re-run" below).
-It is **not yet a live-audit demo**. Blue's live-audit guard was lifted on merged evidence
-(#157; `SDK-READINESS.md`, "Live audit readiness lift"), and the audit runs on Droid on prod
-since 2026-10-25 (`DRY_RUN_BLUE=false`), so a live audit can call the provider under the binding,
-name and seven-day rules below. No CRS call from the live audit is recorded yet, and no prod
-episode is recorded with persona-bound employees.
+Blue's live-audit guard was lifted on merged evidence (#157; `SDK-READINESS.md`, "Live audit
+readiness lift"), and the audit runs on Droid on prod since 2026-10-25 (`DRY_RUN_BLUE=false`), so a
+live audit calls the provider under the binding, name and seven-day rules below. The live audit's
+CRS path **passed on prod** on 2026-10-25 (ep_9cbc3362d44e, `make prod-crs-episode`, see "Prod
+live-audit acceptance" below): one recorded 2-day run with persona-bound employees.
 DRY_RUN never calls CRS, even with credentials present, with one explicit exception:
 exporting `CRS_LIVE=true` in the shell (acceptance-only, default off, never committed anywhere)
 lets the keyless audit call the sandbox provider.
@@ -139,3 +139,29 @@ audit reports posted; provider `/users/logs` showed 19 identity checks, **all `b
 `acceptance_passed: true`, exit 0. That completes the #102 sequence. The 3-day all-real shadow
 checkpoint is separate (#78).
 
+## Prod live-audit acceptance, 2026-10-25 (approved scope: P01/P12/P16 only)
+
+`make prod-crs-episode SEED=42 DAYS=2` (#197; `deploy/PROD-OPS.md`) ran the same scenario on prod
+with blue's **live Droid audit** (`gpt-5.4-mini`, `DRY_RUN_BLUE=false`, no `CRS_LIVE`). The command
+created an unstarted enforce episode, seeded the three persona employees through the operator
+fixtures route, bound them to P01/P12/P16 through the operator extension, added the day-1 expenses
+while paused between days, and advanced the episode by `/step` only. Episode ep_9cbc3362d44e,
+seed 42, two days, result **PASS**:
+
+- The live audit called `crs_identity_check` on day 0 and on day 1.
+- The CRS sandbox reported an identity mismatch for P12. The model raised the HIGH employee flag
+  through `raise_flag` with the service-defined finding ("CRS reports an employee identity
+  inconsistency; independent HR review is required.").
+- On day 1 the gate blocked P12's expense: `expenses.approve` → block, `rules_fired`
+  `["already_flagged_high"]`, enforced. P01's and P16's expenses all paid.
+- Two audit reports posted. Blue's audit credits: 3,985 (day 0) and 5,318 (day 1).
+- Recording (operator event stream, no identity data or provider prose):
+  `docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`.
+
+The first prod attempt, ep_c2c98b2da583, failed: blue's live `raise_flag` calls were refused by
+agentkit's strict identity check, because `gpt-5.4-mini` streams tool arguments and the first
+event carries `{}`. #195 (let streamed tool arguments complete before identity binding) fixed it.
+This is the first CRS run on prod and the first driven by the live agent; the earlier acceptance
+(ep_0181eda1c921) was local with the keyless audit. The provider's `/users/logs` was not part of
+this run's evidence, so the `billable:false` checks above remain the local ones. One run: it shows
+the path works, not that every run will.
