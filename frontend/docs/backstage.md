@@ -4,7 +4,7 @@ The live demo uses four laptops on one domain. One runs the arena (the pretty on
 backend is doing **right now**. The backstage is the opposite of the arena on purpose: monospace, white on black, no layout,
 no styling. It is evidence that the code runs, not a dashboard.
 
-Nothing links to it. No tab, no nav, no button. You type the address.
+Nothing links to it. No tab, no nav, no button for the public. You type the address, or (as an admin) you use the hidden doors below.
 
 | address | follows |
 |---|---|
@@ -14,8 +14,9 @@ Nothing links to it. No tab, no nav, no button. You type the address.
 | `/backstage/blue` | the verdicts, the rule board, the confusion matrix, flags and freezes, open escalations with approve / block buttons |
 | `/backstage/battlefield` | `/health` of every service, the episodes, and the **control plane** buttons (new episode, start / pause / resume / step, controller mode, force an attack, play a recording) |
 
-Keys inside a console: `1`-`4` switch team, `0` the address list, `A` or `Esc` back to the arena. In the arena, `B` (or three
-quick clicks on the brand) opens `/backstage` in a new tab. The pages carry `robots: noindex`.
+Keys inside a console: `1`-`4` switch team, `0` the address list, `A` or `Esc` back to the arena. In the arena, for an admin only,
+`B` (or three quick clicks on the brand) opens `/backstage` in a new tab; a viewer pressing them gets nothing. The pages carry
+`robots: noindex`.
 
 ## What every console prints, top to bottom
 
@@ -83,3 +84,31 @@ Rehearse with no stack: `npm run dev:live` starts `tools/fake-battlefield.mjs` (
 `app/backstage/` (`layout.tsx`, `page.tsx`, `[team]/page.tsx`, `backstage.css`), `components/backstage/` (`RawConsole.tsx`,
 `BackstageApp.tsx`, `useBackstage.ts`, `derive.ts`, `raw.ts`), `lib/sync/` (`hub.ts`, `client.ts`), `app/api/sync/` (`route.ts`,
 `stream/route.ts`), `lib/wsurl.ts`.
+
+## The hidden doors: `red.<site>` and `blue.<site>`
+
+Two addresses for the two consoles that make the best show of a messy backend. `red.redledger.us` is red's console and `blue.redledger.us`
+is blue's, the same pages as `/backstage/red` and `/backstage/blue`, reached by hostname.
+
+- **How they work.** `next.config.ts` rewrites `/` on any `red.*` or `blue.*` host to `/backstage/<team>`
+  (`lib/backstage/alias.ts` knows what a door host is). Locally, browsers resolve `*.localhost`: `http://red.localhost:3000/`.
+- **Hidden.** On a door host the page exists only for an **admin** (`lib/backstage/gate.ts`). Anyone else gets exactly the 404 a mistyped
+  address gets: not a 403, not a login prompt, so the door's existence is not confirmed. This covers every console under a door host, not
+  only that team's. The plain `/backstage/...` paths are unchanged.
+- **Quiet.** The browser tab reads only `red.redledger` or `blue.redledger` (not "backstage"). In the arena an admin sees two diamonds in
+  the bottom-right corner at about 8% opacity (`components/arena/overlays/Doors.tsx`); they light up when the pointer is on them and open
+  the door for the site you are on (`app.redledger.us` becomes `red.redledger.us`). A viewer gets no element at all, and the `B` key and the
+  brand's triple-click now do nothing for a viewer.
+- **The knock.** The admin cookie belongs to the host that set it, so on a door host you log in once at `/admin` on that host (the page
+  works there; everything else is a 404 until you do). The cookie then lasts seven days.
+- **The messy backend.** With no battlefield behind it, or with `?replay=1` on the address, the red and blue consoles replay the real
+  live-red run from `docs/recordings` (copied to `public/mocks/demo-enforce-live.jsonl`; a test fails if the copy drifts): about 1,200
+  raw events, the tool calls, ledger writes, verdicts, escalations and reasoning, paced by the run's own gaps (bursts stay bursts, pauses
+  stay pauses, a long Droid turn cut to four seconds) over 90 seconds, then again. The header says it is a replay. Live, they show the
+  live battlefield as before.
+
+**Turning the doors on for real hostnames (Ad's side, outside `frontend/`).** The frontend already answers `red.*` and `blue.*`. The
+domain has to deliver them: a DNS record for each, pointing at the same origin as `app.`; the edge (`deploy/Caddyfile`) must send those
+hosts to the `frontend` container like `app.`; and the Cloudflare Access application must cover them (a wildcard policy, or one app per host;
+`CF_ACCESS_AUD` has to match the token Access issues for them). Until then the doors work on `localhost` and on any host that already
+reaches the frontend.

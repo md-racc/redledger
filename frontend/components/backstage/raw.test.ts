@@ -70,4 +70,13 @@ describe("live checks", () => {
     expect(c.find((x) => x.label.includes("arena"))!.ok).toBe(false);
     expect(c.find((x) => x.label.includes("relay"))!.ok).toBe(false);
   });
+
+  it("does not call a replay of the recorded live-red run a failure to reach the backend", () => {
+    const c = liveChecks({ ...base, mode: "recorded", healthMs: null, replaying: "demo-enforce-live", sync: sync("stream", true) });
+    expect(c[0]!.ok).toBeNull();
+    expect(c[0]!.detail).toMatch(/replaying the recorded live-red run/);
+    // while a recording with nothing named still reads as "no answer"
+    const none = liveChecks({ ...base, mode: "recorded", healthMs: null, sync: sync("stream", true) });
+    expect(none[0]!.ok).toBe(false);
+  });
 });

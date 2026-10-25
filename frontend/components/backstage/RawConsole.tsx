@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { blueIdForRule, ROSTER_BY_ID } from "@/lib/arena/roster";
 import { clientId, useSync } from "@/lib/sync/client";
 import { liveClients } from "@/lib/sync/hub";
+import { RECORDING } from "@/lib/backstage/recording";
 import { useRole } from "@/lib/role";
 import type { ControllerMode } from "@/lib/types";
 import { avgLatency, confusion, ruleBoard, ruleName, schemeName, thoughts, toolRows, verdictCounts } from "./derive";
@@ -34,7 +35,9 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
   // everything here is live (the laptop's id, the clock, the origin), so the server renders nothing and the browser does the lot
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const bs = useBackstage(WANT[team]);
+  // red and blue replay the real live-red recording when no backend answers; `?replay=1` forces it (the backend, messy, on demand)
+  const replay = typeof window !== "undefined" && /[?&]replay(=1|=true)?(&|$)/.test(window.location.search);
+  const bs = useBackstage(WANT[team], { forceRecorded: replay, ...(team === "red" || team === "blue" ? { recording: RECORDING } : {}) });
   const sync = useSync(`backstage${team}`);
   useRole(); // asks the server once; a viewer's console only watches (the operator controls below are for admins)
   const { state, events, episode, agg, now } = bs;
@@ -55,8 +58,8 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
   }, [router]);
 
   const checks = useMemo(
-    () => liveChecks({ mode: bs.mode, healthMs: bs.healthMs, agents: bs.health?.agents ?? null, eventsInLastMinute: bs.rate, lastEventAt: bs.lastEventAt, verdicts: state.verdicts.length, now, sync: { link: sync.link, quietMs: sync.quietMs, state: sync.state }, trafficCount: sync.traffic.length }),
-    [bs.mode, bs.healthMs, bs.health, bs.rate, bs.lastEventAt, state.verdicts.length, now, sync.link, sync.quietMs, sync.state, sync.traffic.length],
+    () => liveChecks({ mode: bs.mode, healthMs: bs.healthMs, agents: bs.health?.agents ?? null, replaying: bs.recording, eventsInLastMinute: bs.rate, lastEventAt: bs.lastEventAt, verdicts: state.verdicts.length, now, sync: { link: sync.link, quietMs: sync.quietMs, state: sync.state }, trafficCount: sync.traffic.length }),
+    [bs.mode, bs.healthMs, bs.health, bs.recording, bs.rate, bs.lastEventAt, state.verdicts.length, now, sync.link, sync.quietMs, sync.state, sync.traffic.length],
   );
   const clients = liveClients(sync.state, now);
   const shown = team === "hub" ? [] : teamEvents(team, events).slice(-24).reverse();
@@ -72,7 +75,7 @@ export function RawConsole({ team }: { team: TeamKey | "hub" }) {
     <div className="raw">
       <pre>
         {`redledger backstage :: ${team === "hub" ? "hub" : team.toUpperCase()}     laptop ${clientId()}     ${hhmmss(now)}\n`}
-        {`backend    ${bs.mode === "live" ? `LIVE  health ${bs.healthMs ?? "?"}ms` : bs.mode === "connecting" ? "connecting" : "NO ANSWER (recorded loop)"}\n`}
+        {`backend    ${bs.mode === "live" ? `LIVE  health ${bs.healthMs ?? "?"}ms` : bs.mode === "connecting" ? "connecting" : bs.recording ? "REPLAY of the recorded live-red run (docs/recordings)" : "NO ANSWER (recorded loop)"}\n`}
         {`following  ${episode ? `${episode.id}  ${bs.pinned ? "[pinned]" : "[newest]"}  mode=${episode.controller_mode}  status=${episode.status}  day ${Math.min(episode.current_day, episode.days)}/${episode.days}` : "(no episode yet)"}\n`}
         {`events     ${events.length} held, ${bs.rate}/min      relay ${sync.link}, ${clients.length} laptop(s): ${clients.map((c) => `${c.id}`).join(" ") || "-"}`}
       </pre>
