@@ -47,7 +47,7 @@ export interface LineageReport {
 /** `live`: a lineage of the running battlefield; `recorded`: the synthetic golden-test lineage shipped with the frontend (public/mocks; not a recorded run, whatever the name). */
 export interface LoadedLineage { report: LineageReport; source: "live" | "recorded"; /** why this lineage and not the one asked for */ note?: string }
 
-/** The showcase lineage on prod: five headless generations with live red, extraction $19k → $98k. */
+/** The showcase lineage on prod: five headless generations with live red, extraction ~$18.5k → ~$93.6k as scored since #207. */
 export const PINNED_LINEAGE = "ln_f52a3df83c8d";
 
 /** `?lineage=<id>` on the page URL, if any. */
