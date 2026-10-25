@@ -2,6 +2,8 @@
 
 Status as of 2026-10-24 ~23:00Z, main @ 0de4fe8; prod runs 4c6bdd9 (#131).
 
+**Update 2026-10-25 ~03:05Z:** blue's daily audit now runs live on Droid on prod (`DRY_RUN_BLUE=false`, `gpt-5.4-mini`; #157, #169; smoke `ep_f9c695b3144f`, 2-day enforce, 3,806 and 4,109 credits per audit turn). Blue's gate is unchanged (rules plus learned controls, no LLM). Green stays keyless for the hackathon. The recorded runs below (P1 lineage, P2 recordings) predate this and had blue keyless.
+
 Paths are relative to the repo root (`github.com/md-racc/redledger`). Status legend: `LIVE` (running on prod at app.redledger.us with a real model), `ON MAIN` (merged, tested, runs keyless, not exercised live on prod), `PLANNED`, `NOT DOING`. "Code reading" means the claim comes from reading the code, not from a recorded run.
 
 ---
@@ -54,7 +56,7 @@ Paths are relative to the repo root (`github.com/md-racc/redledger`). Status leg
   - `NEW_VENDOR_WINDOW=4`: one legitimate new vendor every 4 days, onboarded with a PO the same day. Its first invoice arrives 1–2 days later and is over $1,000. This is bait for "vendor age < 7 days".
 - **One business day** (README §3): inject legit traffic → `POST red/turn` → `POST green/turn` (every mutation is gated) → `POST blue/audit` → resolve attack outcomes, compute the score, emit `day.ended`. Default episode: 10 business days.
 
-### 4.2 Green: the AP clerk — keyless logic ON MAIN (runs keyless on prod); live Droid session PLANNED (P4)
+### 4.2 Green: the AP clerk — keyless logic ON MAIN (runs keyless on prod); live Droid session not planned for the hackathon (P4; #160 stays a draft)
 
 **Persona** (`green/prompts/system.md`): "Coastal Supply Co.'s competent, trusting accounts-payable clerk, not its fraud controller." The trust is intentional. It is the segregation-of-duties split: the clerk processes and the controller controls (`green/AGENTS.md` "Don't put rules in green that belong in blue").
 
@@ -79,7 +81,7 @@ Paths are relative to the repo root (`github.com/md-racc/redledger`). Status leg
 
 **Live status**: `GreenAgent._droid_turn` raises before any SDK session opens (`green/agent.py:81-83`, "SDK permission, restriction, identity and cancellation acceptance are required before Droid execution"). Under `DRY_RUN`, the deterministic clerk (`run_clerk`) runs the same procedure with the same decorated tools and calls the gated routes, which gate inline (`green/agent.py:115-117`).
 
-### 4.3 Blue's gate: the preventive control — ON MAIN (prod runs the real blue image keyless)
+### 4.3 Blue's gate: the preventive control — ON MAIN (prod runs the real blue image; the gate is rules plus learned controls, no LLM)
 
 Prod runs the real `blue` image (`docker-compose.prod.yml:37-38`). Under `DRY_RUN` only the optional LLM advisory is switched off; the rules are the same. The gate uses only the context battlefield assembles (vendor, PO, the last 10 vendor changes, the last 12 paid invoices, flags, open invoices) (`battlefield/app/api/green_writes.py:56-131`). Verdicts are identical in off, shadow and enforce; only battlefield enforces them (`blue/CONTROLLER.md:9-10`).
 
@@ -140,7 +142,7 @@ Rejections (`*.reject`) and `gl.post` pass validation and fire no rules (`rules.
 
 **Concurrency** (#39, #33): one flight per idempotency key, so one key gets one verdict, one escalation card and one human decision. Status changes are compare-and-set, so two parallel `pay` calls produce one payment and one audited 409 (`green_writes.py:1-14`; `gatekeeper.py:119-145`).
 
-### 4.5 Blue's daily audit: the detective control — keyless ON MAIN (runs keyless on prod); live session hard-stopped in production code
+### 4.5 Blue's daily audit: the detective control — LIVE on prod (Droid, `gpt-5.4-mini`) since 2026-10-25; keyless path ON MAIN
 
 `POST blue/audit` runs after green each day (`blue/server.py`; `blue/audit/agent.py`).
 - **Snapshot**: vendors, employees, invoices, POs, today's payments, vendor changes, flags, and green's audit-log activity only (`list_audit_log(agent="green", day=day)`). At most 4 concurrent reads, 10 s per read, 2,000 rows per dataset, 20 prioritised findings (`blue/CONTROLLER.md:30-37,113-115`).
@@ -148,7 +150,7 @@ Rejections (`*.reject`) and `gl.post` pass validation and fire no rules (`rules.
 - **Tools** (IDs observed live, CHANGELOG Finding): `crs_identity_check`, `day_activity`, `vendor_dedupe`, `benford_check` (hint only, no mutation authority), `raise_flag(finding_id)`, `freeze_vendor(vendor_id, finding_ids)`, `post_report`.
 - **Freeze policy**: a freeze needs evidence from ≥ 2 independent families, at least one of them a substantive integrity or identity fact (`blue/audit/tools.py:285-287`), plus a fresh read of the vendor. Maximum 4 freezes per turn. Newness, threshold, splitting, name or Benford hints never justify a freeze on their own (`CONTROLLER.md:43-46`).
 - **Report**: Reviewed / Flagged / Needs a human tomorrow, under 200 words, with gaps and failed or unknown effects stated (`CONTROLLER.md:48-49`).
-- **Live**: `AuditAgent._droid_turn` raises "no stream or write attempted" (`blue/audit/agent.py:150-163`). A test-only harness proved one full live session against a real local Ledger (#119, `blue/SDK-READINESS.md`): 6 tool calls and 6 permission requests, a flag and the report committed, a same-key replay refused with an audited 409. During that session `/gate` showed p95 8.04 ms, max 56.6 ms over 1,817 samples. Local stack only, not prod.
+- **Live**: the guard was lifted on merged evidence (#157), and the image fails its build without the Droid SDK (#169). On prod `DRY_RUN_BLUE=false`, `DROID_MODEL_BLUE=gpt-5.4-mini`; smoke `ep_f9c695b3144f` (2-day enforce) finished a live audit both days at 3,806 and 4,109 Factory credits (blue's `turn_usage`; battlefield's per-episode credit total doesn't count blue yet). Before the lift, a test-only harness proved one full live session against a real local Ledger (#119, `blue/SDK-READINESS.md`): 6 tool calls and 6 permission requests, a flag and the report committed, a same-key replay refused with an audited 409. During that session `/gate` showed p95 8.04 ms, max 56.6 ms over 1,817 samples (that measurement is local stack only, not prod).
 
 ### 4.6 Who sees what — ON MAIN
 
@@ -181,12 +183,12 @@ From `battlefield/app/scoring/score.py:255-341`, emitted as `score.updated`:
 | Seat | Agent | Would we hire it today? | What it would take |
 |---|---|---|---|
 | **AP clerk** (sub-threshold invoice processing, invoice↔PO matching, expense reimbursement, routine vendor-master changes) | green | **Not for live money yet.** The procedure is complete and tested keyless. The live Droid session is hard-guarded | (1) Green SDK acceptance: OFF-autonomy permission prompts on every call, exact tool restriction, verified `tool_use_id`, CANCEL delivered to the model (`green/AGENTS.md` day-one tasks; P4). (2) The 3-day all-real shadow run (#78). (3) An above-threshold approval route: today those invoices are deferred and never routed to an approver. (4) GL posting and a close (none today). (5) Three-way match with receiving (only invoice↔PO today) |
-| **Controller / internal control** (preventive gate on every money movement, and a daily detective review) | blue | **Hire the gate first, in shadow mode.** It is deterministic, explains itself, fails closed, and is cheap. The daily audit is next | (1) Lift the live-audit guard after the remaining SDK acceptance steps (`blue/ACCEPTANCE.md`; #102). (2) Close known coverage gaps: ghost vendors under 95% of the threshold, duplicates resubmitted under follow-on numbers, and splits across pending siblings that the gate can't see (`CONTROLLER.md:15-18,92-95`; 4.3). The learned controls address the first two, but only after a miss, and the live-red lineage showed they don't touch splits on established vendors; a per-vendor same-day exposure control is the missing piece (a contracts change). (3) Shadow-mode precision and recall on realistic volume. (4) An escalation SLA and staffing: in enforce, the 90 s timeout means an unattended queue blocks work. (5) Restart-safe state: today it is single-process and in memory (`CONTROLLER.md:55`) |
-| **Fraud examiner / control tester** (internal audit's red team; continuous control testing) | red | **Yes, as a test tool.** It is the one agent running live today, and it attacks through the same API with no special access | (1) The three remaining schemes. (2) Done: a live recorded lineage (P1), where it found and farmed the split gap across five generations. (3) Strict identity (D7, Al's decision). (4) Scenarios with collusion or a compromised approver (NOT DOING this weekend) |
+| **Controller / internal control** (preventive gate on every money movement, and a daily detective review) | blue | **Hire the gate first, in shadow mode.** It is deterministic, explains itself, fails closed, and is cheap. The daily audit is next | (1) Done: the live-audit guard is lifted (#157) and the audit runs live on prod; next is measuring its precision over many live days. (2) Close known coverage gaps: ghost vendors under 95% of the threshold, duplicates resubmitted under follow-on numbers, and splits across pending siblings that the gate can't see (`CONTROLLER.md:15-18,92-95`; 4.3). The learned controls address the first two, but only after a miss, and the live-red lineage showed they don't touch splits on established vendors; a per-vendor same-day exposure control is the missing piece (a contracts change). (3) Shadow-mode precision and recall on realistic volume. (4) An escalation SLA and staffing: in enforce, the 90 s timeout means an unattended queue blocks work. (5) Restart-safe state: today it is single-process and in memory (`CONTROLLER.md:55`) |
+| **Fraud examiner / control tester** (internal audit's red team; continuous control testing) | red | **Yes, as a test tool.** It runs live today (as does blue's audit), and it attacks through the same API with no special access | (1) The three remaining schemes. (2) Done: a live recorded lineage (P1), where it found and farmed the split gap across five generations. (3) Strict identity (D7, Al's decision). (4) Scenarios with collusion or a compromised approver (NOT DOING this weekend) |
 
 ### 4.10 Across generations: the live-red lineage — recorded on prod (P1 done)
 
-The live-red prod lineage `ln_f52a3df83c8d`: 5 generations × 8 business days, enforce, base seed 501 (seeds 502–506), red live on `gpt-5.4-mini`, green and blue keyless (their real code). Red spent 20,402 / 20,744 / 22,831 / 22,974 / 22,313 credits per generation (~109k). The report comes from `make prod-evolution-report` (ground truth, git-ignored `runs/`, never committed).
+The live-red prod lineage `ln_f52a3df83c8d`: 5 generations × 8 business days, enforce, base seed 501 (seeds 502–506), red live on `gpt-5.4-mini`, green and blue keyless at the time (their real code; blue's audit went live later). Red spent 20,402 / 20,744 / 22,831 / 22,974 / 22,313 credits per generation (~109k). The report comes from `make prod-evolution-report` (ground truth, git-ignored `runs/`, never committed).
 
 | gen | extracted | blocked | FP cost | caught / launched | `threshold_split` launched (all extracted) |
 |---|---|---|---|---|---|
@@ -211,7 +213,7 @@ The live-red prod lineage `ln_f52a3df83c8d`: 5 generations × 8 business days, e
 | P1 | Live-red lineage on prod. **Done:** `ln_f52a3df83c8d`, 5 generations × 8 days, enforce, `gpt-5.4-mini`, ~109k red credits (§4.10) | Ad | — | Done. Say what it found (§4.10); use the mock lineage only as a labelled illustration |
 | P2 | Recorded controller-off vs controller-on episodes with live red, same seed. **Done:** `docs/recordings/` (#136), seed 42, 10 days: off $10,284.61 extracted, enforce $1,824.22 | Ad | — | Done, but not yet wired into the show. The show's off act is still a projection of the mock fixture (`frontend/docs/show-mode.md`); say so |
 | P3 | Evolution view from real `/fe/lineages` data | R (#117) | — | The EvolutionCard already tries `GET /lineages` (newest first) and shows the newest finished lineage with ≥ 2 generations when the backend is up: on prod that is now the live-red lineage `ln_f52a3df83c8d`, last four generations. Offline it falls back to `public/mocks/lineage-report.json`, the **golden test fixture** `ln_rpt_sample`, not a recorded run (`frontend/lib/arena/lineage.ts:47-57`). Check which one is on screen |
-| P4 | Green and/or blue live on Droid on prod | M (#78) | the SDK acceptance steps in 4.2 / 4.5 | "Red is live; green and blue run their full logic keyless on the same harness." |
+| P4 | Green and/or blue live on Droid on prod. **Blue's audit: done** (#157, live on prod since 2026-10-25). **Green: stays keyless** for the hackathon (#160 stays a draft) | M (#78) | — | "Red and blue are live agents; green runs its full logic keyless on the same harness." |
 | P5 | Prod on the TimescaleDB image | Ad | — | "Prod is plain Postgres 16; CI proves Timescale." |
 | P6 | CRS sandbox live demo | M (#102) | CRS acceptance | see the CRS doc |
 | Track-specific | A per-vendor same-day exposure control so splits on established vendors stop being free (the gap the live lineage found) | Ad (contracts, gate context) + M | a contracts change | "Threshold splitting on an established vendor gets past the gate today; the live lineage measured it" |
@@ -236,7 +238,7 @@ Mapped onto `frontend/docs/pitch-script.md` and the show timings in `frontend/do
 | R close | — | "Would I hire an AI to run AP? Not today, not without proof" lines up with 4.9 | — |
 | Judge picks an attack | laptop 1 | — | Live: `POST /episodes/{id}/attack`. Offline: `lib/arena/localAttack.ts` replays it using the **mock** agents' rules |
 
-**Hyphenate-specific ask for R:** if a judge launches **Bank Account Swap** on prod (real blue, keyless), the expected result from reading the code is an **escalation card**, not an immediate block (4.3). Say "blue flags the bank change for a human; I'll block it", then click Block. If a judge launches **Ghost Vendor** at the default $4,380 on prod, the code says the gate allows it with a note (4.3). Point to that as the documented trade-off and to the learned control that closes it, rather than promising zero.
+**Hyphenate-specific ask for R:** if a judge launches **Bank Account Swap** on prod (real blue; the gate runs rules, no LLM), the expected result from reading the code is an **escalation card**, not an immediate block (4.3). Say "blue flags the bank change for a human; I'll block it", then click Block. If a judge launches **Ghost Vendor** at the default $4,380 on prod, the code says the gate allows it with a note (4.3). Point to that as the documented trade-off and to the learned control that closes it, rather than promising zero.
 
 **Evolution beat, honestly:** the pitch script's "Blue sees what it missed and writes new rules" and "two that sharpen each other" describe the mock lineage, not the live one. If the card shows `ln_f52a3df83c8d`, say: "With a live attacker, red found that splitting invoices across an established vendor beats our controls, and farmed it for five generations. That's exactly what you'd want to find out before you hire the agent." Blue turns on pre-written controls; it doesn't write rules.
 
@@ -265,7 +267,7 @@ The controller fails closed: a timeout blocks, an unreachable controller escalat
 Most of autonomous AP is deciding what not to touch: defer over-limit invoices, defer invoices whose PO is missing, never retry a blocked action. A good controller is one a human can argue with, so it gives plain-language reasons, not a score. The fair way to grade a controller is in dollars on both sides.
 
 **What's next**
-Put green and blue on live Droid sessions after their SDK acceptance and a three-day all-real shadow run. Add above-threshold approval routing, GL posting and a close. Add receiving for three-way match. Add the remaining fraud schemes. Close the gap the live lineage found: a per-vendor same-day exposure control so split invoices on an established vendor stop slipping through, then re-run the lineage to show it holds.
+Put green on a live Droid session after its SDK acceptance and a three-day all-real shadow run; blue's audit already runs live. Add above-threshold approval routing, GL posting and a close. Add receiving for three-way match. Add the remaining fraud schemes. Close the gap the live lineage found: a per-vendor same-day exposure control so split invoices on an established vendor stop slipping through, then re-run the lineage to show it holds.
 
 **Built with**
 python, fastapi, httpx, pydantic, asyncpg, postgresql, timescaledb, factory-droid-sdk, mcp, next.js, typescript, tailwindcss, three.js (react-three-fiber), docker, docker-compose, caddy, cloudflare, vultr, github-actions
@@ -273,7 +275,7 @@ python, fastapi, httpx, pydantic, asyncpg, postgresql, timescaledb, factory-droi
 (`three` and `@react-three/fiber` are in `frontend/package.json`.)
 
 **Why this fits Hyphenate (prize opt-in box)**
-Hyphenate's thesis is agents that own finance work through to an outcome, resolve routine exceptions and escalate only judgment calls. Red Ledger is a test bench for exactly that, in procure-to-pay. An AP-clerk agent does the work. A controller agent sits in the segregation-of-duties seat and decides every payment, approval and vendor-master change, with written reasons. A human gets only the escalations, on a clock, and silence means no. An adversary probes all of it while we measure what the controls catch and what they cost in false positives. Today the attacker runs live on Factory's Droid SDK, and the clerk and controller run their full logic keyless on the same harness [only if P4: "and the clerk and controller run live too"].
+Hyphenate's thesis is agents that own finance work through to an outcome, resolve routine exceptions and escalate only judgment calls. Red Ledger is a test bench for exactly that, in procure-to-pay. An AP-clerk agent does the work. A controller agent sits in the segregation-of-duties seat and decides every payment, approval and vendor-master change, with written reasons. A human gets only the escalations, on a clock, and silence means no. An adversary probes all of it while we measure what the controls catch and what they cost in false positives. Today the attacker and the controller's daily audit run live on Factory's Droid SDK, and the clerk runs its full logic keyless on the same harness.
 
 ---
 
@@ -291,7 +293,8 @@ Hyphenate's thesis is agents that own finance work through to an outcome, resolv
 - The 12 rule functions and their effects as listed in 4.3.
 
 **Say with this caveat**
-- "Green and blue run their full logic" → add "keyless (DRY_RUN) on the same harness; their live Droid sessions are still behind safety guards" (P4).
+- "Green and blue run their full logic" → say "red and blue's audit are live on Droid; green runs its full logic keyless (DRY_RUN) on the same harness". Blue's gate itself is rules plus learned controls, no LLM.
+- "Blue's audit runs live" → true on prod since 2026-10-25; quote its credits from `turn_usage` (3,806 / 4,109 in `ep_f9c695b3144f`), not from `prod-credits` (counts blue as 0) or `/health` `droid_ok` (reads false while live; display bug).
 - "Blue's gate is fast" → "p95 8 ms measured during a live blue audit session on a local stack" (#119), not on prod.
 - "Agents learn across generations" → with live red on prod (`ln_f52a3df83c8d`), red adapted (it re-weighted toward `threshold_split`) and blue's learning didn't keep up. The closed-loop story (blue catches 5/5 in g3) is the keyless mock-agent lineage only. Those numbers in 10 are from `battlefield/mock_agents`, not M's blue/red (the rule IDs `bank_change_requested` and `duplicate_amount_match` exist only in `battlefield/mock_agents/server.py:407,420`).
 - "Blue learns new rules" → "blue turns on pre-written learned controls after a miss and retires them after they hit legitimate items" (`learned.py`). In the live lineage it turned all four on and none caught a split.
@@ -302,7 +305,7 @@ Hyphenate's thesis is agents that own finance work through to an outcome, resolv
 **Do NOT say (and why)**
 - "Three-way match": there is no receiving or goods-receipt record (`contracts/schema.sql` tables).
 - "It runs the close", "posts balanced GL", "reconciles the bank": green has no GL tool, and there is no close or reconciliation agent (`green/prompts/system.md`).
-- "Blue/green are live on Droid": both `_droid_turn` hard-stop (`green/agent.py:81-83`; `blue/audit/agent.py:150-163`).
+- "Green is live on Droid": green's `_droid_turn` hard-stops (`green/agent.py:94-96`). Blue's audit is live; its gate is not an LLM.
 - "The agents sharpen each other" or "blue learned to stop the live attacker": in the live lineage red got better and blue didn't (§4.10). Say red adapted and the gap was measured.
 - "Blue writes new rules": it switches on a fixed set of four pre-written controls (`learned.py:12-17`).
 - "Ten rules" as an exact count of blue's controls: the code has 12 rule functions producing 16 rule IDs, plus learned and unavailable IDs. "Ten guards" is the arena roster (`frontend/lib/arena/roster.ts:15,34-43`).
@@ -324,7 +327,7 @@ Hyphenate's thesis is agents that own finance work through to an outcome, resolv
 8. **Approval thresholds?** `APPROVAL_THRESHOLD` defaults to $5,000, inclusive. The clerk defers anything above it. Blue's `near_threshold` covers [95%, 100%) of it, and `unverified_vendor_exposure` blocks new vendors without a PO or history at ≥ 95%.
 9. **Is the data realistic enough?** It is seeded and synthetic: Faker names, recurring vendors with ±10% amount variation, PO-backed history, double-entry GL, a bank feed with receipts, and scheduled legitimate exceptions. It is not a real QuickBooks export.
 10. **How do you know it caught fraud and not noise?** Ground truth (`origin='red'`, `attack_id`) is hidden from agents and used only by scoring. Rule precision and recall per generation come from it (evolution report §4).
-11. **Does it improve?** The attacker does. In the live-red prod lineage (`ln_f52a3df83c8d`, 5 generations × 8 days, real blue keyless) red shifted to `threshold_split` (1 → 7 launches per generation) and extraction rose from $19,076 to $97,734. Blue switched on its pre-written learned controls, but none applies to splits on an established vendor, so it didn't keep up. That's the gap we'd fix before hiring the controller. In a keyless mock-agent lineage (3 generations × 5 days) the loop closes: red evaded in generation 2 ($5,631 extracted, 1 of 5 caught) and the mock blue's learned controls caught 5 of 5 in generation 3. That is the mock agents, labelled as such.
+11. **Does it improve?** The attacker does. In the live-red prod lineage (`ln_f52a3df83c8d`, 5 generations × 8 days, real blue, keyless at the time) red shifted to `threshold_split` (1 → 7 launches per generation) and extraction rose from $19,076 to $97,734. Blue switched on its pre-written learned controls, but none applies to splits on an established vendor, so it didn't keep up. That's the gap we'd fix before hiring the controller. In a keyless mock-agent lineage (3 generations × 5 days) the loop closes: red evaded in generation 2 ($5,631 extracted, 1 of 5 caught) and the mock blue's learned controls caught 5 of 5 in generation 3. That is the mock agents, labelled as such.
 12. **Where would it fail today?** A ghost vendor just under 95% of the threshold, a duplicate under a follow-on number, and splits across pending invoices are allowed by the baseline gate. The live lineage confirmed the split gap: 19 of 19 `threshold_split` attacks extracted. The daily audit or learned controls catch some of these after the fact (`CONTROLLER.md:15-18,92-95`; 4.3).
 13. **What does a judgment call look like?** An `escalation.opened` card with the action, amount, plain-language reason and `expires_at`. Approve or Block calls `POST /escalations/{id}/resolve`, and `escalation.resolved` records who decided.
 

@@ -1,6 +1,8 @@
 # docs/devpost — track docs for the Devpost submission and the pitch
 
 Status as of 2026-10-24 ~23:00Z, main @ 0de4fe8; prod runs 4c6bdd9 (#131). Written for R (Devpost + pitch). Ad keeps them current.
+**Update 2026-10-25 ~03:05Z:** blue's daily audit is now live on Droid on prod (below); green stays keyless.
+Every track doc carries the same update note; recorded runs from before it (P1, P2) had blue keyless.
 
 Each file is one prize track. Each has the same ten sections: prize snapshot, our angle, a criteria → evidence
 matrix, what we have in detail, what's planned, demo beats, paste-ready Devpost copy, a claims ledger
@@ -40,11 +42,18 @@ Not submitting, or drop the claim:
 ## What is live today (the honest baseline)
 
 - Red runs live on Factory's Droid SDK on prod (`gpt-5.4-mini`, reasoning low): ~11 s and ~2.6k credits per turn.
-- Green and blue run their full logic on prod with no model calls (`DRY_RUN_GREEN/BLUE=true`). Blue's
-  deterministic rules decide there: some block, some escalate to a human (bank changes), and some only annotate
-  (`vendor_age_lt_7d`, `near_threshold`). Real blue does **not** stop every red attack; see hyphenate.md §8.
+- Blue's daily audit runs live on Droid on prod since 2026-10-25 ~03:05Z (`DRY_RUN_BLUE=false`,
+  `DROID_MODEL_BLUE=gpt-5.4-mini`; #157 lifted the guard, #169 fails the image build without the SDK). Smoke
+  `ep_f9c695b3144f` (2-day enforce): a live audit both days, 3,806 and 4,109 Factory credits (blue's `turn_usage`
+  log). Battlefield's per-episode credit total doesn't count blue's audit yet, so don't quote `prod-credits` for
+  blue, and don't cite blue's `/health` `droid_ok` (it reads false while live; a display bug).
+- Blue's gate is still rules plus learned controls, no LLM: some block, some escalate to a human (bank changes), and
+  some only annotate (`vendor_age_lt_7d`, `near_threshold`). Real blue does **not** stop every red attack; see
+  hyphenate.md §8.
+- Green runs its full logic on prod with no model calls (`DRY_RUN_GREEN=true`). That is the plan for the hackathon
+  (Ad's call; #160 stays a draft).
 - **Live-red evolution (P1, done):** the live-red prod lineage `ln_f52a3df83c8d` (5 generations × 8 days, enforce,
-  seeds 502–506, red live, green and blue keyless real code, ~109k red credits). Red re-weighted its catalog toward
+  seeds 502–506, red live, green and blue keyless real code (before blue's audit went live), ~109k red credits). Red re-weighted its catalog toward
   `threshold_split` (launches 1 → 2 → 6 → 3 → 7, every one extracted) and extraction rose from $19,076 (g1) to
   $97,734 (g5). Blue switched on its four pre-written learned controls after g1 and widened its near-threshold band,
   but none of them ever fired on a split. Red invented no new schemes. That is a controls gap the sandbox found,
@@ -52,12 +61,12 @@ Not submitting, or drop the claim:
 - **Mock-agent evolution (illustration only):** a keyless mock-agent lineage run (local), `ln_fbdfbd2d74cc`, shows what
   closing the loop looks like: red evades in generation 2, blue catches 5/5 in generation 3. Those are the **mock**
   agents (`battlefield/mock_agents/`), not M's blue or Al's red. Always label it mock.
-- **Controller off vs. on with live red (P2, done):** `docs/recordings/` (#136), seed 42, 10 days, recorded on prod:
+- **Controller off vs. on with live red (P2, done):** `docs/recordings/` (#136), seed 42, 10 days, recorded on prod (green and blue keyless at the time):
   off $10,284.61 extracted, 0 of 10 caught; enforce $1,824.22 extracted, 1 of 10 caught, $100 false-positive cost.
   In both runs 9 of red's 10 attacks were duplicate invoices that were never paid; all the money came from one bank
   swap. In enforce, the bank-change approvals escalated and timed out to blocks, but red's own $1,824.22 invoice was
   still paid (outcome `partial`). So the enforce number is not zero.
-- The 90-second show in `frontend/` plays a recording when any agent is live (red is), so it's a replay on prod
+- The 90-second show in `frontend/` plays a recording when any agent is live (red and blue are), so it's a replay on prod
   (`frontend/public/mocks/sample.jsonl`, mock agents). The live evidence is Launch attack plus the backstage consoles.
   On prod the EvolutionCard loads the newest finished lineage from the backend, which is now `ln_f52a3df83c8d` (code
   reading: `frontend/lib/arena/lineage.ts:47-57`; `GET /lineages` is newest first). Check what it shows before going on stage.
@@ -69,7 +78,7 @@ Not submitting, or drop the claim:
 | P1 | Live-red evolution lineage on prod. **Done:** `ln_f52a3df83c8d`, 5 generations × 8 days, enforce (numbers above) | Ad | Done. Say what it showed: red adapted and farmed `threshold_split`; blue's bounded learning didn't close it. Use the mock lineage only as a labelled illustration |
 | P2 | Recorded controller-off vs. controller-on episodes with live red, same seed. **Done:** `docs/recordings/` (#136) | Ad | Done. Not yet wired into the show; replay via `POST /replays/{id}/play` after copying into the fixtures dir. Say they are recordings |
 | P3 | Evolution view in the frontend from the real `/fe/lineages` routes (#117) | R | The EvolutionCard already loads the newest finished backend lineage when connected (now `ln_f52a3df83c8d` on prod); offline it shows the golden test fixture `ln_rpt_sample`, which is synthetic. Say which one is on screen |
-| P4 | Green and/or blue live on Droid on prod (#78) | M | "Red is live; green and blue run their full logic keyless on the same harness" |
+| P4 | Green and/or blue live on Droid on prod (#78). **Blue's audit: done** (#157; live on prod since 2026-10-25, smoke `ep_f9c695b3144f`). **Green: stays keyless** for the hackathon (#160 stays a draft) | M | "Red and blue are live agents; green runs its full logic keyless on the same harness" |
 | P5 | Prod on the TimescaleDB image | Ad | "TimescaleDB proven in CI; prod on Postgres 16" |
 | P6 | CRS sandbox live demo (#102) | M | See crs.md |
 

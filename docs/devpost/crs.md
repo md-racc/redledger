@@ -2,13 +2,15 @@
 
 Status as of 2026-10-24 ~23:00Z, main @ 0de4fe8 (includes #134 and #135; issue #102 comments to 22:27Z); prod runs 4c6bdd9 (#131).
 
+**Update 2026-10-25 ~03:05Z:** blue's daily audit now runs live on Droid on prod (`DRY_RUN_BLUE=false`, `DROID_MODEL_BLUE=gpt-5.4-mini`; #157 lifted the guard, #169 makes the image fail the build without the SDK; smoke `ep_f9c695b3144f`). The CRS evidence below is unchanged: no CRS call from prod or from the live Droid audit is recorded. The prod-status rows (§0, §3, §4.3, §5, §8, §9) are updated to match.
+
 Status legend: `LIVE` = running on prod (app.redledger.us) with a real model today. `ON MAIN` = merged and tested, runs keyless, not exercised live on prod. `PLANNED` = not done yet. `NOT DOING` = out of scope. Track-specific tag: `SANDBOX-PROVEN (local)` = exercised against the real CRS sandbox from a team member's local stack, with evidence in a PR or issue, not on prod. `UNVERIFIED` = could not confirm.
 
 ---
 
 ## 0. Verdict first (read before using anything below)
 
-**CRS live-evidence verdict:** authenticated sandbox calls for P01/P12/P16 are proven from a local stack (all logged `billable:false`), and a CRS mismatch produced exactly one high-severity flag on the right employee inside a real episode. **The CRS finding has not yet been shown changing a later gate decision**: in the #134 run the expense hold never fired, because battlefield's expense gate context omitted flags. That is fixed on main in #139; M's end-to-end re-run is pending. Nothing CRS-related runs on prod.
+**CRS live-evidence verdict:** authenticated sandbox calls for P01/P12/P16 are proven from a local stack (all logged `billable:false`), and a CRS mismatch produced exactly one high-severity flag on the right employee inside a real episode. **The CRS finding has not yet been shown changing a later gate decision**: in the #134 run the expense hold never fired, because battlefield's expense gate context omitted flags. That is fixed on main in #139; M's end-to-end re-run is pending. No CRS call has been made on prod: blue's live audit there holds the tool, but it reaches CRS only for operator-bound persona employees, and nothing records a prod episode seeded with them.
 
 What is proven, and where:
 
@@ -20,7 +22,7 @@ What is proven, and where:
 | `billable:false` on the provider's `/users/logs` | Yes: 4/4 entries (probe), 13/13 entries (episode run) | provider logs, operator read | `blue/CRS.md:96-97`; #134; #102 (22:27Z) |
 | CRS inside a real episode (real battlefield, real keyless blue, `CRS_LIVE=true`) flags only the mismatch persona | Yes, local, ep_e1d35dfb24b1 (2-day enforce) | local stack | `blue/CRS.md` "Episode acceptance evidence" (#134); #102 (22:27Z) |
 | CRS finding causally blocks a **later** gated action (P12's next expense) | **Not yet shown.** In the #134 run P12's day-1 expense was **paid**, because `_expense_context` sent no `flags` to the gate. **Fixed in #139** (ae822a1): the expense gate context now carries employee and expense flags. M's re-run of the #134 driver is pending | — | #134 finding; #139 (`battlefield/app/api/green_writes.py` `_expense_context`) |
-| Anything CRS on prod | **No.** Blue is keyless on prod; `CRS_LIVE` isn't passed to the blue container in any compose file; blue's live audit is hard-disabled | — | `docker-compose.yml:120-139`; `blue/audit/agent.py:150-163`; README "Where Droid runs" (#135) |
+| Anything CRS on prod | **No call recorded.** Blue's audit runs live on prod since 2026-10-25, so the check is reachable without `CRS_LIVE`, and `CRS_USERNAME`/`CRS_PASSWORD` are production secrets passed to blue. But it calls CRS only for an active employee onboarded in the last 7 days, bound by an operator to P01/P12/P16, whose name equals the persona's. Seeded employees never qualify (they start 30-2000 days before day 0, have random names and no binding); the operator fixtures route plus a manual bind would add them, and that hasn't been done on prod | — | `blue/audit/tools.py:229-245`; `blue/audit/crs.py:67-76`; `battlefield/seed/company.py:73-84`; `docker-compose.yml:136-137`; `deploy/render-env.sh:119-120`; `.github/workflows/deploy.yml:63-64` |
 | Episode acceptance driver on main | **Yes**, merged in #134 (`blue/tests/crs_episode_acceptance.py`, opt-in `--allow-provider-call`, not collected by pytest) | — | #134 (0de4fe8) |
 | Frontend or pitch shows CRS | **No** | — | no CRS references in `frontend/` (grep); `frontend/docs/pitch-script.md` |
 
@@ -28,10 +30,10 @@ What is proven, and where:
 - **GO** (submit to Best Identity / Fraud Innovation; optionally Most Unexpected Use) only if all three happen before submission:
   1. ~~Ad lands the battlefield fix (flags in `_expense_context`).~~ **Done: #139.**
   2. M re-runs the #134 driver and gets P12's later expense **blocked** with `already_flagged_high` in `rules_fired`, P01's and P16's paid, and `billable:false`.
-  3. Someone can run that live at the CRS judging table from a laptop with the local stack and the team's sandbox credentials exported (prod can't do it today).
+  3. Someone can run that live at the CRS judging table from a laptop with the local stack and the team's sandbox credentials exported (prod has never run the persona setup; see "Anything CRS on prod" above).
 - **PARTIAL** (the re-run doesn't happen or fails, but a laptop can run the flag step live): submitting to Identity / Fraud is defensible only if the copy says plainly "the CRS mismatch raises the hold live; the expense gate reads it as of #139, but we haven't re-run the end-to-end check". It will score low on "it really works". Team call.
 - **NO-GO** (nobody can run it live at a table): don't submit to CRS. A recorded-only CRS demo breaks the challenge's only rule.
-- **Best Financial AI Agent:** not recommended. The CRS path runs in blue's deterministic keyless audit, with no LLM on it, and blue's live Droid audit is disabled. Honest only if P4 (blue live) lands and the live audit calls `crs_identity_check`. **Best Overall CRS Hack:** don't target it; one endpoint and three personas is not "the most impressive product built on CRS".
+- **Best Financial AI Agent:** still not recommended, but now one run away. Blue's live Droid audit (on prod since 2026-10-25) holds `crs_identity_check` and its turn prompt tells it to call it, so an LLM agent can drive the check. Every recorded CRS call, though, came from the deterministic keyless audit (`CRS_LIVE=true`), and the model only sees status counts and service-defined finding ids, so its judgment on identity is limited to calling the tool and raising the finding. Honest only after a recorded run (local or prod) where the live audit calls `crs_identity_check` on bound personas and raises the P12 flag. **Best Overall CRS Hack:** don't target it; one endpoint and three personas is not "the most impressive product built on CRS".
 
 ---
 
@@ -63,7 +65,7 @@ Judging: "No points formula. Judges look at the whole project, and a bold idea c
 | **It really works (live demo, end to end)** | Probe ladder live; episode run live up to the flag; the expense hold did not fire (battlefield gap); not on prod; no frontend view | **Partial**, see §0 | #102, #125, #134; `green_writes.py:92-109` |
 | **Responsible** | Pinned fictional personas only; operator-only immutable bindings; name must match persona; unknown on any failure; one login attempt, never retried; ≤10 checks per audit with hard timeouts; no raw identity in model input, events or logs; DRY_RUN never calls CRS; `billable:false` verified | ON MAIN; verified in code (§4.4) | `blue/audit/crs.py`, `blue/audit/tools.py:220-260`, `blue/audit/evidence.py:299-328`, `battlefield/extensions/blue_crs.py`, `contracts/ext/blue/01_crs_profiles.sql` |
 | Best Identity / Fraud fit | Fraud and identity-theft protection for a business, inside an attacker-vs-controller sandbox | ON MAIN | above |
-| Best Financial AI Agent fit | The CRS tool is in blue's Droid tool list (`blue-ledger___crs_identity_check`), but the live Droid audit is disabled; today the keyless deterministic audit calls it | ON MAIN (keyless) | `blue/audit/agent.py:28-37,150-197`; CHANGELOG Finding (blue's seven tool IDs) |
+| Best Financial AI Agent fit | The CRS tool is in blue's Droid tool list (`blue-ledger___crs_identity_check`), and the live Droid audit runs on prod since 2026-10-25; every recorded CRS call came from the keyless deterministic audit, and no live-audit CRS call is recorded | Live audit LIVE; CRS from it not shown | `blue/audit/agent.py:28-37,150-197`; CHANGELOG Finding (blue's seven tool IDs) |
 
 ## 4. What we have, in detail
 
@@ -90,13 +92,13 @@ The original plan (B2) was EIN/vendor verification. The published CalHacks OpenA
 
 | Setting | Effect | Source |
 |---|---|---|
-| `DRY_RUN=true` (default for blue on prod) | keyless audit runs; CRS is **not** called even with credentials | `tools.py:235`; `blue/CRS.md:6-8` |
-| `CRS_LIVE=true` (shell export only, acceptance-only, default off) | lets the keyless audit call the sandbox; live-audit guard, DRY_RUN semantics and `/gate` unchanged | `crs.py:103-105`; #120; README §11 (#128) |
+| `DRY_RUN=true` (blue on prod until 2026-10-25) | keyless audit runs; CRS is **not** called even with credentials | `tools.py:235`; `blue/CRS.md:6-8` |
+| `CRS_LIVE=true` (shell export only, acceptance-only, default off) | lets the keyless audit call the sandbox; DRY_RUN semantics and `/gate` unchanged; not needed when the audit is live | `crs.py:103-105`; #120; README §11 (#128) |
 | `CRS_USERNAME` / `CRS_PASSWORD` | sandbox login; empty → `unknown`. Passed only to blue | `docker-compose.yml:136-138`; `deploy/ENVIRONMENT.md:95` |
 | `CRS_API_KEY` | legacy placeholder, unused | README §11 |
-| Blue live Droid audit | hard-disabled: `_droid_turn` raises before any stream or write | `blue/audit/agent.py:150-163` |
+| Blue live Droid audit (`DRY_RUN_BLUE=false`) | **live on prod since 2026-10-25** (guard lifted in #157, `gpt-5.4-mini`). The turn prompt tells the model to call `crs_identity_check`; the `not session.dry_run` branch then allows the provider call under the same credential, binding, 7-day and name gates | `blue/audit/agent.py:142-155`; `tools.py:234-245` |
 
-`CRS_LIVE` appears in no compose file, so prod blue can't make the call today without a compose change (Ad).
+`CRS_LIVE` appears in no compose file, and prod no longer needs it: the live audit opens the check by itself. The credentials reach blue on prod (production secrets → `deploy.yml:63-64` → `render-env.sh:119-120` → `docker-compose.yml:136-137`). What prod lacks is the operator setup of §4.2 steps 1-2 on an unstarted episode (`make prod-fixtures` exists; there is no make target for the bind, so it's a manual operator `PUT`). Without it the tool returns all-unknown and calls nobody.
 
 ### 4.4 Responsibility, verified in code `ON MAIN`
 
@@ -128,13 +130,13 @@ The original plan (B2) was EIN/vendor verification. The published CalHacks OpenA
 | **P6 CRS sandbox live demo** | M (#102) | a re-run of the #134 driver on main ≥ ae822a1 (the flags fix, #139), a laptop with local stack + credentials | See §0 GO / PARTIAL / NO-GO |
 | ~~Flags in `_expense_context`~~ Done: #139 | Ad | — | Until M's re-run shows P12 blocked: "A CRS mismatch raises a high-severity hold on the employee, and the expense gate now reads it (#139); the end-to-end re-run is pending." |
 | ~~Merge #134~~ Done: driver `blue/tests/crs_episode_acceptance.py` (`--allow-provider-call`) is on main | M | — | — |
-| CRS on prod (pass `CRS_LIVE` + creds to blue, or blue live audit) | Ad (compose) / M | P4 for the live audit | "CRS runs on a local stack of the same code; prod blue is keyless" |
-| P4 Blue live on Droid (would make "Financial AI Agent" honest) | M (#78) | live acceptance | Don't enter Best Financial AI Agent |
+| CRS on prod (live audit and credentials are in place; needs persona fixtures + operator binds on an unstarted prod episode, then a run) | Ad (prod operator) / M | the P6 re-run first | "CRS runs on a local stack of the same code; on prod, blue's live audit holds the tool but no persona employees are seeded there" |
+| ~~P4 Blue live on Droid~~ Done for blue's audit (#157; prod since 2026-10-25). Still missing for "Financial AI Agent": a recorded live-audit run that calls `crs_identity_check` on bound personas | M | a live-audit CRS run (local or prod) | Don't enter Best Financial AI Agent |
 | CRS beat in the pitch / a CRS view in the frontend | R | P6 | Demo at the CRS table from a terminal, not in the four-laptop show |
 
 ## 6. Demo beats for this track
 
-R's pitch (`frontend/docs/pitch-script.md`) has **no CRS beat**, and the four laptops point at prod, where CRS can't run. Treat CRS as a **separate 60-90 s table demo for CRS judges**, plus at most one sentence in Blue's minute (only at GO).
+R's pitch (`frontend/docs/pitch-script.md`) has **no CRS beat**, and the four laptops point at prod, where no persona employees are seeded, so CRS never fires. Treat CRS as a **separate 60-90 s table demo for CRS judges**, plus at most one sentence in Blue's minute (only at GO).
 
 **Table demo (laptop with `make local-stack BLUE=real`, credentials and `CRS_LIVE=true` exported in the shell, never `.env`):**
 
@@ -175,7 +177,7 @@ A responsible-by-construction integration: only sponsor-pinned fictional identit
 An identity signal is only useful as a control if you are strict about what it does not mean. A fraud alert is a reason to ask, not to accuse.
 
 **What's next**
-Running the CRS check from blue's live Droid audit `[only if P4]`, on the production deployment, and adding CRS evidence to vendor onboarding if a business-verification product becomes available in the sandbox.
+Showing the CRS check end to end from blue's live Droid audit, which already runs on our production deployment, and adding CRS evidence to vendor onboarding if a business-verification product becomes available in the sandbox.
 
 **Built with:** crs-credit-api, transunion, python, fastapi, httpx, pydantic, postgresql, docker, factory-droid-sdk, next.js
 
@@ -195,13 +197,13 @@ Red Ledger protects a business from ghost-employee and synthetic-identity fraud 
 **Say with this caveat**
 - "End to end": only at GO. Until then, "end to end up to the hold; the gate wiring is pending".
 - "Live": "live against the CRS sandbox from our local stack", not "on our production deployment".
-- "Agent": blue's keyless audit service makes the call. Blue's Droid audit is disabled until live acceptance (#78).
+- "Agent": in every recorded run, blue's keyless audit service made the call. Blue's Droid audit now runs live on prod and holds the tool, but no CRS call from it is recorded.
 - "Catches ghost employees": operator-seeded persona employees. Red's own ghost employees are caught by `no_hr_record`, not CRS.
 
 **Do NOT say**
 - "CRS blocks fraudulent payments" or "the CRS finding stopped a payment" before the fix and re-run (P12's expense paid in ep_e1d35dfb24b1).
-- "Running on app.redledger.us" (prod blue is keyless; no `CRS_LIVE`).
-- "Our AI agent queries CRS" (no LLM on that path today).
+- "Running on app.redledger.us" (no CRS call recorded on prod; seeded prod employees can't qualify, and no persona-bound prod episode is recorded).
+- "Our AI agent queries CRS" (not shown yet: the live Droid audit holds the tool, but every recorded CRS call came from the keyless audit).
 - "Verifies vendors / EINs" (dropped, no such endpoint).
 - "Checks every employee" (only bound personas onboarded within 7 days, ≤10 per audit).
 - Any credential, token, or provider response body.
@@ -215,11 +217,11 @@ Red Ledger protects a business from ghost-employee and synthetic-identity fraud 
 5. **What if CRS is down or credentials are missing?** `unknown`. No finding, and the audit still completes; the report counts unknowns (`crs.py:98-100`; `tools.py:341`).
 6. **Does the model see SSNs?** No. The tool returns counts by status, and the model's view excludes names and identity fields (`tools.py:259-260`; `evidence.py:299-311`).
 7. **Do you retry login?** No. One attempt, latched before the request. A failed or expired token needs a human and a restart (`crs.py:80-84`; `blue/CRS.md:55-57`).
-8. **Is it live on your deployed site?** Not yet. Blue runs keyless on prod. The CRS demo runs the same code on a local stack.
+8. **Is it live on your deployed site?** Not yet. Blue's audit runs live on Droid there and holds the CRS tool, but it only calls CRS for operator-bound persona employees, and we haven't seeded those on prod. The CRS demo runs the same code on a local stack.
 9. **Did CRS change a decision?** `[GO]` Yes: P12's next expense was blocked with `already_flagged_high`. `[else]` It raised the right hold. Our own acceptance run (#134) found the expense gate wasn't reading flags; we fixed that in #139, and the end-to-end re-run is pending.
 10. **Why not just use the HR record?** Fakes can have HR records. In our scenario HR is valid and accounts are distinct on purpose, so only CRS can catch it.
 11. **Billing?** All sandbox entries we checked were `billable:false` via `/users/logs`.
-12. **What's AI about it?** The surrounding system is three AI agents. The CRS check sits in the controller's audit, and its tool is registered in blue's Droid session (`blue-ledger___crs_identity_check`), but the live Droid audit isn't enabled yet.
+12. **What's AI about it?** The surrounding system is three AI agents. The CRS check sits in the controller's audit, and its tool is registered in blue's Droid session (`blue-ledger___crs_identity_check`), which runs live on prod. The CRS calls we've recorded came from the keyless audit, which runs the same tool code without a model.
 
 ## 10. Numbers sheet
 

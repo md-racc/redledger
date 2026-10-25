@@ -132,7 +132,7 @@ Would I hire an AI to run accounts payable? Not today. Not without proof. But no
 
 Here's what live looks like. Real agents, ten days, same seed. No controller: about ten thousand dollars lost. Controller on: about eighteen hundred. Not zero.
 
-And to be straight about where we are: red is a live agent. Green and blue run their full logic keyless, and their live sessions are still clearing our safety checks. The show was a recording, and that learning card is a recorded live run.
+And to be straight about where we are: red and blue are live agents. Green runs its full logic keyless on the same harness. The show was a recording, and that learning card is a recorded live run.
 
 *[Say the version that's true on the day.]*
 
