@@ -4,7 +4,7 @@ Status: **decided — Ad accepted D1–D14 as recommended on 2026-10-24 (§6).**
 prod runs red live, green and blue keyless (per-agent `DRY_RUN_*`, #75). The contracts in §3 are on main
 (#80, #86); `contracts/` supersedes the text below wherever they differ. Input: [`AD-AGENT-INTEGRATION-SPEC.md`](AD-AGENT-INTEGRATION-SPEC.md) and
 its Green/Blue sources. Baseline: main `d0600d4` (#52, escalation e2e, merged unsplit). File:line
-refs are main at that commit.
+refs from §2 on are main at that commit; §1 is re-verified at a later commit (dated there).
 
 **D1 reverses M's mirror design:** Green no longer calls Blue `/gate`; invariant 2's exception
 (`AGENTS.md` §3.2) is deleted in PR 9. M has to know this before PRs 6/7.
@@ -18,11 +18,11 @@ refs are main at that commit.
 | 2b gated routes consume preparations | #89 | merged |
 | 3 strict identity, exact tool ids, `prepare()` | #84 | merged |
 | 4 turn loop, `TurnLock`, `redact=` | #79 (+ #81 teardown) | merged, live for red on prod |
-| 5 SDK findings | #91 (blue OFF, bounded), #96 (green tool ids) | partly; "OFF prompts on every MCP call" still open |
-| 6 green live handler (M) | #93 (staged, draft) | in progress |
+| 5 SDK findings | #91 (blue OFF, bounded), #96 (green tool ids); blue live evidence #119, #127 | partly; "OFF prompts on every MCP call" and CANCEL comment still open |
+| 6 green live handler (M) | #93, #94 | merged; live green turn still guarded (`green/agent.py:81-83`) |
 | 7 blue shared adapter (M) | #85, #88, #90 | merged; `live_audit_disabled` still on |
 | 8 joint acceptance (3-day shadow, all live) | issue #78 | blocked on 6/7 |
-| 9 cleanup | `docs/integration-truth-up` (invariants 2/7, §5 rules, README) | partly |
+| 9 cleanup | #97 (invariants 2/7, §5 rules, README) | partly; spec + this doc not yet deleted |
 
 ## 0. Summary of position
 
@@ -35,61 +35,68 @@ refs are main at that commit.
   decision, Green → Blue `/gate` replay adds no enforcement (invariant 3), only a new failure mode
   (Blue restart → legit action cancelled). Replay-only Blue (Option R) is kept in §2.9 only as the
   rejected alternative.
-- Package B: #34 already carries the SDK id into events and headers. Missing: refusing
-  unverified/ambiguous ids live, a service loop the bridge can't block, loop-safe ownership, exact
-  tool-ID checks, one narration owner for Blue. Spec conflicts/overreach: §2.10.
+- Package B: #34 already carries the SDK id into events and headers. Missing at the baseline, since
+  landed (#79, #84, #85, #88, #90; status in §1): refusing unverified/ambiguous ids live, a service
+  loop the bridge can't block, loop-safe ownership, exact tool-ID checks, one narration owner for
+  Blue. Spec conflicts/overreach: §2.10.
 
 ## 1. Gap table (strict: "partial" if any sub-bullet is missing)
+
+Re-verified against origin/main @ `2a90f5e` on 2026-10-25. File:line refs in this section are at that
+commit. `gatekeeper.py` = `battlefield/app/gate/gatekeeper.py`; `preparations.py`, `green_writes.py` are
+in `battlefield/app/api/`; `droid_agent.py`, `invocation.py`, `ledger_client.py`, `sync.py` in
+`agentkit/agentkit/`.
 
 ### Work package A
 
 | # | Requirement (spec) | Status | Evidence |
 |---|---|---|---|
-| A1 | Battlefield prepares from verified id + normalized args, assembles complete stripped context, binds to episode/day/mode/action/entity/amount or GL fields/ledger state/expiry | **missing** | No prepare route (grep `prepar` in `battlefield/app`: none). Context exists only inline in each route: `green_writes.py:56-130`. Key binding covers the action tuple only: `gatekeeper.py:206-220`; no day/mode/state/expiry columns in `schema.sql:169-188` |
-| A2 | Preparation may persist decisions/receipts/escalation, never performs the action | **missing** | Gate and mutation are fused in every route (`green_writes.py:201-224` then CAS) |
-| A3 | Canonical envelope + effective result Green forwards unchanged; no incomplete mirror seeding Blue | **missing** (safe today) | Green cancels every live permission: `green/agent.py:46-50`; live turn hard-guarded: `green/agent.py:42-44` |
-| A4 | Blue replay-only: miss/expired/conflict/invalid fail explicitly, never evaluate or prime; complete same-action replay for 120 s | **n/a (D1)** | Green no longer calls Blue, so there is nothing to replay. Blue's existing binding + 120 s cache (`blue/gate/engine.py:20,55-70,90-98`) stays for battlefield's own retries |
-| A5 | Freshness, envelope validation, restart/cache-loss, 120 s vs 90 s, late human answer can't extend authority | **partial** | Done in #52: CAS close (`gatekeeper.py:274-291`), resolve without a waiter → timeout + 409 (`:359-371`), startup orphan sweep (`:374-384`, called from `main.py:43-59`). Missing: verdict replay has no age check (`gatekeeper.py:121-123,196-203`); no preparation expiry anywhere |
-| A6 | Battlefield owns escalation, persists effective result; reuse, no duplicate human requests | **partial** | Done in #52: per-key single-flight (`gatekeeper.py:92-105`) and replay joins/reuses the key's escalation (`_join_escalation`, `:338-356`). Missing: effective outcome not stored on the verdict (re-derived from `escalations.status`, `:294-295`) |
-| A7 | Persist enforced blocks even when SDK cancels; distinguish fraud hold vs integration/auth/transport failure in events, receipts, summaries | **missing** | Block persisted only when the route runs: `green_writes.py:218-224`. Blue outage = ordinary verdict + `rules_fired:["gate_timeout"]`: `gatekeeper.py:245-248`; no cause in `gate.verdict` (`gatekeeper.py:162-180`, `events.md:34`) or `GateBlocked` (`ledger-api.yaml:238-244`, `green_writes.py:153-154`) |
-| A8 | Execution consumes only a matching valid preparation, keeps validation + #39 CAS; state/mode/args change, expiry, identity conflict reject without retry | **partial** | CAS: `green_writes.py:170-184`; pay re-reads vendor in txn: `334-336`; different action → 409: `gatekeeper.py:200-202`. Replay never compares the stored verdict's mode or day (verified on `d0600d4`, see below). No state/expiry binding |
+| A1 | Battlefield prepares from verified id + normalized args, assembles complete stripped context, binds to episode/day/mode/action/entity/amount or GL fields/ledger state/expiry | **done** | `POST /api/preparations`: `preparations.py:139-215` (#87; contract #80, #86). Route's own state checks/404/409 first (`:166-194`), then the inline routes' stripped context (`green_writes.py:56-140`; expense context gains employee/expense flags `:104-112`, #139). Row binds key/day/agent/mode/action/entity/amount/args/`state_hash`/`expires_at` (`schema.sql:233-256`, insert `gatekeeper.py:676-713`); narrow fingerprint `preparations.py:56-84`. Battlefield can't verify the id (§2.10.1); agentkit does (B2) |
+| A2 | Preparation may persist decisions/receipts/escalation, never performs the action | **done** | `prepare()` gates and persists only (`gatekeeper.py:538-600`): verdict, enforced block marks the entity `blocked` (D6, `:592-594`, `preparations.py:87-100`), escalation held to a decision (`gatekeeper.py:603-622`). No mutation rows; test `battlefield/tests/test_preparations_db.py:113` |
+| A3 | Canonical envelope + effective result Green forwards unchanged; no incomplete mirror seeding Blue | **done** | Green's handler prepares one verified use and answers on `effective` (`green/agent.py:85-113`, `green/preparation.py:68-115`; #93, #94). No green → blue call (`BLUE_URL`/`/gate` in `green/`: none). Live green turn still hard-guarded (`green/agent.py:81-83`): a rollout gate, not this row |
+| A4 | Blue replay-only: miss/expired/conflict/invalid fail explicitly, never evaluate or prime; complete same-action replay for 120 s | **n/a (D1)** | Green never calls Blue (`contracts/agent-service.md:145`). Blue's binding + 120 s retention stay for battlefield's own retries (`blue/gate/engine.py:20,55-70,90-110,157-162`) |
+| A5 | Freshness, envelope validation, restart/cache-loss, 120 s vs 90 s, late human answer can't extend authority | **done** | #52: CAS close (`gatekeeper.py:385-402`), resolve without a waiter → timeout + 409 (`:484-496`), orphan sweep (`:499-509`, `main.py:44-52`). #87/#89: fixed 120 s expiry (`gatekeeper.py:695,712`), refused in enforce at consumption (`green_writes.py:270-273`; the claim re-checks `clock_timestamp() < expires_at`, `:308-316`); startup refuses `ESCALATION + GATE + 15 > 120` (`gatekeeper.py:517-524`, `main.py:36`); approval after expiry → block/timeout (`gatekeeper.py:650-664`); restart sweeps `pending` → block/timeout (`:716-727`, `preparations.py:227-233`). Inline verdicts bound to day + enforcement (A8); no wall-clock age within a day (by design: preparations carry the expiry) |
+| A6 | Battlefield owns escalation, persists effective result; reuse, no duplicate human requests | **done** | One single flight per key for `check()` and `prepare()` (`gatekeeper.py:147-163`); replay joins/reuses the key's escalation (`_join_escalation`, `:463-481`); a pending re-prepare joins or abandons, never a second card (`:625-647`). Effective result stored on the preparation (`effective/decided_by/decided_at`, `:650-664`; `escalation_id` `:446,634`), per §2.3 rather than on the verdict |
+| A7 | Persist enforced blocks even when SDK cancels; distinguish fraud hold vs integration/auth/transport failure in events, receipts, summaries | **partial** | Done: block persisted at preparation, so a cancelled call still records it (`gatekeeper.py:592-594`, D6); `verdicts.cause` (`:195-197,224-245`, `schema.sql:210`) on `gate.verdict` (`gatekeeper.py:263`) and `escalation.opened` (`:441-443`); prepared 403 carries `cause`/`decided_by`/`preparation_id` (`green_writes.py:274-287`); green's cancel comment and turn summary carry the cause (`green/preparation.py:48-55,114-115`, `green/workflow.py:93-109`). Missing: the inline (unprepared) 403 omits `cause`/`decided_by` (`green_writes.py:163-164`; nullable in `ledger-api.yaml:253-262`) |
+| A8 | Execution consumes only a matching valid preparation, keeps validation + #39 CAS; state/mode/args change, expiry, identity conflict reject without retry | **done** | `_prepared` (`green_writes.py:251-288`): binding (every mode) → consumed/pending → mode/day stale (every mode) → enforce: expired, stored block 403. `_consume` runs in the txn before the #39 CAS: mode `FOR SHARE`, claim on `consumed_at IS NULL`, fingerprint recomputed `FOR UPDATE` (`:291-324`) (#89). Pay re-reads the vendor in txn (`:548-550`). Inline replay refuses another day/enforcement (`StaleVerdictError`, `gatekeeper.py:71-81,294-301`; #147, #151). Tests: `battlefield/tests/test_consume_preparation_db.py`, `test_stale_verdict_db.py` |
+| A9 | Contract-backed `LedgerClient` methods + config; review threshold wiring, no second default | **partial** | Done (#84): `LedgerClient.prepare`/`get_preparation` (`ledger_client.py:168-184`, refuses a non-SDK source `:173-174`), typed `PreparationRejected` (`:56-65,139-144`), `GateBlocked.cause/escalation_id/preparation_id` (`:44-53`); `AgentSettings.approval_threshold` as the agent default (`agentkit/agentkit/config.py:35-36`) and `APPROVAL_THRESHOLD` in the `x-agent-env` anchor (`docker-compose.yml:29-30`). Missing: agents still read the env with their own default instead of `AgentSettings`: `green/workflow.py:219`, `blue/gate/rules.py:31-32`, `red/schemes/bank_swap.py:20`, `red/schemes/threshold_split.py:174` |
 
-**Verdict replay vs mode/day (re-checked on `d0600d4`).** A stored verdict for the key is found at
-`gatekeeper.py:121-123` and replayed through `same_action` (`:206-220`), which compares only action,
-entity, amount and (GL) args, then `_apply` (`:251-266`) runs it under the **current** mode read at
-`:89`. The verdict's `day` and `enforced` columns are never consulted, and there is no age check.
-Consequences: a block recorded in shadow (`enforced=false`) replays as a 403 after a switch to enforce
-without Blue re-evaluating; an enforce block replays as allowed after a switch to shadow; a key
-replayed on a later day reuses the earlier verdict, including a human `approve` of an escalation
-(`_join_escalation` returns the finished decision, `:345-346`). One addition to the original claim:
-in `off` the lookup is skipped entirely (`:90-91`), so a prior block for the key is ignored. §2.5
-step 3 closes all of these for prepared keys; the inline (unprepared) path keeps this behaviour.
-| A9 | Contract-backed `LedgerClient` methods + config; review threshold wiring, no second default | **partial** | No prepare method in `ledger_client.py`. `APPROVAL_THRESHOLD` passed to battlefield (`docker-compose.yml:64`) and blue (`:117`) but **not green** (`:90-101`, anchor `:15-26`); green reads env with its own default (`green/workflow.py:181`). Defaults also in `battlefield/app/config.py:31`, `blue/gate/rules.py:32`, `battlefield/mock_agents/server.py:22` |
+**Verdict replay vs mode/day (current, `2a90f5e`).** A stored verdict for the key replays only for the
+same action (`same_action`, `gatekeeper.py:304-320`) and only on its own day and under its own
+enforcement: `_refuse_stale` (`:294-301`) compares `verdicts.day` with `X-Day` and `verdicts.enforced`
+with the current mode and raises `StaleVerdictError` (`:71-81`) → audited
+`409 {"error":"stale verdict","verdict_id"}` (contract #147: `agent-service.md:150-154`,
+`ledger-api.yaml:57`; code #151). `prepare()` runs the same check before reusing an inline verdict
+(`:580-581`). So a shadow block no longer replays as an enforced 403, an enforce block no longer
+replays as allowed in shadow, and a human approval no longer carries to another day
+(`battlefield/tests/test_stale_verdict_db.py`). Unchanged: in `off` the lookup is skipped
+(`gatekeeper.py:140-142`), so a prior verdict for the key is ignored. History: on `d0600d4` replay
+compared only action/entity/amount/args and ran under the current mode, with no day check.
 
 ### Work package B
 
 | # | Requirement | Status | Evidence |
 |---|---|---|---|
-| B1 | Genuine SDK id across permission, execution, events, headers, receipts; write 1 = id, n-th = `<id>:<n>` | **partial** | Permission/stream registration, claim, keys: `invocation.py:81-83,287-359`; `droid_agent.py:303-324,369-387,413-478`; header: `ledger_client.py:94-105`. Link from execution to id is argument correlation by necessity (CHANGELOG Finding: CLI never passes the id to the handler). Blue receipts use a private UUID marker, not the shared id: `blue/audit/tools.py:89,115-121` |
-| B2 | Live mutations reject missing/ambiguous/conflicting/unverified identity; no local UUID, explicit test id, model args, last-id, suffix | **missing** | Unlinked execution still runs with a UUID4: `droid_agent.py:376-386`; write outside an invocation gets a UUID4: `ledger_client.py:101`; explicit `_tool_use_id` honored in live: `droid_agent.py:370-372`, `tools.py:106,119`; identical approved calls resolved FIFO, not rejected: `invocation.py:351-359`; tool IDs learned by suffix: `droid_agent.py:555` |
-| B3 | Exactly one call/result pair for executed, cancelled, refused, interrupted, timed-out; reconcile Blue's private decorator | **partial** | Shared: `invocation.py:380-416`, `droid_agent.py:444-476`. Blue's `blue_tool` emits its own pair (`blue/audit/tools.py:59,72`) → two pairs per live call once offload narrates |
-| B4 | Bridge nonblocking for the service loop; keep bounded deadlines, cancellation, draining, unknown-outcome | **missing** | `concurrent.futures.wait` on the session loop: `droid_agent.py:444`; Session runs on the uvicorn loop (`droid_agent.py:255-277`, `:511`). Blue readiness measured the heartbeat stall (`blue/SDK-READINESS.md:32-34`). Bounded deadlines are on main since #52: turn-wide tool deadline `droid_agent.py:332-367` |
-| B5 | Safe ownership of locks, clients, snapshots, receipt/clerk state across loops | **missing** | Blue `asyncio.Lock` created on the service loop (`blue/audit/agent.py:62`) and taken in worker loops (`blue/audit/tools.py:49`); `session.effects` list mutated from workers (`tools.py:120`). Registry documented loop-thread-only (`invocation.py:248-249`). Fresh per-worker `LedgerClient` is correct (`droid_agent.py:429`) |
-| B6 | Verify exact Green/Blue session tool IDs + first-session restriction; Green autonomy stays off | **partial** | Restriction built from `<server>___<tool>` (`droid_agent.py:502`); learned by `startswith`+`endswith` (`:555`), never compared to the expected set, no fail-closed. Green `autonomy="off"`: `green/agent.py:23` |
-| B7 | Authorized isolated live measurement of callbacks, correlation, cancel comment, timeout cleanup; record findings | **missing (D15 hold)** | Both questions still open: `contracts/CHANGELOG.md:51-53`; OFF rule is a static read only (`:12-16`) |
+| B1 | Genuine SDK id across permission, execution, events, headers, receipts; write 1 = id, n-th = `<id>:<n>` | **done** | Registration from permission and stream (`invocation.py:347-372`, `droid_agent.py:405-426,655-664`), claim (`invocation.py:387-433`), events from `_offload` (`droid_agent.py:541-606`), header and `<id>:<n>` keys (`ledger_client.py:115-130`, `invocation.py:92-94`). Execution ↔ id is argument correlation by necessity (Finding: the CLI never passes the id to the handler, `contracts/CHANGELOG.md:15-20`). Blue receipts use the shared verified id (`blue/audit/tools.py:86-98,155-163`; #67, #85) |
+| B2 | Live mutations reject missing/ambiguous/conflicting/unverified identity; no local UUID, explicit test id, model args, last-id, suffix | **done** (strict agents, D7) | #84: strict live refuses an explicit `_tool_use_id` and unlinked executions, tool body never runs (`droid_agent.py:471-483,541-547`); ambiguous/conflicting refused, no FIFO (`invocation.py:406-433`); writes without a verified invocation raise `UnverifiedInvocation` (`ledger_client.py:115-121`); `tool_uses()` without a registry raises live (`droid_agent.py:271-275`); no suffix match (`:684-707`). Green and blue set `identity="strict"` (`green/agent.py:48`, `blue/audit/agent.py:42`); red stays best_effort with the UUID4 fallback (`droid_agent.py:490-507`) pending Al |
+| B3 | Exactly one call/result pair for executed, cancelled, refused, interrupted, timed-out; reconcile Blue's private decorator | **done** | Executed/timed-out/failed/refused: `droid_agent.py:541-606`; cancelled: `:419-422`; never ran: `invocation.py:488-535`. Blue's `blue_tool` wraps the shared `ledger_tool(..., redact=)` and claims the shared invocation: one pair per call (`blue/audit/tools.py:59-126`; #85). Proven live for blue: one pair per permission id (#119, `blue/SDK-READINESS.md:323-327`) |
+| B4 | Bridge nonblocking for the service loop; keep bounded deadlines, cancellation, draining, unknown-outcome | **done** | Live turns and reflections run on their own thread + loop (`droid_agent.py:308-327,356-367`, `sync.py:71-134`; #79, #81). The blocking `concurrent.futures.wait` is still there (`droid_agent.py:574`) but freezes only the turn loop the Session lives on (`:525-526`), never the service loop. Deadlines `:434-469`; cancel forwarded with `call_soon_threadsafe` + bounded join (`sync.py:137-154`); narration drained on the turn loop (`droid_agent.py:93-132,600-601`); unknown outcome on timeout (`:576-590`). D14 (DRY_RUN on the turn loop) is opt-in: default off (`:204-208`), on for green and red (`green/agent.py:49`, `red/agent.py:23`), off for blue |
+| B5 | Safe ownership of locks, clients, snapshots, receipt/clerk state across loops | **partial** | Done (#79, #85, #88): `TurnLock` (`sync.py:186-274`) for blue's audit lock (`blue/audit/agent.py:48`) and per-session tool lock (`:91`, `blue/audit/models.py:82`), which serializes `session.effects` writes (`blue/audit/tools.py:70`); registry and `EventEmitter` assert their owner thread (`invocation.py:299,310-312`, `agentkit/agentkit/events.py:52-55,88-97`); fresh per-worker `LedgerClient` (`droid_agent.py:559`). Missing: green's `ClerkState` is plain sets mutated by the permission handler on the turn loop and by tools on worker threads, with no `TurnLock` (`green/workflow.py:49-60,150-195`, `green/agent.py:94-111`); serialized today only because a sync tool freezes the turn loop, and live green is guarded |
+| B6 | Verify exact Green/Blue session tool IDs + first-session restriction; Green autonomy stays off | **done** | IDs observed and pinned: green (`green/agent.py:20-31,54-57`; Finding #96, evidence on #94), blue (`blue/audit/agent.py:27-36,47,61-63`; #68, #90). First Session restricted from the pinned list (`droid_agent.py:632`); exact-set check, strict fails the turn before `stream()` (`:649-650,684-707`; #84). Green `autonomy="off"`: `green/agent.py:47`. Live proof that the restriction holds for green is B7 |
+| B7 | Authorized isolated live measurement of callbacks, correlation, cancel comment, timeout cleanup; record findings | **partial (D15)** | Blue measured live in local runs: one OFF `post_report` permission + id parity (Finding #91, `contracts/CHANGELOG.md:13`); under an Ad-authorized budget, a full real-Ledger audit with a permission per call, one pair per id, `/gate` max 56.6 ms (#119), and an interrupted write → `unknown` receipt, refused replay (#127) (`blue/SDK-READINESS.md:292-367`). Missing: CANCEL comment delivery, OFF-every-call beyond blue, permission-callback timeout during a held escalation (still open: `contracts/CHANGELOG.md:55-57`); green's live matrix not run (`green/SDK-ACCEPTANCE.md:3`) |
 
 ### Acceptance checklist
 
 | Item | Status | Note |
 |---|---|---|
-| Ad decisions recorded; contracts merge first; Green/Blue review | partial | Recorded here (§6); PR1 review pending |
-| Tests: complete context, replay hit/miss/expiry/conflict, state/mode change, concurrent identical, cancelled blocks, one reused escalation | partial | Conflict + race tests (#39, `battlefield/tests/test_green_writes_db.py`); single escalation reuse (#52, `battlefield/tests/test_escalation_db.py`); rest need §5 |
-| Off skips Blue; shadow observes; enforce follows effective decision; auth/identity/ledger validation in every mode | partial | Off/shadow/enforce exist (`gatekeeper.py:89-91,251-266`); preparation semantics missing |
-| Permission → events → ledger write/receipt ids match incl. cancelled/timed-out; one pair; no blind retry | partial | Shared pairs done; Blue receipts and strict identity missing (B1-B3) |
-| Owner-loop safety and `/gate` responsiveness during live audit; 8 s budget | missing | B4/B5 |
-| No-key DRY_RUN, lint, actual SDK acceptance with versions/SHAs | partial | DRY_RUN suites pass per owners; no live acceptance (D15 hold) |
+| Ad decisions recorded; contracts merge first; Green/Blue review | done | §6; contracts #80/#86 merged before #87/#89; M built on them (#85, #88, #90, #93, #94) |
+| Tests: complete context, replay hit/miss/expiry/conflict, state/mode change, concurrent identical, cancelled blocks, one reused escalation | done | `battlefield/tests/test_preparations_db.py`, `test_consume_preparation_db.py`, `test_stale_verdict_db.py`, `test_escalation_db.py`, `test_green_writes_db.py` |
+| Off skips Blue; shadow observes; enforce follows effective decision; auth/identity/ledger validation in every mode | done | `gatekeeper.py:583-599`, `green_writes.py:251-288`; tests `test_preparations_db.py:79-113`, `test_consume_preparation_db.py:169-243` |
+| Permission → events → ledger write/receipt ids match incl. cancelled/timed-out; one pair; no blind retry | partial | Code done (B1–B3); proven live for blue only (#119, #127); green live unrun |
+| Owner-loop safety and `/gate` responsiveness during live audit; 8 s budget | partial | `/gate` max 56.6 ms during an authorized local live audit (#119), 69 ms under interruption (#127); green clerk state open (B5); blue's `LIVE_BLOCKERS` still set (`blue/audit/readiness.py:22-29`) |
+| No-key DRY_RUN, lint, actual SDK acceptance with versions/SHAs | partial | DRY_RUN suites pass per owners; blue SDK acceptance recorded with droid-sdk 0.5.0 / mcp 1.30.0 (#119, #127); green none |
 | One shared stack, matching off/shadow/enforce seeds ×2 | missing | Operator-authorized only (D15 hold) |
-| Verifier/steward, PRs < 600 lines; durable docs, spec deleted last | n/a yet | PR 9 |
+| Verifier/steward, PRs < 600 lines; durable docs, spec deleted last | partial | Steward/verifier loop runs (`AGENTS.md` §10); invariants 2/7 and §5 updated (#97); spec and this doc not yet deleted (PR 9) |
 
 ## 2. Protocol design (package A)
 
@@ -232,8 +239,8 @@ cancelled), and Blue can't tell battlefield from Green anyway (both hold `AGENT_
    (unknown). B7 must measure it before relying on in-handler escalation holds (D15 hold: until then
    this is an unverified assumption). Turn budget: two held escalations already exceed
    `TURN_TIMEOUT_SEC=180`.
-7. #52's `409 no active turn` (`turns.py:19`, `auth.py:96`, handler `main.py:65-66`) is implemented
-   but not in `contracts/` yet. PR1 contracts it.
+7. #52's `409 no active turn` (`turns.py:19`, `auth.py:96`, handler `main.py:65-66`) was implemented
+   before it was contracted; #80 contracted it (`ledger-api.yaml` info and `ConflictError`).
 
 ### 2.11 Alternatives rejected
 
@@ -246,7 +253,7 @@ cancelled), and Blue can't tell battlefield from Green anyway (both hold `AGENT_
 | Execution re-evaluates on stale preparation | Spec: no automatic retry; a re-evaluation could open a second escalation |
 | Separate gate token now | New env var + compose change for a threat (malicious Green) outside the model (D2) |
 
-## 3. Proposed contract changes (text for PR1; not applied)
+## 3. Proposed contract changes (text for PR1; applied in #80, #86, `contracts/` supersedes)
 
 Option R text is removed (D1). The `409 no active turn` line in §3.1 is **already implemented on
 main** (#52: `turns.py:19`, `auth.py:96`, `main.py:65-66`, tests `battlefield/tests/test_turn_guard_db.py`);
