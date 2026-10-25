@@ -1,0 +1,1 @@
+- 2026-10-25T06:47Z · Ad · frontend: removed the example extension (fe_example.py + its table) and its unauthenticated nudge route that could write agent inputs; next: none; blocked: none
