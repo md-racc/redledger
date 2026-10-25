@@ -21,7 +21,7 @@ from agentkit.sync import TurnLock
 from . import tools
 from .models import AuditSession, Snapshot
 
-# Every former blocker has merged live evidence (lift: #157); see ARCHITECTURE.md ("Readiness
+# Every former blocker has merged live evidence (lift: #157); see docs/ARCHITECTURE.md ("Readiness
 # evidence") for the two authorized real-Ledger sessions (#119 harness, #127 interrupted capture).
 LIVE_BLOCKERS: tuple[str, ...] = ()
 PARAMETERS = {
@@ -210,7 +210,7 @@ async def offline_report() -> dict[str, Any]:
         **asdict(live_readiness(sdk_available=sdk_available)),
         "versions": versions,
         "registry": registry,
-        # Both verified by the authorized live sessions recorded in ARCHITECTURE.md (Readiness evidence).
+        # Both verified by the authorized live sessions recorded in docs/ARCHITECTURE.md (Readiness evidence).
         "session_tool_ids_verified": True,
         "authenticated_invocation_verified": True,
         "bridge": await inspect_bridge(agent),

@@ -1,6 +1,6 @@
 """Evolution report and lineage log bundle, from the operator API. Owner: Dev Ad.
 
-ARCHITECTURE.md (Evolution: Export and report). Standard library only, so `make` can run it with plain python3.
+docs/ARCHITECTURE.md (Evolution: Export and report). Standard library only, so `make` can run it with plain python3.
 
     python3 battlefield/scripts/evolution_report.py report LN   # runs/<LN>/report.json + report.md
     python3 battlefield/scripts/evolution_report.py export LN   # runs/<LN>/lineage.json + gen-<g>/...
@@ -123,7 +123,7 @@ def _diff_line(d: dict[str, Any]) -> str:
 
 
 def render_md(rep: dict[str, Any]) -> str:
-    """report.json → report.md, sections in ARCHITECTURE.md (Evolution: Export and report) order. Deterministic."""
+    """report.json → report.md, sections in docs/ARCHITECTURE.md (Evolution: Export and report) order. Deterministic."""
     ln, card, gens = rep["lineage"], rep["run_card"], rep["generations"]
     md = [f"# Evolution report: {ln.get('name') or ln['id']}", ""]
     if rep.get("partial"):
@@ -257,7 +257,7 @@ def _jsonl(rows: list[Any]) -> str:
 
 
 def bundle_files(doc: dict[str, Any]) -> dict[str, str]:
-    """The export document → {relative path: text}, per ARCHITECTURE.md (Evolution: Export and report)."""
+    """The export document → {relative path: text}, per docs/ARCHITECTURE.md (Evolution: Export and report)."""
     files = {"lineage.json": _dump(doc.get("lineage", {}))}
     for agent, versions in sorted((doc.get("playbooks") or {}).items()):
         for v in versions:

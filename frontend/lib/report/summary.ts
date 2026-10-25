@@ -231,7 +231,7 @@ export function isNotFinalAnswer(status: number, body: string): boolean {
   }
 }
 
-/** Models shown with NEXT_PUBLIC_MOCK=true: the recorded demo (recordings/demo-enforce-redblue-live.jsonl) ran live red and blue. */
+/** Models shown with NEXT_PUBLIC_MOCK=true: the recorded demo (docs/recordings/demo-enforce-redblue-live.jsonl) ran live red and blue. */
 export const MOCK_MODELS: AgentModel[] = [
   { agent: "red", model: "gpt-5.4-mini", dry_run: false, ok: true },
   { agent: "green", model: null, dry_run: true, ok: true },

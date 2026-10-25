@@ -1,4 +1,4 @@
-// The pitch (root PITCH.md) is cut from STORY.md and quotes only EVIDENCE.md's numbers. This keeps the three in step.
+// The pitch (docs/PITCH.md) is cut from docs/STORY.md and quotes only docs/EVIDENCE.md's numbers. This keeps the three in step.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,9 +6,9 @@ import type { LiveRuns } from "./arena/liveRuns";
 
 // Windows checkouts may hold CRLF: the tests care about the words, not the line endings
 const read = (p: string) => readFileSync(join(__dirname, "..", p), "utf8").replace(/\r\n/g, "\n");
-const pitch = read("../PITCH.md");
-const story = read("../STORY.md");
-const evidence = read("../EVIDENCE.md");
+const pitch = read("../docs/PITCH.md");
+const story = read("../docs/STORY.md");
+const evidence = read("../docs/EVIDENCE.md");
 const words = (t: string) => t.replace(/[*_`#>|[\]]/g, " ").split(/\s+/).filter(Boolean).length;
 const section = (doc: string, head: string) => doc.split(head)[1]!.split(/\n## /)[0]!;
 

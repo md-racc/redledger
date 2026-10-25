@@ -1,6 +1,6 @@
 // The backend, messy: a recorded live-red run as a stream of raw update messages. Owner: Dev R.
 //
-// With no battlefield behind it (or `?replay=1`), the red and blue consoles replay recordings/demo-enforce-live.jsonl: red live on
+// With no battlefield behind it (or `?replay=1`), the red and blue consoles replay docs/recordings/demo-enforce-live.jsonl: red live on
 // Droid for ten days, the real tool calls, ledger writes, verdicts, escalations and reasoning, about 1,200 events. Unlike the arena's show
 // (lib/arena/showScripts.ts, paced for the 3D scene) this keeps the run's own rhythm, so bursts stay bursts and the pauses between turns
 // stay pauses, only faster. That is what a live backend looks like.

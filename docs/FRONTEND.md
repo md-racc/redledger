@@ -181,7 +181,7 @@ Console keys: `1`–`4` team, `0` list, `A`/`Esc` arena.
 
 The door hosts `red.<site>` and `blue.<site>` are rewritten to `/backstage/red` and `/backstage/blue` (`next.config.ts`,
 `lib/backstage/alias.ts`), and `gate.ts` makes them a 404 for anyone who isn't an admin. With no battlefield, or with
-`?replay=1`, these consoles replay `public/mocks/demo-enforce-live.jsonl` (a test keeps it identical to `recordings`). Real
+`?replay=1`, these consoles replay `public/mocks/demo-enforce-live.jsonl` (a test keeps it identical to `docs/recordings`). Real
 door hostnames need a DNS record each, a `deploy/Caddyfile` route to `frontend` like `app.`, and Access coverage if Access is on;
 `*.localhost` works without any of that. An admin logs in once at `/admin` on each door host (the cookie is per host).
 
@@ -273,12 +273,12 @@ Never put a token in a `NEXT_PUBLIC_*` variable; those are inlined into the bund
 (`sim` nav and scenes, `director` event mapping and dossier, `pacing`, `show`, `showScripts`, `localAttack`, `compare`, `lineage`,
 `liveRuns`, `report`, `provenance`, `pitch`, `narration`), `lib/backstage/` (door hosts, admin 404, recording copy), `lib/voice/`,
 `lib/sync/`, `components/backstage/`, and `lib/{reducer,proxy,access,admin,ratelimit,ws,wsurl,markdown,pitch}.test.ts`. Some
-read the root `PITCH.md` and `EVIDENCE.md`, `recordings/` and `public/mocks/`, so keep those paths.
+read `docs/PITCH.md`, `docs/EVIDENCE.md`, `docs/recordings/` and `public/mocks/`, so keep those paths.
 
 **Debug handles.** `window.redledger` → `converge()`, `disperse()`, `select(id)`, `run(mode)`, `show()`, `pitch()`, `debug()`
 (spotlight and auto-cam state). `window.__arena` (set by `Picking.tsx`) → `project(id)`, `ids()`, `pos(id)`, `gl`, `scene`, `camera`.
 
-**Regenerating.** `node tools/gen-live-runs.mjs` rebuilds `public/mocks/live-runs.json` from `recordings/*.jsonl` (numbers
+**Regenerating.** `node tools/gen-live-runs.mjs` rebuilds `public/mocks/live-runs.json` from `docs/recordings/*.jsonl` (numbers
 only; `liveRuns.test.ts` catches drift). `python -I tools/gen-site-data.py <site_local.json> <gate5 manifest.json> >
 lib/arena/siteData.ts` rebuilds the site data from the Palace project; then `npm test` checks every spawn is still reachable.
 

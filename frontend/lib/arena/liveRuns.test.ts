@@ -5,7 +5,7 @@ import { enforceStory, schemeMix, type LiveRuns } from "./liveRuns";
 
 const root = join(__dirname, "../../..");
 const summary = JSON.parse(readFileSync(join(__dirname, "../../public/mocks/live-runs.json"), "utf8")) as LiveRuns;
-const events = (f: string) => readFileSync(join(root, "recordings", f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; payload: Record<string, any>; episode_id: string });
+const events = (f: string) => readFileSync(join(root, "docs", "recordings", f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; payload: Record<string, any>; episode_id: string });
 
 describe("the live-run summary", () => {
   it("matches the recordings it was made from (run `node tools/gen-live-runs.mjs` after they change)", () => {

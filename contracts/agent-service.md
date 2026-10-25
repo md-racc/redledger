@@ -163,7 +163,7 @@ Rules:
 ## Lineages: playbooks, debriefs, reflection
 
 A lineage is a chain of episodes (generations) whose agents carry versioned playbooks forward
-(root `ARCHITECTURE.md`, Evolution). Everything below applies only to episodes with a `lineage_id`; plain
+(`docs/ARCHITECTURE.md`, Evolution). Everything below applies only to episodes with a `lineage_id`; plain
 episodes are unchanged and reveal nothing.
 
 Lineage episodes add two fields: inside `options` on `/turn` (red, green), and top-level on

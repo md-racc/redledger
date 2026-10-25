@@ -23,7 +23,7 @@ import {
 } from "./summary";
 import type { ControlsReport, Gap } from "./types";
 
-// the recorded demo (recordings/demo-enforce-redblue-live.jsonl) as battlefield's builder derives it
+// the recorded demo (docs/recordings/demo-enforce-redblue-live.jsonl) as battlefield's builder derives it
 const fixture: ControlsReport = JSON.parse(readFileSync("public/mocks/controls-report.json", "utf8"));
 const clone = (): ControlsReport => structuredClone(fixture);
 

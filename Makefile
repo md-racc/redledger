@@ -25,7 +25,7 @@ LOCAL_STACK_TOKEN = $(shell grep -E '^OPERATOR_TOKEN=' .local-stack/env 2>/dev/n
 TOKEN ?= $(if $(wildcard .local-stack/pids/battlefield),$(LOCAL_STACK_TOKEN),$(call env_get,OPERATOR_TOKEN))
 TOKEN := $(if $(TOKEN),$(TOKEN),change-me)
 AUTH := -H "Authorization: Bearer $(TOKEN)" -H "Content-Type: application/json"
-# `make evolve` defaults follow the lineage config (ARCHITECTURE.md, Evolution), not the episode
+# `make evolve` defaults follow the lineage config (docs/ARCHITECTURE.md, Evolution), not the episode
 # targets': MODE/DAYS count only when given on the command line.
 LN_MODE = $(if $(filter command line,$(origin MODE)),$(MODE),enforce)
 LN_DAYS = $(if $(filter command line,$(origin DAYS)),$(DAYS),6)
@@ -100,7 +100,7 @@ record: ## dump $(EP) events to battlefield/fixtures/episodes/$(EP).jsonl
 replay: ## stream a fixture to connected UIs: make replay FILE=ep_abc SPEED=4
 	curl -s $(AUTH) -X POST $(API)/api/replays/$(FILE)/play -d '{"speed":$(or $(SPEED),4)}'; echo
 
-# ---------- lineages: headless generations (ARCHITECTURE.md, Evolution) ----------
+# ---------- lineages: headless generations (docs/ARCHITECTURE.md, Evolution) ----------
 evolve: ## create + start a headless lineage: make evolve GENS=3 DAYS=6 MODE=enforce SEED=42 REVEAL_DAYS=3 REVEAL_GENERATIONS=2
 	@LN=$$(curl -s $(AUTH) -X POST $(API)/api/lineages -d '{"base_seed":$(SEED),"config":{"generations":$(or $(GENS),3),"days":$(LN_DAYS),"controller_mode":"$(LN_MODE)","reveal_days":$(or $(REVEAL_DAYS),3),"reveal_generations":$(or $(REVEAL_GENERATIONS),2)}}' \
 	   | tee /dev/stderr | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])') || exit 1; echo; echo "lineage $$LN"; \
@@ -117,7 +117,7 @@ lineage-export: ## log bundle runs/$(LN)/{lineage.json,playbooks/,gen-<g>/...} (
 	@API='$(API)' TOKEN='$(TOKEN)' python3 battlefield/scripts/evolution_report.py export '$(LN)'
 
 # ---------- prod operator (runs ON the VM over ssh; OPERATOR_TOKEN never leaves the VM) ----------
-# Thin wrappers over deploy/prod.sh; guide: OPERATIONS.md. Host/key/timeouts: PROD_* env vars
+# Thin wrappers over deploy/prod.sh; guide: docs/OPERATIONS.md. Host/key/timeouts: PROD_* env vars
 # (see the script header). User values reach the script as PRODARG_* environment variables holding
 # the raw text ($(value ...): make does not evaluate `$(...)` in them; the user variables themselves
 # are unexported above), so JSON arrives exactly as typed:
@@ -126,7 +126,7 @@ lineage-export: ## log bundle runs/$(LN)/{lineage.json,playbooks/,gen-<g>/...} (
 # Only values you actually give (command line or environment) are passed: the MODE/SEED/DAYS
 # defaults above are for the local targets and never reach prod, so a bare `make prod-episode`
 # fails with usage instead of starting a paid episode.
-# Self-check: OPERATIONS.md "Operate prod" (a $(shell) canary in EP).
+# Self-check: docs/OPERATIONS.md "Operate prod" (a $(shell) canary in EP).
 PROD := deploy/prod.sh
 prodarg = $(if $(filter command line environment,$(origin $(1))),$(value $(1)))
 prod-%: export PRODARG_EP := $(call prodarg,EP)

@@ -1,6 +1,6 @@
 # green/ — working guide for Dev M and any coding agent in this directory
 
-Read the root `README.md` (§§3, 5, 6) and `GIT.md` first. You also own `blue/`; see `blue/AGENTS.md`.
+Read the root `README.md`, `docs/ARCHITECTURE.md` and `GIT.md` first. You also own `blue/`; see `blue/AGENTS.md`.
 
 ## Your job
 
@@ -17,7 +17,7 @@ uses Battlefield preparations, not a Green → Blue mirror (#80, Option P). Shar
 and `LedgerClient.prepare` landed in #84; preparation creation/consumption landed in #87/#89.
 The permission handler uses `preparation.py` for canonical decisions, but the pre-SDK
 `_droid_turn` hard guard still prevents live execution.
-The root [ARCHITECTURE.md](../ARCHITECTURE.md) (Green, Readiness evidence) records current prerequisites
+[docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) (Green, Readiness evidence) records current prerequisites
 and identity evidence limits.
 
 ## Boundaries
@@ -127,7 +127,7 @@ make episode MODE=enforce
 
 ## Extension points (grow without a contracts PR)
 
-See README.md (Ledger API overview, extensions). For `green/` specifically:
+See docs/ARCHITECTURE.md (Routes and extensions). For `green/` specifically:
 - Memory across turns: `ctx.ledger().get_state("k")` / `put_state("k", {...})`.
 - Inputs: `req.options["inputs"]` is a list of messages left for you (judge, crowd, other agents). Read it in `build_prompt` / `dry_run_turn` if you want to react.
 - Custom events: `ctx.emitter().custom("name", {...})` emits `x.green.name`; the frontend stores it in `state.custom`.
@@ -164,7 +164,7 @@ paid/approved/blocked/rejected). Legit items you had blocked arrive only in the 
 
 ```
 You are working in the Red Ledger repo, directory `green/`, as Dev M's coding agent.
-Before any edit: read `green/AGENTS.md`, `GIT.md` §7, `README.md`, `ARCHITECTURE.md`and
+Before any edit: read `green/AGENTS.md`, `GIT.md` §7, `README.md`, `docs/ARCHITECTURE.md` and
 `contracts/agent-service.md`, `contracts/events.md`. Confirm `git branch --show-current` starts with `green/`;
 if not, create `green/<topic>` from origin/main. Edit only inside `green/`,
 `battlefield/extensions/green_*.py`, `contracts/ext/green/`, and one new `devlog/` fragment per PR.

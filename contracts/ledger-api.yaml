@@ -321,7 +321,7 @@ components:
       type: object
       required: [name, role, salary, bank_account, start_day]
       properties:
-        name: { type: string, description: "Free text; e.g. an approved CRS persona's full name (ARCHITECTURE.md, CRS identity verification)" }
+        name: { type: string, description: "Free text; e.g. an approved CRS persona's full name (docs/ARCHITECTURE.md, CRS identity verification)" }
         role: { type: string }
         department: { type: string, nullable: true }
         salary: { type: number }
@@ -836,7 +836,7 @@ paths:
         '409': { description: episode_id already exists }
         '422': { description: bad episode_id or malformed fixture }
 
-  # ---------- lineages (operator; ARCHITECTURE.md, Evolution) ----------
+  # ---------- lineages (operator; docs/ARCHITECTURE.md, Evolution) ----------
   /lineages:
     post:
       summary: Create a lineage. Writes version 0 ({}, source seed) of each agent's playbook.

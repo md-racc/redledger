@@ -62,6 +62,7 @@ sponsor API quirks). A finding is a contract too: once recorded, code relies on 
 
 ## Changes
 
+- 2026-10-25 · Ad · ledger-api.yaml, schema.sql, agent-service.md, agentkit/models.py · comment-only: design-doc references now point to `docs/ARCHITECTURE.md` (root docs moved into `docs/`).
 - 2026-10-25 · Ad · ledger-api.yaml, schema.sql, agent-service.md · comment-only: design-doc references now point to root ARCHITECTURE.md (docs centralization).
 - 2026-10-25 · Ad · ledger-api.yaml · new operator read `GET /fe/episodes/{id}/controls` (controls assessment report; lost / to_attacker_accounts / to_real_parties split; no origin keys; viewers get it only once `final`). Additive, no existing shape changed; R's and M's areas consume it (pinged via #196).
 - 2026-10-25 · Ad · agent-service.md, agentkit/models.py · `POST /audit` response gains optional `usage` (same shape as a turn's), so blue's live Droid audit is charged against `MAX_CREDITS_PER_EPISODE` and lineage credit caps. Battlefield already reads `usage.factory_credits` from it; before this the field didn't exist and blue's live audits counted as 0 (prod ep_f9c695b3144f: ~3.8–4.1k credits per audit, recorded as 0) · Ad integrates; M notified

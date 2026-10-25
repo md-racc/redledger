@@ -143,7 +143,7 @@ function Tile({ label, value, tone }: { label: string; value: string; tone: stri
   );
 }
 
-/** Open escalations are a human decision (ARCHITECTURE.md, System overview): approve or block right from the arena, against the clock. */
+/** Open escalations are a human decision (docs/ARCHITECTURE.md, System overview): approve or block right from the arena, against the clock. */
 function EscalationBar({ feed, pitch = false }: { feed: Feed; pitch?: boolean }) {
   const admin = useRole() === "admin";
   const open = Object.values(feed.state.escalations).filter((e) => e.status === "open");

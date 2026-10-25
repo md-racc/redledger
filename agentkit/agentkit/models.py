@@ -57,7 +57,7 @@ class EventType(StrEnum):
     REPORT_POSTED = "report.posted"
     SCORE_UPDATED = "score.updated"
     ERROR = "error"
-    # lineages (battlefield-only; ARCHITECTURE.md, Evolution)
+    # lineages (battlefield-only; docs/ARCHITECTURE.md, Evolution)
     GENERATION_STARTED = "generation.started"
     GENERATION_ENDED = "generation.ended"
     PLAYBOOK_UPDATED = "playbook.updated"
