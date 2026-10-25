@@ -20,7 +20,7 @@ from gate import learned
 from . import tools
 from .evidence import collect_snapshot, model_view
 from .models import AuditOutcome, AuditSession, ConfirmedEffect
-from .readiness import live_readiness
+from .readiness import live_readiness, sdk_installed
 
 PROMPT = (Path(__file__).parent.parent / "prompts" / "audit.md").read_text()
 MAX_RECORDED_DAYS = 512
@@ -69,7 +69,13 @@ class AuditAgent(DroidAgent):
 
     async def health(self) -> dict[str, Any]:
         # Service liveness is independent of live SDK readiness. Never probe on this route.
-        return {"ok": True, "agent": self.name, "model": self.s.droid_model, "droid_ok": live_readiness().ready, "dry_run": self.s.dry_run}
+        return {
+            "ok": True,
+            "agent": self.name,
+            "model": self.s.droid_model,
+            "droid_ok": live_readiness(sdk_available=sdk_installed()).ready,
+            "dry_run": self.s.dry_run,
+        }
 
     def outcome(self, episode_id: str, day: int) -> AuditOutcome:
         item = self.completed.get((episode_id, day))

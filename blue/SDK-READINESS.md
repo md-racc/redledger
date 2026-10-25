@@ -1,5 +1,9 @@
 # Blue SDK readiness checkpoint — 2026-10-24
 
+> Current status (2026-10-25): the live audit guard is lifted (#157, "Live audit readiness lift"
+> below) and blue's audit runs on Droid on prod. From #176, `/health` `droid_ok` reports whether the
+> SDK is installed. The checkpoint text below is the 2026-10-24 record.
+
 Invocation/receipt integration refreshed against main `c28e58d` (#64 CRS, #63 runtime, #61 docs);
 controller and receipt/compatibility work landed in #19/#24. **Live audit remains disabled,
 with no environment bypass.** `/health` retains its shape: `ok=true` means the service responds;
