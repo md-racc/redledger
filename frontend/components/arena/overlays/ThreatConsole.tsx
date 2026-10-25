@@ -7,6 +7,7 @@ import { money } from "@/lib/arena/headlines";
 import { BLUE_RULES, RED_SCHEMES } from "@/lib/arena/roster";
 import type { Spoken } from "@/lib/arena/useFeed";
 import { BUILT_IN_SCHEMES, closestScheme, type BuiltInScheme } from "@/lib/voice/intent";
+import { useRole } from "@/lib/role";
 import type { ControllerMode } from "@/lib/types";
 import { languageName, useVoice } from "../useVoice";
 
@@ -26,6 +27,8 @@ export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean
 
   // "say it in your own words": speak or type any fraud scheme, in any language
   const voice = useVoice();
+  // the microphone spends the owner's speech credits, so it is for the admin laptops only (the route refuses a viewer too; lib/admin.ts)
+  const admin = useRole() === "admin";
   const guess = closestScheme(voice.text);
   const [pick, setPick] = useState<BuiltInScheme | null>(null);
   const scheme = pick ?? guess.scheme;
@@ -34,6 +37,7 @@ export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean
   useEffect(() => { if (!open && voice.phase === "listening") voice.reset(); }, [open, voice]);
   const busy = voice.phase === "listening" || voice.phase === "transcribing";
   const launchSpoken = () => {
+    if (!admin) return;
     setErr(null);
     setSent(true);
     onLaunch(scheme, { text: voice.text, language: voice.language }).catch((e: unknown) => { setSent(false); setErr(String(e instanceof Error ? e.message : e).slice(0, 120)); });
@@ -72,7 +76,7 @@ export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean
           <button
             className={`btn ${voice.phase === "listening" ? "armed" : ""}`}
             tabIndex={open ? 0 : -1}
-            disabled={voice.phase === "transcribing"}
+            disabled={!admin || voice.phase === "transcribing"}
             onClick={() => (voice.phase === "listening" ? void voice.stop() : void voice.start())}
           >
             {voice.phase === "listening" ? <><i className="dot" />Stop · {clock(voice.seconds)}</> : voice.phase === "transcribing" ? "Listening to what you said…" : "Speak a scheme"}
@@ -80,7 +84,8 @@ export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean
           {voice.phase === "listening" && <span className="speak-level" aria-hidden><i style={{ width: `${Math.min(100, voice.level * 160)}%` }} /></span>}
           {voice.language && voice.phase === "ready" && <span className="speak-lang">Heard: {languageName(voice.language)}{voice.probability != null ? ` · ${Math.round(voice.probability * 100)}%` : ""}</span>}
         </div>
-        {voice.configured === false && <p className="speak-note">Voice is not set up on this server, so type the scheme instead.</p>}
+        {!admin && <p className="speak-note">Only the admin laptops can speak or launch a scheme.</p>}
+        {admin && voice.configured === false && <p className="speak-note">Voice is not set up on this server, so type the scheme instead.</p>}
         {voice.error && <p className="threat-err">{voice.error}</p>}
         <textarea
           className="speak-text"
@@ -104,7 +109,7 @@ export function ThreatConsole({ open, mode, onClose, onLaunch }: { open: boolean
         )}
         {voice.text.trim() && (
           <div className="speak-act">
-            <button className="btn primary" tabIndex={open ? 0 : -1} disabled={busy || sent} onClick={launchSpoken}>{sent ? "Launched" : "Launch it"}</button>
+            <button className="btn primary" tabIndex={open ? 0 : -1} disabled={!admin || busy || sent} onClick={launchSpoken}>{sent ? "Launched" : "Launch it"}</button>
             <button className="btn ghost" tabIndex={open ? 0 : -1} disabled={busy} onClick={voice.reset}>Clear</button>
           </div>
         )}

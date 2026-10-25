@@ -38,7 +38,9 @@ file and `deploy/render-env.sh` (Ad's area) and README §11, none of which this 
 
 ## Cost and abuse
 
-Every request spends the owner's credits. The route refuses cross-site posts, is behind the same Cloudflare Access check as the rest
+Every request spends the owner's credits. **Only admins can use it** (`lib/admin.ts`): the site is public, so a viewer's POST is
+refused with `403 {"error":"viewer"}` before the key is touched, and the console disables the microphone for a viewer
+(`useRole()`). The route also refuses cross-site posts, is behind the same Cloudflare Access check as the rest
 of the site (`middleware.ts`), caps audio at 3 MB (about 90 s), the console stops listening at 45 s, and the route answers 429 after 20
 requests a minute per server process. Audio is sent to ElevenLabs and not stored by us.
 
