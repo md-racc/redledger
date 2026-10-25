@@ -4,7 +4,8 @@
 //   P / ?pitch=1 / the title's "Live pitch" button   start (or restart) it
 //   Esc                                              leave it (the run itself keeps going on the battlefield)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PITCH_AUTOBLOCK_MS, PITCH_SEED, PITCH_TOUR_MS, pitchQuery } from "@/lib/arena/pitch";
+import { railOf, scrollOf } from "@/lib/arena/pacing";
+import { PITCH_AUTOBLOCK_MS, PITCH_SEED, PITCH_TOUR_MS, pitchQuery, tourPosition, tourTimeAt } from "@/lib/arena/pitch";
 import { useArena } from "@/lib/arena/store";
 import { SHOW_INTRO_SECONDS, claimIntroLen, releaseIntroLen, timeline } from "@/lib/arena/timeline";
 import type { Feed, PitchResult } from "@/lib/arena/useFeed";
@@ -22,8 +23,6 @@ export interface PitchController {
   /** bumped on every start, so the title lockup replays its entrance and the narration starts clean */
   runKey: number;
 }
-
-const ease = (k: number) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 
 export function usePitch(feed: Feed, opts: { onStart?: () => void } = {}): PitchController {
   const [phase, setPhase] = useState<PitchPhase>("off");
@@ -89,14 +88,16 @@ export function usePitch(feed: Feed, opts: { onStart?: () => void } = {}): Pitch
       useArena.getState().actions.converge();
       return;
     }
+    // the tour is an itinerary (lib/arena/pitch.ts): it dwells where the presenter speaks and passes through where nothing is said.
+    // The camera's position is written as scroll, the same way the 90-second show drives it.
     const max = () => Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-    const from = Math.min(1, window.scrollY / max());
-    const t0 = performance.now();
+    const already = tourTimeAt(railOf(Math.min(1, window.scrollY / max())));
+    const t0 = performance.now() - already;
     let raf = 0;
     const loop = (now: number) => {
-      const k = Math.min(1, (now - t0) / PITCH_TOUR_MS);
-      window.scrollTo(0, (from + (1 - from) * ease(k)) * max());
-      if (k < 1) raf = requestAnimationFrame(loop);
+      const ms = now - t0;
+      window.scrollTo(0, scrollOf(tourPosition(ms)) * max());
+      if (ms < PITCH_TOUR_MS) raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);

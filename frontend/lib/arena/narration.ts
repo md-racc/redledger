@@ -131,8 +131,24 @@ export interface CaptionTiming {
   fastMs: number;
   /** at most this many wait; past it the oldest is dropped (a catch-up burst on joining a run must not take a minute to read) */
   maxWaiting: number;
+  /**
+   * Reading time: a caption with more to read stays longer than `minMs` (`baseMs` plus `perWordMs` for each word of its text and
+   * sub-line), up to `maxReadMs`. Left out, every caption holds for `minMs`.
+   */
+  baseMs?: number;
+  perWordMs?: number;
+  maxReadMs?: number;
 }
-export const CAPTION_TIMING: CaptionTiming = { minMs: 4200, maxMs: 11_000, fastMs: 1800, maxWaiting: 4 };
+export const CAPTION_TIMING: CaptionTiming = { minMs: 4200, maxMs: 11_000, fastMs: 2400, maxWaiting: 4, baseMs: 1800, perWordMs: 340, maxReadMs: 13_000 };
+
+const wordCount = (c: Caption) => `${c.text} ${c.sub ?? ""}`.split(/\s+/).filter(Boolean).length;
+
+/** How long a caption is held while others wait: its reading time, never under `minMs`. A quote from red, or a reason from blue, is
+ *  something to read (and to speak over); a bare "Day 2 of 4" is not. */
+export function holdFor(c: Caption, t: CaptionTiming = CAPTION_TIMING): number {
+  if (t.baseMs === undefined || t.perWordMs === undefined) return t.minMs;
+  return Math.min(t.maxReadMs ?? t.maxMs, Math.max(t.minMs, t.baseMs + wordCount(c) * t.perWordMs));
+}
 
 /** One caption on screen at a time, each given time to be read; identical ones in a row are merged into a count. */
 export class CaptionQueue {
@@ -163,9 +179,11 @@ export class CaptionQueue {
   advance(dtMs: number): boolean {
     this.shown += dtMs;
     if (!this.current) return this.q.length ? this.next() : false;
-    const min = this.q.length >= 3 ? this.t.fastMs : this.t.minMs;
+    const hold = holdFor(this.current, this.t);
+    const min = this.q.length >= 3 ? Math.min(hold, this.t.fastMs) : hold;
     if (this.q.length && this.shown >= min) return this.next();
-    if (!this.q.length && this.shown >= this.t.maxMs) { this.current = null; return true; }
+    // with nothing after it a caption lingers, and never leaves before it could be read
+    if (!this.q.length && this.shown >= Math.max(this.t.maxMs, hold)) { this.current = null; return true; }
     return false;
   }
 
