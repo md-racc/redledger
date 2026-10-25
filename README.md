@@ -15,21 +15,37 @@ the work is done).
 ### At a glance
 
 - **What happens each simulated day.** Red, an AI agent on Factory's Droid SDK, reads the books
-  like an insider and runs a fraud scheme: ghost vendor, bank-account swap, duplicate invoice,
-  threshold split or ghost employee. Green does accounts payable. Before green moves money, it
-  prepares the action and battlefield asks blue, the controller: allow, block, or escalate to a
-  human. Battlefield is the only service that touches the database, and it enforces the verdict.
-  Agents never see which rows are fraud.
+  like an insider and runs one of 8 fraud schemes (§8): ghost vendor, bank-account swap,
+  duplicate invoice, threshold split, ghost employee, expense inflation, PO mismatch or amount
+  drift. A judge can steer it: words typed or spoken (any language) into the attack console reach
+  red as data and pick which catalog scheme runs and its params (#154, #165). Green does accounts
+  payable. Before green moves money, it prepares the action and battlefield asks blue, the
+  controller: allow, block, or escalate to a human. Battlefield is the only service that touches
+  the database, and it enforces the verdict. Agents never see which rows are fraud.
+- **What runs live on prod.** Red and blue's daily audit run on Factory Droid (`gpt-5.4-mini`;
+  blue's guard lifted in #157). Green runs the same harness keyless (`DRY_RUN_GREEN=true`). Blue's
+  `/gate` is the deterministic rules engine, not a Droid session (§6).
 - **Results on prod** (both runs below were recorded with red live on `gpt-5.4-mini` and green
-  and blue running their full logic keyless; blue's daily audit has since gone live on Droid,
-  §6 "Where Droid runs"; green stays keyless):
+  and blue running their full logic keyless, before blue's daily audit went live on Droid):
   - Same company, same seed, 10 days: controller off, **$10,285** extracted; controller on
     (`enforce`), **$1,824** extracted at $100 false-positive cost. Recordings and details:
     [`docs/recordings/`](docs/recordings/README.md).
   - A 5-generation evolution run (8 days each, `enforce`): red found that invoices split under the
     approval threshold get paid, and shifted to them. That was 1 of its 7 attacks in generation 1
     and 7 of 8 in generation 5. Extraction rose from $19k to $98k, and no blue rule caught it. The
-    sandbox surfaced a real control gap, which is the point of building one.
+    sandbox surfaced a real control gap, which is the point of building one. Blue's
+    `threshold_split` rule (#173) now blocks the expense version; the invoice version is still
+    open.
+- **CRS identity hold, proven locally.** Against the live CRS sandbox, blue's audit flagged a
+  fictional employee whose identity didn't match, and the gate then blocked that employee's next
+  expense with `already_flagged_high` while the other two personas' expenses were paid
+  (ep_0181eda1c921 on the local stack, keyless audit with `CRS_LIVE=true`, all checks
+  `billable:false`; `blue/CRS.md`). No CRS call has run on prod: it needs an operator-bound
+  persona employee, and seeded employees never qualify.
+- **Watching the site.** `app.redledger.us` is public and read-only since 2026-10-25 (#152, #159):
+  anyone can open it on their own device and watch runs live. Only an admin signed in at `/admin`
+  can start runs, launch attacks, use voice or resolve escalations; the frontend server enforces
+  that in its `/api/bf` proxy.
 - **Run it with no keys.** `make local-stack AGENTS=mock` (no Docker) or `make mock-agents`, then
   `make episode MODE=enforce SEED=42 DAYS=4` or `make evolve GENS=3 DAYS=5` (§12, §15). Frontend
   alone: `cd frontend && NEXT_PUBLIC_MOCK=true npm run dev`.
@@ -287,17 +303,26 @@ events plus `/api/fe`; it never reads ledger tables.
 
 ## 8. Red scheme catalog (Al) — reference implementation: `red/schemes/ghost_vendor.py`
 
-`ghost_vendor` (done), `bank_swap`, `duplicate_invoice`, `threshold_split`, `ghost_employee`,
-`expense_inflation`, `po_mismatch`, `amount_drift`. Each is a class with `viable / plan /
+All 8 shipped and registered in `red/schemes/__init__.py`: `ghost_vendor`, `bank_swap`,
+`duplicate_invoice`, `threshold_split` (splits invoices), `ghost_employee`, `expense_inflation`,
+`po_mismatch`, `amount_drift` (the last three in #166). Each is a class with `viable / plan /
 execute` and catalog fields (`display_name`, `story`, `params_schema`, `expected_impact`).
-The mock red in `battlefield/mock_agents/` implements four of these crudely so the stack can
-be exercised before Al's are ready.
+Judge-console requests steer which scheme runs and its params, never what red can run (#165).
+The mock red in `battlefield/mock_agents/` implements four of these crudely (`ghost_vendor`,
+`duplicate_invoice`, `bank_swap`, `threshold_split`) for keyless stack and lineage runs.
 
 ## 9. Blue control catalog (M) — reference implementation: `blue/gate/rules.py`
 
-Deterministic rules shipped: vendor age < 7d, near threshold, duplicate invoice, recent bank
-change, bank change with open invoices, no-PO from PO-only vendor, over PO amount, recurring
-drift, employee bank matches vendor / no HR record, already flagged high. Decision policy in
+Deterministic rules shipped: vendor age < 7d, near threshold, unverified new-vendor exposure,
+duplicate invoice, recent bank change, bank change with open invoices, no-PO from PO-only vendor
+(calibrated in #148), over PO amount / PO vendor mismatch / cancelled PO, recurring drift,
+`threshold_split` (same-day, same-category expense parts that sum past the approval threshold;
+**expenses only**, #173), employee bank matches vendor / no HR record / inactive employee, frozen
+vendor, and `already_flagged_high` (a high-severity flag on the invoice, vendor, expense or
+employee blocks). Blue's audit raises those flags, including CRS
+`crs_employee_identity_mismatch` employee findings (`blue/CRS.md`), so a later gate blocks on
+them; CRS adds nothing to `/gate` itself. Note-only rules can be retired per lineage after
+sustained legit-only fire (`RETIREABLE_RULE_IDS`, #148). Decision policy in
 `blue/gate/engine.py`; optional LLM judgment in `blue/gate/llm.py`; audit Droid session in
 `blue/audit/agent.py`.
 
@@ -352,13 +377,13 @@ Removed: `NEXT_PUBLIC_BATTLEFIELD_URL`, `NEXT_PUBLIC_INTERNAL_TOKEN`. `NEXT_PUBL
 | `AGENT_TOKEN_RED/GREEN/BLUE` | blank (shared `AGENT_TOKEN`), or three distinct strings; `make local-stack` generates three | secrets, all three or none (`deploy/render-env.sh` refuses a partial or duplicate set); see `deploy/ENVIRONMENT.md` |
 | `FACTORY_API_KEY` | **your own key**, or empty with `DRY_RUN=true` | dedicated prod key; secret; exists nowhere else |
 | `DROID_MODEL_RED/GREEN/BLUE` | a cheap / low-multiplier model | pinned prod models; variables |
-| `DRY_RUN`, `DRY_RUN_RED/GREEN/BLUE` | `DRY_RUN=true` for keyless dev; overrides blank | variables; set the overrides explicitly. Example: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=true` = red live only (prod today: `DRY_RUN_BLUE=false`, so red and blue's audit are live) |
+| `DRY_RUN`, `DRY_RUN_RED/GREEN/BLUE` | `DRY_RUN=true` for keyless dev; overrides blank | variables; set the overrides explicitly. Prod: `DRY_RUN=false`, `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=false` = red and blue's audit live, green keyless |
 | `BLUE_GATE_LLM_PROVIDER/_MODEL` | optional | variables |
 | `BLUE_GATE_LLM_API_KEY`, `CARTESIA_API_KEY` | own keys or empty | secrets |
 | `CRS_USERNAME`, `CRS_PASSWORD` | CRS sandbox login credentials, or empty (Blue returns `unknown`) | secrets; passed only to Blue at runtime |
 | `CRS_LIVE` | acceptance-only switch letting the DRY_RUN blue audit call the CRS sandbox (approved personas only) | default off; shell export, never committed |
 | `CRS_API_KEY` | legacy placeholder, unused by the CRS identity client | legacy compatibility only |
-| `MAX_CREDITS_PER_EPISODE` | `0` (off) | e.g. `40`; variable |
+| `MAX_CREDITS_PER_EPISODE` | `0` (off) | variable; prod `375000` (a live red turn is ~2.6k credits, a live blue audit ~4k) |
 | `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | blank (origin Access check off) | variables; both set = Cloudflare Access enforced at the origin; both blank = public read-only mode, which requires `ADMIN_KEY` |
 | `ADMIN_KEY` | blank (everyone is admin in dev/mock) | secret, ≥ 32 chars, distinct from every token; signs the frontend admin cookie (`/admin`), so only admins can start runs, launch attacks or resolve escalations. Unset in production = nobody is admin; rotating it logs admins out |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_STT_MODEL` | blank (voice off; typing a scheme still works) | secret / optional variable (default `scribe_v2`); ElevenLabs speech-to-text for the voice attack console (#154), approved 2026-10-25; the transcribe route is admin-only |
@@ -425,9 +450,10 @@ aggregate failed; hypertables stay). CI runs the battlefield suite on both image
 ## 13. Hosting decision
 
 **Decision: one VM + Cloudflare in front.** Vultr (sponsor credits) or any $20 box. Docker
-Compose from this repo, Caddy for TLS on `api.<domain>`, Cloudflare for DNS/proxy and
-Cloudflare Pages for the frontend (free, trivial, uses the teammate's credits where they
-matter). Domain from GoDaddy (sponsor prize).
+Compose from this repo, Caddy for TLS on the one public hostname `app.<domain>`
+(`deploy/Caddyfile`), Cloudflare for DNS/proxy. The frontend runs as the `frontend`
+container on the same VM, not on Cloudflare Pages: its `/api/bf/*` proxy needs a Node runtime
+(below).
 
 Why not Cloudflare Containers for the whole stack: it works (GA April 2026, up to 4 vCPU /
 12 GiB, so the Droid CLI subprocess model fits), but every inter-service call has to be
@@ -437,9 +463,14 @@ learning curve for the one person who's also the integration point. The compose 
 portable truth; if someone gets Containers serving `/health` through a Worker in under two
 hours, switch — nothing in the code cares.
 
-Edge: `https://api.<domain>` → Caddy → `battlefield:8000`. `wss://api.<domain>/api/ws`
-same path. Put Cloudflare Access on `app.` and `api.` during the weekend; bearer tokens are not
-user auth.
+Edge (`deploy/Caddyfile`): `https://app.<domain>` → Caddy → `frontend:3000`, except
+`wss://app.<domain>/api/ws` → `battlefield:8000` (it still needs a ticket). Battlefield's REST API
+has no public hostname: the frontend server reaches it on the internal network, operators use
+`make prod-*`. Caddy serves only Cloudflare's published IP ranges (origin lock); bearer tokens
+are not user auth. Since 2026-10-25 prod runs the public read-only mode (#152/#159): Cloudflare
+Access lets everyone through, `CF_ACCESS_*` are blank, and `ADMIN_KEY` gates every action (the
+`/admin` login sets a signed cookie; anyone else is a viewer). Before that, Cloudflare Access
+(email PIN) sat in front of `app.`.
 
 **Token scopes** (`contracts/agent-service.md` is canonical). Battlefield picks the expected
 token by whether the request carries `X-Agent`:
@@ -468,7 +499,7 @@ a static Cloudflare Pages export can't serve `/api/bf/*`.
 `POST /api/ws/ticket` with the operator token) → `{ticket, expires_at, ws_url}`, then opens
 `${ws_url}/api/ws?episode_id=&ticket=&after_id=`. Tickets are HMAC-signed with
 `OPERATOR_TOKEN`, valid 60 s, single use; a bad one closes with `4401`, and every reconnect
-fetches a new ticket. `ws_url` is the server's `NEXT_PUBLIC_WS_URL` (e.g. `wss://api.<domain>`)
+fetches a new ticket. `ws_url` is the server's `NEXT_PUBLIC_WS_URL` (prod: `wss://app.<domain>`)
 read at request time, so one frontend image serves every environment.
 
 ---
@@ -583,7 +614,7 @@ the `deploy` user, clones the repo to `/opt/redledger`, opens 80/443. It does **
 `.env`; the first deploy renders it. Then: `deploy` user's SSH key → repo secrets
 `VULTR_HOST / VULTR_USER / VULTR_SSH_KEY`; fill the `production` environment (§11 table);
 `docker login ghcr.io` once on the box (or make the packages public); point Cloudflare DNS
-`api.<domain>` and `app.<domain>` at the IP; set `DEPLOY_ENABLED=true` and run the workflow.
+`app.<domain>` (proxied) at the IP; set `DEPLOY_ENABLED=true` and run the workflow.
 Caddy (`deploy/Caddyfile`) terminates TLS. The `frontend` container serves `app.<domain>` (it
 needs a Node runtime for the `/api/bf/*` proxy, §13). Step by step: `deploy/OWNER-CHECKLIST.md`
 §2–§3; design and rationale: `deploy/ENVIRONMENT.md`.
