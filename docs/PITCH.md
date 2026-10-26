@@ -1,5 +1,9 @@
 # Pitch: the 5-minute judging talk
 
+> Historical judging script and demo runbook, preserved from October 2026. Hosted links, stage directions and
+> prize-selection instructions below describe the hackathon. For the completed project and local demo,
+> see [CLOSEOUT.md](CLOSEOUT.md) and [README.md](../README.md).
+
 Everything here is cut from [STORY.md](STORY.md). Numbers come from [EVIDENCE.md](EVIDENCE.md). If a line here disagrees with STORY.md, STORY.md wins: change it there first.
 
 **Rules for every speaker:**

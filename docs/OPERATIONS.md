@@ -1,7 +1,10 @@
-# OPERATIONS.md: run, deploy and operate Red Ledger
+# Operations: local setup and historical deployment
 
-Owner: Dev Ad. Local runs, configuration, deploy and prod (`https://app.redledger.us`). Design: `ARCHITECTURE.md`;
-frontend: `FRONTEND.md`; team rules: `AGENTS.md`, `GIT.md`.
+Owner: Dev Ad. Local runs and configuration remain useful for this completed hackathon project.
+The original hosted demo is retired in favor of screenshots, recordings and local setup; see
+[CLOSEOUT.md](CLOSEOUT.md). Production values and runbooks below describe October 2026 and
+are retained for reference, not instructions to bring the old service back. Design:
+[ARCHITECTURE.md](ARCHITECTURE.md); frontend: [FRONTEND.md](FRONTEND.md); maintenance: [GIT.md](../GIT.md).
 
 ## 1. Run locally
 
@@ -10,7 +13,8 @@ Nothing here needs a Factory or LLM key: under `DRY_RUN=true` agents return cann
 ```bash
 cp .env.example .env     # set AGENT_TOKEN and OPERATOR_TOKEN to two DIFFERENT strings; DRY_RUN=true if you have no key
 make mock-agents         # postgres + battlefield + stub red/green/blue (no model calls); ports 5432, 8000-8003
-make episode MODE=enforce SEED=42 DAYS=4      # prints `export EP=...`
+make episode MODE=enforce SEED=42 DAYS=4      # prints `export EP=...`; run that line in your shell
+# Wait for the episode to finish, then:
 make score EP=$EP
 ```
 
@@ -24,13 +28,13 @@ make score EP=$EP
 Run one stack per machine (they all bind 8000–8003). `make down` stops Docker stacks; `make db-reset` wipes the
 volume. `make help` lists the rest (`step`, `toggle`, `attack`, `record`, `replay`, `evolve`, `lineage-*`, ...).
 
-**Frontend.** With no backend: `cd frontend && npm install && NEXT_PUBLIC_MOCK=true npm run dev`
+**Frontend.** With no backend: `cd frontend && npm ci && NEXT_PUBLIC_MOCK=true npm run dev`
 (<http://localhost:3000>, replays `public/mocks/sample.jsonl`; a build-time switch). Against a backend, set the
 server-only `BATTLEFIELD_URL` and `OPERATOR_TOKEN` in `frontend/.env.local` and run `npm run dev`. Without Docker,
 `npm run dev:live` runs `tools/fake-battlefield.mjs` (a contract stand-in, not the real gate) plus `next dev`. A blank
 `ADMIN_KEY` makes everyone admin under `next dev` and nobody admin in a production build (including compose).
 
-**Tokens** (`AGENTS.md` invariant 12). A request with `X-Agent: <a>` presents that agent's token (`AGENT_TOKEN_<A>`,
+**Tokens** (see `contracts/agent-service.md`). A request with `X-Agent: <a>` presents that agent's token (`AGENT_TOKEN_<A>`,
 else the shared `AGENT_TOKEN`); one without `X-Agent` presents `OPERATOR_TOKEN`; anything else is a 401. The
 Makefile's curl targets send `OPERATOR_TOKEN` from `.env` (or `.local-stack/env` while it is up). A host-run agent
 needs battlefield's `AGENT_TOKEN` (compose default `change-me-agent`).
@@ -95,49 +99,43 @@ values are `production` variables. Never put a token in a `NEXT_PUBLIC_*` var (t
 | `GITHUB_REPO` | compose image refs | n/a | not settable (GitHub reserves `GITHUB_`); deploy.yml passes `github.repository` |
 | `TEST_DATABASE_URL` | battlefield DB tests | unset (tests skip) | CI only |
 
-The repository-level Actions settings hold only deploy plumbing: the secrets `VULTR_HOST`, `VULTR_USER` (`deploy`)
-and `VULTR_SSH_KEY`, and the variable `DEPLOY_ENABLED=true`.
+During the hackathon, repository-level Actions settings held only deploy plumbing: the secrets
+`VULTR_HOST`, `VULTR_USER` (`deploy`) and `VULTR_SSH_KEY`, plus `DEPLOY_ENABLED=true`. Closeout
+sets `DEPLOY_ENABLED=false`; the environment table records the historical hosted configuration.
 
-## 3. Deploy
+## 3. Deployment automation (manual opt-in)
 
-The pipeline runs CI, then `deploy.yml`, then a `production` approval, then the VM.
+Deployment is disabled for closeout. Local development and CI do not require a hosted service.
+The workflow is retained for a maintainer who deliberately chooses to restore hosting later.
 
-1. **CI** (`ci.yml`, every PR and push to `main`): path-filtered ruff and pytest per Python service, frontend
-   typecheck/lint/vitest, `ownership-guard`, `contracts-guard`. Integration squash-merges READY PRs (`GIT.md` §4).
-   Repo settings: `main` protected (PR required, 0 approvals, those 8 checks required, admins included, no force
-   push or deletion), squash-only, auto-delete branches, Actions with read/write workflow permissions.
-2. **`deploy.yml`** runs on every push to `main` or by `workflow_dispatch`. `concurrency: deploy` with
-   `cancel-in-progress: false`, so runs queue rather than cancel. Stale runs can sit waiting for approval: check them
-   with `gh run list --workflow deploy.yml --status waiting` and approve the newest. A squash title containing
-   `[skip ci]` skips both workflows on `main`.
-   - The `build` job has no environment and sees no app secrets. It pushes five images to GHCR tagged `latest` and
-     the commit SHA, with no build args.
-   - The `roll` job needs `DEPLOY_ENABLED=true` and the **`production` environment, whose required reviewer is Ad**.
-     After approval it SSHes to the VM as `deploy`, runs `git reset --hard origin/main` in `/opt/redledger`, renders
-     `.env` with `deploy/render-env.sh`, runs `docker compose -f docker-compose.yml -f docker-compose.prod.yml pull`
-     and `up -d` with `IMAGE_TAG=<sha>`, restarts Caddy if the Caddyfile changed, and probes battlefield from inside
-     its container.
-3. **render-env** writes atomically (mode 600, prints only names) and refuses on an empty or equal token, a partial
-   or duplicate per-agent set, a short or reused `ADMIN_KEY`, or a `DOMAIN` with neither full `CF_ACCESS_*` nor
-   `ADMIN_KEY`. `docker-compose.prod.yml` fails closed if any token is unset.
-4. **Applying a variable or secret change:** change it in `production` (`gh variable set NAME --env production
-   --body ...` or `gh secret set NAME --env production`), then re-run the workflow (`gh workflow run deploy.yml`, or
-   `gh run rerun <run>`) and approve it. Rotation works the same way. Rotating `ADMIN_KEY` logs every admin out.
-5. **Rollback:** the durable fix is `git revert` through a PR plus a merge, which redeploys. For a quick rollback,
-   re-run an older successful deploy run. It pulls that commit's images but uses current `main`'s compose files and
-   env render, and the next merge rolls forward again. The workflow has no `IMAGE_TAG` input.
+1. **CI** (`ci.yml`, PRs and pushes to `main`) still runs the Python service checks and frontend
+   typecheck/lint/vitest. `contracts-guard` enforces contract changelog discipline;
+   `ownership-guard` remains a compatibility check for existing branch protection. Maintenance
+   changes no longer need sprint directory prefixes or mandatory devlog fragments.
+2. **`deploy.yml`** has only a `workflow_dispatch` trigger, with boolean input
+   `confirm_restore_hosting` defaulting to `false`. Both image building/publishing and rollout
+   require that input to be `true`. Pushes to `main` do not build or publish deployment images.
+3. **Rollout also requires** repository variable `DEPLOY_ENABLED=true` and access to the
+   GitHub `production` environment. During closeout that variable was set to `false` and the
+   workflow disabled remotely. Restoring hosting would require re-enabling the workflow and
+   explicitly dispatching it after configuring the VM, DNS, environment and credentials.
+4. The retained build job sees no application secrets. A deliberate run builds five GHCR
+   images, tagged `latest` and the commit SHA. The roll job SSHes to `/opt/redledger`, renders
+   `.env` with `deploy/render-env.sh`, pulls the images and restarts the stack.
+5. `render-env` writes atomically (mode 600, prints only names) and refuses empty/equal tokens,
+   a partial or duplicate per-agent set, a short or reused `ADMIN_KEY`, or a `DOMAIN` without
+   full `CF_ACCESS_*` or `ADMIN_KEY`. Never bake secrets into images or frontend build args.
 
-**Every deploy recreates every container** (new image tags), killing any running episode or lineage loop (its DB
-status stays `running`/`paused`). Merge between runs.
+The remaining production runbooks document the October 2026 environment. They assume the
+original VM and credentials exist. Recreating that environment is a separate maintenance
+choice; the preserved showcase needs neither it nor paid model calls.
 
-**VM (one-time):** `deploy/bootstrap.sh <org>/redledger <domain>` (root, Ubuntu) installs Docker, opens 80/443,
-creates `deploy` and clones to `/opt/redledger`. Then set the deploy SSH key and `VULTR_*` secrets, fill `production`
-(§2), `docker login ghcr.io` as `deploy`, point proxied Cloudflare DNS for `app.`, `red.`, `blue.` at the VM (SSL Full
-strict), set `DEPLOY_ENABLED=true` and run the workflow.
+**Historical deployment behavior:** every rollout recreated containers and could interrupt an
+active episode or lineage. Schema changes were not migrated; a column change required a DB
+reset after exporting wanted records. An older workflow rerun was not an exact rollback:
+it used that run's images with current checkout/configuration. Prefer a reviewed revert PR.
 
-Schema changes aren't migrated: a column change means `make db-reset` on the box (record fixtures first).
-
-## 4. Operate prod
+## 4. Historical production operations
 
 `deploy/prod.sh` (wrapped by `make prod-*`) runs every API call **inside the battlefield container on the VM** over
 SSH, so `OPERATOR_TOKEN` never leaves the VM.
@@ -226,7 +224,7 @@ services, and the Evolution card shows a real lineage, not the synthetic sample 
 
 ## 6. Costs
 
-Measured on prod with `gpt-5.4-mini` (`contracts/CHANGELOG.md` Findings):
+Measured during the October 2026 deployment with `gpt-5.4-mini` (`contracts/CHANGELOG.md` Findings):
 
 | Turn | Credits |
 |---|---|
@@ -270,13 +268,14 @@ burn with `make prod-credits EP=` after day 1.
 - **A gate block caused by blue being unreachable** (fallback) looks the same in the UI as a control block. Don't
   narrate it as a catch.
 
-## 9. Prod runbooks (full detail)
+## 9. Historical production runbooks (full detail)
 
-Kept verbatim from the former `deploy/PROD-OPS.md` so nothing operational is lost; §§3–7 above are the summary.
+Retained from the former `deploy/PROD-OPS.md` to preserve the hackathon operations record.
+These commands require the former VM and credentials; local setup in §1 requires neither.
 
 ### Going live: red, then blue's audit
 
-Prod today runs red and blue's daily audit on Droid and keeps green keyless: `DRY_RUN=false`,
+The October 2026 deployment ran red and blue's daily audit on Droid and kept green keyless: `DRY_RUN=false`,
 `DRY_RUN_GREEN=true`, `DRY_RUN_BLUE=false`, `DROID_MODEL_RED` and `DROID_MODEL_BLUE` both
 `gpt-5.4-mini`. Red went live first; blue's audit followed on 2026-10-25 after its readiness guard
 was lifted (#157; smoke `ep_f9c695b3144f`). Green's `_droid_turn` still raises before starting
@@ -299,7 +298,7 @@ Going back: set `DRY_RUN_BLUE=true` (blue keyless) or `DRY_RUN=true` (everything
 
 
 ```bash
-make prod-health                                   # all three agents ok, dry_run false
+make prod-health                                   # red/blue dry_run false; green true
 EP=$(deploy/prod.sh episode enforce 42 10)         # or: make prod-episode MODE=enforce SEED=42 DAYS=10
 make prod-credits EP=$EP                           # after day 1: is the burn what you expected?
 make prod-escalations EP=$EP                       # resolve before ESCALATION_TIMEOUT_SEC (90 s)
@@ -380,14 +379,15 @@ Exit codes:
 
 It needs blue's live audit (`DRY_RUN_BLUE=false`; a keyless audit never calls CRS) and the CRS
 credentials (`CRS_USERNAME`, `CRS_PASSWORD`) as `production` environment secrets
-(`deploy/ENVIRONMENT.md`). Without them every check comes back unknown and the run FAILs. Blue logs
-in to CRS once per process and never retries (`blue/CRS.md`): if a run FAILs with all-unknown CRS
+(see §2). Without them every check comes back unknown and the run FAILs. Blue logs
+in to CRS once per process and never retries (`blue/audit/crs.py`): if a run FAILs with all-unknown CRS
 result counts after an earlier run worked, suspect the login: a failed or expired token needs a blue restart,
 not a re-run loop. Red's and blue's turns are live, so it costs credits (blue's audit was 3,985 and
 5,318 in ep_9cbc3362d44e).
 
-First pass on prod: ep_9cbc3362d44e, 2026-10-25, `SEED=42 DAYS=2` (`blue/CRS.md`, "Prod live-audit
-acceptance"; recording `docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`). Record a run like any other
+First pass on prod: ep_9cbc3362d44e, 2026-10-25, `SEED=42 DAYS=2` (pinned fictional
+personas and acceptance checks: `blue/tests/crs_episode_acceptance.py`; recording
+`docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`). Record a run like any other
 with `make prod-record EP=… NAME=…`.
 
 ### Credit cap (`MAX_CREDITS_PER_EPISODE`)
@@ -500,56 +500,23 @@ the container's environment), then run `episode`/`wait`/`score`/`record`/`credit
 `RUNS_DIR` pointed at a scratch directory) as usual.
 Delete any fixture recorded this way; don't commit it.
 
-## 10. Repo and production environment settings
+## 10. Historical deployment configuration and closeout
 
-Kept verbatim from the former `deploy/OWNER-CHECKLIST.md` §§1–2 (checkboxes are historical; the commands are current).
+The hackathon deployment used a GitHub `production` environment with Ad as required reviewer
+and `main` as its deployment branch. The repository held only the SSH plumbing secrets
+`VULTR_HOST`, `VULTR_USER` and `VULTR_SSH_KEY`; application secrets were scoped to `production`.
+Images carried no secrets, and `deploy/render-env.sh` rendered the VM environment at runtime.
+See §2 for variable meanings and §9, "Blue's CRS scenario", for the acceptance procedure
+using three pinned fictional personas.
 
-### 1. Repo (10 min)
+Blue's live SDK guard was lifted in #157. CRS live acceptance subsequently passed in
+`ep_9cbc3362d44e` (#197): three operator-bound fictional personas, a mismatch flagged by the
+audit, and that persona's next expense blocked by the gate. The older checklist's statement
+that blue and CRS were still blocked was superseded by those runs. This does not establish
+general fraud detection or change green's disabled live path. Full evidence:
+[EVIDENCE.md](EVIDENCE.md) and [ARCHITECTURE.md](ARCHITECTURE.md#readiness-evidence).
 
-- [ ] Unzip, `git init`, first commit `chore: scaffold`, push `main`.
-- [x] `.github/CODEOWNERS` has real handles (Ad=@md-racc, Al=@Alex-Epstein, M=@moterodiaz, R=@RaagaSundar). It is routing/notification only: owners get auto-requested; it gates nothing.
-- [x] ⚑ Branch protection on `main`: require a pull request; **0 approvals; code-owner review off** (integration merges; GIT.md §4);
-  require status checks by their real job names: `python (agentkit)`, `python (battlefield)`, `python (red)`, `python (green)`, `python (blue)`, `frontend`, `ownership-guard`, `contracts-guard` (skipped = pass);
-  do not allow force pushes; do not allow deletions; **include administrators**.
-- [x] Ad's machine only: a local, **uncommitted** removal of the `gh pr merge*` deny in `.claude/settings.json` so the orchestrator can merge (`git update-index --skip-worktree .claude/settings.json`). Never commit it; teammates keep the committed denies.
-- [x] Integration loop (AGENTS.md §10, GIT.md §4): PR steward subagent polls and assesses; an independent verifier reviews core/cross-area PRs; merge with `gh pr merge --squash --match-head-commit <assessed sha>`; resync PR branches with plain merges of `origin/main`, never force.
-- [ ] Settings → General → Pull Requests: allow **squash merging only**; default to PR title + description; **automatically delete head branches**.
-- [ ] Settings → Actions → General: allow GitHub Actions; workflow permissions "Read and write" (deploy.yml pushes to GHCR).
-- [ ] Add collaborators Al, M, R with Write (not Admin). You stay the only admin.
-
-### 2. Secrets and variables (10 min)
-
-Images carry no secrets. The deploy job renders `/opt/redledger/.env` on the VM from the
-`production` environment on every deploy (`deploy/render-env.sh`); nobody edits that file by hand.
-
-Repo → Settings → Secrets and variables → Actions → **Repository** secrets (deploy plumbing only):
-- [ ] `VULTR_HOST`, `VULTR_USER` (`deploy`), `VULTR_SSH_KEY` (private key the VM's `deploy` user accepts). Nothing else at repo level.
-
-Repo → Settings → Environments → **New environment** `production`:
-- [ ] ⚑ Deployment protection: **required reviewer = Ad**. Deployment branches: `main` only.
-- [ ] Environment **secrets**:
-  - `AGENT_TOKEN`, `OPERATOR_TOKEN`: `openssl rand -hex 32` each, two different values (render-env refuses equal or empty tokens).
-  - `AGENT_TOKEN_RED`, `AGENT_TOKEN_GREEN`, `AGENT_TOKEN_BLUE` (per-agent tokens, #108/#109): create all three at once — `for a in RED GREEN BLUE; do openssl rand -hex 32 | gh secret set AGENT_TOKEN_$a --env production; done` — then redeploy. All three or none: render-env refuses a partial or duplicate set; none → shared `AGENT_TOKEN` (separation off). Rollback: delete all three and redeploy.
-  - `FACTORY_API_KEY`: the dedicated prod key. ⚑ It goes here and nowhere else: not in a teammate's `.env`, not in chat. Each dev uses their own key locally.
-  - `BLUE_GATE_LLM_API_KEY`, `CRS_API_KEY`, `CARTESIA_API_KEY` (leave unset if unused).
-  - `CRS_USERNAME`, `CRS_PASSWORD`: optional CRS **sandbox** login, entered by a human later.
-    Both are `production` environment secrets, forwarded only at runtime to Blue (never shared
-    agent env, frontend, or image build args). `CRS_API_KEY` remains legacy compatibility
-    plumbing and is unused by the identity client. Leave both login secrets unset when unused;
-    missing credentials and `DRY_RUN=true` yield neutral unknown evidence, never a block.
-- [ ] Environment **variables**:
-  - `DROID_MODEL_RED`, `DROID_MODEL_GREEN`, `DROID_MODEL_BLUE`: pinned prod models (never `auto`).
-  - `DROID_REASONING_RED`, `DROID_REASONING_GREEN`, `DROID_REASONING_BLUE`: optional reasoning effort, one of `none|off|minimal|low|medium|high|xhigh|max` (leave unset for the model default). A bad value stops that agent at startup.
-  - `BLUE_GATE_LLM_PROVIDER`, `BLUE_GATE_LLM_MODEL`.
-  - `MAX_CREDITS_PER_EPISODE`: prod uses `375000` (see §6). Battlefield pauses an episode that reaches it; `0` disables.
-  - `DOMAIN`: e.g. `example.com` (Caddy serves `api.` and `app.` under it).
-  - (`GITHUB_REPO` is not a variable: GitHub reserves the `GITHUB_` prefix, so deploy.yml passes `github.repository`, the same name the build job tags images with. It must be lowercase for GHCR.)
-  - `CORS_ORIGINS`: e.g. `https://app.<domain>,https://<pages-project>.pages.dev` (defaults to `https://app.<domain>`).
-  - `NEXT_PUBLIC_WS_URL`: `wss://app.<domain>` on prod (the render-env default `wss://api.<domain>` is wrong; see §8).
-- [ ] Repo → Settings → Secrets and variables → Actions → **Repository variables**: `DEPLOY_ENABLED=true`, but only once the VM in §3 is up. Until then merges to `main` build and push images and skip the SSH roll.
-- [ ] Rotation = change the secret in the environment, then re-run deploy.yml. Rotating `AGENT_TOKEN`/`OPERATOR_TOKEN` restarts every service with the new value; nothing else to touch.
-- [ ] CRS live acceptance: **blocked / not run** until sandbox credentials and runtime tooling
-  are available and checks are authorized. Check only pinned approved fictional personas
-  (`deploy/ENVIRONMENT.md`); never real PII or an EIN lookup. Container smoke and live Factory
-  acceptance are also unavailable here; Blue's live SDK guard stays disabled. Do not mark the
-  integration live-ready based only on credential wiring or unit tests.
+Closeout keeps the local code, screenshots and committed recordings. The owner confirmed the
+original Vultr VM was destroyed. Credential revocation and removal of unused DNS/services
+still require their own completion checks. [CLOSEOUT.md](CLOSEOUT.md) records the retirement
+and remaining limits.

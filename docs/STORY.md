@@ -2,7 +2,9 @@
 
 **Every well-known accounts-payable fraud worked by fooling whoever approves the payment. Companies are now handing that job to AI agents. Red Ledger is the crash test: a live fraud agent attacks an AI AP clerk, and the control sits in the ledger, not in the agent's prompt.**
 
-This file is the one source for the Devpost text, the README and the judging pitch. Every number here is backed in [EVIDENCE.md](EVIDENCE.md). If a line changes here, it changes everywhere.
+This is the project story used for the October 2026 Devpost submission, README and judging pitch.
+Every number is backed in [EVIDENCE.md](EVIDENCE.md). The hosted deployment described below is historical;
+see [CLOSEOUT.md](CLOSEOUT.md) for the preserved project and local demo.
 
 ## The problem is old. The payer is new.
 

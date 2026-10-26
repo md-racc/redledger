@@ -4,20 +4,23 @@
 handing that job to AI agents. Red Ledger is the crash test: a live fraud agent attacks an AI AP clerk, and the
 control sits in the ledger, not in the agent's prompt.**
 
-Built for Cal Hacks 13.0.
+Built for Cal Hacks 13.0. **Completed October 2026.** Explore the screenshots and recorded results below,
+or run the interactive arena locally without API keys. The original hosted demo has been retired.
 
-![The arena: red's fraudsters, green's clerks and blue's guards around the ledger, live on app.redledger.us](docs/img/arena.jpg)
+![The arena: red's fraudsters, green's clerks and blue's guards around the ledger, captured during the hackathon](docs/img/arena.jpg)
 
 
-## Live site and status
+## The finished project
 
-[app.redledger.us](https://app.redledger.us) is public and read-only: anyone can watch a run, and only a
-signed-in admin can start runs, launch attacks or resolve escalations. After a run,
-`app.redledger.us/report/<episode>` is a controls report: which control fired on which scheme, what got
-through, what false positives cost, and how much reached accounts the attacker controls.
+Red Ledger is a hackathon research prototype, preserved with its source, screenshots, recorded runs and
+reproduction instructions. During the hackathon, red and blue's daily audit ran on Factory's Droid SDK
+(`gpt-5.4-mini`). Green used the same harness keyless; blue's gate used deterministic rules.
 
-Red and blue's daily audit run live on Factory's Droid SDK (`gpt-5.4-mini`). Green, the clerk, runs on the same
-harness keyless: its full logic, no model. Blue's gate is deterministic rules, not a model.
+The most useful result: red found an invoice-splitting gap, and a new ledger rule stopped its next split
+attempt. [Results](#results) and [the evidence ledger](docs/EVIDENCE.md) explain the numbers and limits.
+Green's live model path remains disabled; this is not a production finance system.
+
+[View locally](#run-it-with-no-keys) · [Architecture](docs/ARCHITECTURE.md) · [Project closeout](docs/CLOSEOUT.md)
 
 ![An escalation: red asked to change a vendor's bank account while bills are open; the controller holds it and a person decides](docs/img/escalation.jpg)
 
@@ -72,7 +75,8 @@ item). Blocking everything loses.
 
 ## Results
 
-Everything below ran on the live, hosted system (app.redledger.us) with red on Factory Droid (`gpt-5.4-mini`).
+These historical results were collected on the hosted system on October 24–25, 2026, with red on
+Factory Droid (`gpt-5.4-mini`). Keyless local runs demonstrate the system; they do not reproduce model behavior.
 
 | Run | Result |
 |---|---|
@@ -88,20 +92,33 @@ simulated weeks, and the fix was a ledger rule, not a better prompt. What we don
 
 ## Run it with no keys
 
-Under `DRY_RUN=true` the agents return canned turns and blue's gate runs its rules; nothing needs a Factory or
-LLM key.
+For the interactive arena alone, install Node.js 22 and run:
+
+```bash
+cd frontend
+npm ci
+NEXT_PUBLIC_MOCK=true npm run dev
+```
+
+Open <http://localhost:3000>. This replays events with no backend, Docker or API keys. Screenshots above
+show the original arena and escalation view; [recordings](docs/recordings/) retain real hackathon runs.
+
+For a local simulation with Postgres and the Ledger API, install Docker Compose, Python 3.11 and Make:
 
 ```bash
 cp .env.example .env     # set AGENT_TOKEN and OPERATOR_TOKEN to two different strings; set DRY_RUN=true
 make mock-agents         # postgres + battlefield + stub red/green/blue; ports 5432, 8000-8003
-make episode MODE=enforce SEED=42 DAYS=4      # prints `export EP=...`
+make episode MODE=enforce SEED=42 DAYS=4      # prints `export EP=...`; run that line in your shell
+# Wait for the episode to finish, then:
 make score EP=$EP
+make down
 ```
 
-No Docker: `make local-stack AGENTS=mock` runs Postgres, battlefield and the agents as processes (stop with
-`make local-stack-stop`). The site alone, replaying recorded events with no backend:
-`cd frontend && npm install && NEXT_PUBLIC_MOCK=true npm run dev`. Tests, lint, deploy and every environment
-variable: [docs/OPERATIONS.md](docs/OPERATIONS.md).
+For the real agent implementations without model calls, use `make up-dry` instead of `make mock-agents`.
+Under `DRY_RUN=true` agents use canned turns and blue's gate runs its rules. With no Docker,
+`make local-stack AGENTS=mock` runs Postgres, battlefield and the agents as processes (stop with
+`make local-stack-stop`); it requires Python 3.11 and `uv` (Postgres is supplied by `pgserver`).
+Tests, environment variables and detailed local setup: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Repo layout
 
@@ -116,7 +133,7 @@ redledger/
 ├── contracts/    schema.sql, ledger-api.yaml, events.md, agent-service.md, CHANGELOG.md
 ├── deploy/       Caddyfile and the bootstrap, env-render and prod scripts
 ├── docs/         the documents below, plus recordings/ (event streams of real prod runs)
-├── devlog/       one note per PR (DEVLOG.md is the frozen history before it)
+├── devlog/       historical development notes (DEVLOG.md is the earlier frozen history)
 └── AGENTS.md  GIT.md  Makefile  docker-compose*.yml  .env.example  LICENSE
 ```
 
@@ -127,8 +144,9 @@ redledger/
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): services, the Ledger API's enforcement, each agent, evolution, scoring.
 - [docs/FRONTEND.md](docs/FRONTEND.md): the site, its data flow and mock mode.
 - [docs/OPERATIONS.md](docs/OPERATIONS.md): running locally, environment variables, deploy and prod operations.
-- [docs/PITCH.md](docs/PITCH.md): the 5-minute judging talk.
-- [docs/SUBMISSION.md](docs/SUBMISSION.md): the Devpost text.
+- [docs/CLOSEOUT.md](docs/CLOSEOUT.md): preserved submission, hosting retirement and remaining limits.
+- [docs/PITCH.md](docs/PITCH.md): historical judging talk and demo instructions.
+- [docs/SUBMISSION.md](docs/SUBMISSION.md): historical Devpost submission text.
 - [docs/recordings/](docs/recordings/): operator event streams of real prod runs, indexed in docs/EVIDENCE.md.
 - [contracts/](contracts/): the machine-readable API, schema and events; contracts win any disagreement with prose.
 - [AGENTS.md](AGENTS.md) and [GIT.md](GIT.md): the working agreement and git protocol, for people and coding agents.
@@ -137,10 +155,10 @@ redledger/
 
 | Dev | Area |
 |---|---|
-| **Ad** | Backend and infrastructure: battlefield, agentkit, contracts, deploy, CI |
-| **Al** | Red team: the attacker agent and its scheme catalog |
-| **M** | Green, the AP clerk, and blue, the controller |
-| **R** | Frontend design |
+| **[Ad](https://github.com/md-racc)** | Backend and infrastructure: battlefield, agentkit, contracts, deploy, CI |
+| **[Al](https://github.com/Alex-Epstein)** | Red team: the attacker agent and its scheme catalog |
+| **[M](https://github.com/moterodiaz)** | Green, the AP clerk, and blue, the controller |
+| **[R](https://github.com/RaagaSundar)** | Frontend design |
 
 ## License
 

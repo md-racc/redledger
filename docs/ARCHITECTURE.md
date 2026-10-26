@@ -1,9 +1,11 @@
 # Architecture
 
-How Red Ledger works today: the system, the Ledger API's enforcement, each agent, evolution,
-scoring, Droid SDK usage and the evidence behind what runs live. `contracts/` is the
-machine-readable law; where this file and a contract disagree, the contract wins, and the code
-beats both. PR numbers are citations.
+Architecture of the completed October 2026 hackathon prototype: the system, the Ledger API's
+enforcement, each agent, evolution,
+scoring, Droid SDK usage and the evidence behind its recorded runs. `contracts/` is the
+machine-readable law; if code or prose disagrees with a contract, the contract wins. PR numbers
+are citations. Production configuration below describes the October 24–25, 2026 deployment,
+not a maintained hosted service; see [CLOSEOUT.md](CLOSEOUT.md).
 
 ## System overview
 
@@ -31,7 +33,7 @@ restart: a resumed day is not re-injected, and red and blue turns that already s
 re-run. Controller modes are per episode and switchable mid-episode: `off` (blue never called),
 `shadow` (verdicts recorded with `enforced=false`, nothing blocked), `enforce`.
 
-**Invariants the code holds** (full text in `AGENTS.md` §3): agents never touch Postgres; agents
+**System invariants** (see `AGENTS.md` and the contracts): agents never touch Postgres; agents
 never call each other; the Ledger API is the enforcement point; `origin` is secret during play;
 every Ledger API call writes `audit_log` and every tool call emits an `agent.tool_call` /
 `agent.tool_result` pair; idempotency keys are the SDK `tool_use_id`; everything runs under
@@ -139,7 +141,7 @@ requests carry `Authorization: Bearer <own token>`, `X-Agent`, `X-Episode`, `X-D
 A blocked gated call returns `403 {verdict:"block", reason, verdict_id, …}`; an escalation holds the call
 until resolved, then returns 200 or 403.
 
-**Extensions.** Teams grow the sandbox without a contracts PR through two carve-outs (`GIT.md` §2):
+**Extensions.** The hackathon sandbox provides two extension carve-outs:
 routes in `battlefield/extensions/<area>_*.py` (mounted under `/api/x/<area>/…`) and tables in
 `contracts/ext/<area>/*.sql` (tables prefixed `<area>_`, applied at startup after `contracts/schema.sql`
 in filename order).
@@ -204,9 +206,9 @@ deliberately trusting AP clerk; controls belong to blue.
   a transport failure (the route gates inline); enforce cancels.
 - **Fails closed** on batched requests (one SDK answer covers the whole batch), unknown or empty
   requests, missing or unverified tool-use ids, and a missing invocation registry.
-- **Live path disabled:** `GreenAgent._droid_turn` raises before any Session opens, pending the
-  guard-lift PR #160 (draft). Prod runs green keyless (`DRY_RUN_GREEN=true`): the deterministic
-  clerk calls the same decorated tools against the gated routes, which gate inline. Green's
+- **Live path disabled:** `GreenAgent._droid_turn` raises before any Session opens. The
+  proposed guard lift (#160) was unfinished hackathon work. The deployment ran green keyless
+  (`DRY_RUN_GREEN=true`): the deterministic clerk calls the same decorated tools against the gated routes, which gate inline. Green's
   `/reflect` (`green/playbook.py`) writes deterministic procedure memory; its turn prompt reads it
   only on the live path, so nothing on prod consumes it.
 
