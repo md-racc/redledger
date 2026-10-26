@@ -1,8 +1,12 @@
 # Evidence
 
 Every claim we make about Red Ledger, with its proof. Base: a code-verified audit of `main` at `8331ee5`
-(2026-10-25), updated for #217, #219, #221 and the P9 lineage. This file beats other prose; code and
-`contracts/` beat this file. `#NN` is a PR; "Finding" is a dated entry in `contracts/CHANGELOG.md`.
+(2026-10-25), updated for #217, #219, #221 and the P9 lineage. This file records the evidence behind other prose;
+`contracts/` govern intended behavior, and discrepancies in code must be fixed. `#NN` is a PR; "Finding" is a dated entry in `contracts/CHANGELOG.md`.
+
+Deployment references and results below describe October 24–25, 2026. The original hosting is retired;
+recordings and screenshots remain in the repo. See [CLOSEOUT.md](CLOSEOUT.md). External research
+is dated evidence, not a claim that those sources or the hosted reports remain current.
 
 ## 1. Safe to claim
 
@@ -56,9 +60,9 @@ Every claim we make about Red Ledger, with its proof. Base: a code-verified audi
   credits logged per turn.
 - Every agent runs keyless under `DRY_RUN`; the frontend runs with `NEXT_PUBLIC_MOCK=true` and no backend.
 
-**Prod configuration** (GitHub `production` variables): `DRY_RUN=false`, `DRY_RUN_GREEN=true`,
+**Hackathon prod configuration** (October 2026 GitHub `production` variables): `DRY_RUN=false`, `DRY_RUN_GREEN=true`,
 `DRY_RUN_BLUE=false`; model `gpt-5.4-mini`; credit cap 375,000 per episode; WebSocket `wss://app.redledger.us`.
-The site is public and read-only; only an admin can act (#152, #159).
+The site was public and read-only; only an admin could act (#152, #159).
 
 **Results** (figures in §4)
 - Controller off vs on on prod, both with red live (#136) and with red and blue's audit live (#193).
@@ -69,9 +73,10 @@ The site is public and read-only; only an admin can act (#152, #159).
   expense while two clean hires were paid (ep_9cbc3362d44e, #197).
 - The controls report's per-scheme rows always sum to the headline loss (#217).
 
-**Engineering hygiene**
+**Engineering hygiene at the October 2026 audit**
 - Branch protection on `main`: 8 required checks, squash-only, no force pushes, admins included. CI's
-  ownership guard enforces area boundaries; the contracts guard requires a CHANGELOG line.
+  ownership guard enforced area boundaries; the contracts guard required a CHANGELOG line.
+  Closeout replaces the sprint ownership process; see [GIT.md](../GIT.md) for maintenance rules.
 - About 1,570 Python unit tests passing at audit time (agentkit 156, battlefield 269 + 321 DB tests skipped
   without Postgres, red 138, green 522, blue 485); ruff clean in every Python area.
 
@@ -79,7 +84,7 @@ The site is public and read-only; only an admin can act (#152, #159).
 
 | Claim | Reality |
 |---|---|
-| Green evolves, or "three live agents" | Green is keyless on prod (`DRY_RUN_GREEN=true`); its live turn is hard-disabled (`green/agent.py`) until #160 (open draft). Its reflection writes a playbook nothing reads on prod |
+| Green evolves, or "three live agents" | Green is keyless on prod (`DRY_RUN_GREEN=true`); its live turn is hard-disabled (`green/agent.py`) (the proposed guard lift in #160 was unfinished). Its reflection writes a playbook nothing reads on prod |
 | The agents adapt against each other / blue learned to stop red | In P1 red adapted and blue didn't keep up. In P9 the control that caught the split is one we shipped; blue added no learned controls ("Learned: none") |
 | Blue writes new rules | It toggles a fixed set of four pre-written learned controls (`blue/gate/learned.py`) |
 | The split gap is closed for good | One short lineage: one split, caught 3/3, then red stopped splitting |
@@ -102,7 +107,7 @@ The site is public and read-only; only an admin can act (#152, #159).
 | MLH Gemini use | No Gemini on prod; red moved off `gemini-3.8-flash` after it stalled (#118) |
 | The company is called Coastal Supply Co. | Renamed to Meridian Components, a synthetic electronics components distributor, on 2026-10-25 |
 
-## 3. Re-check before using
+## 3. Historical verification caveats
 
 - **Pitch lines** "None of blue's rules fired" and "$18.5k → $93.6k": check against the live Evolution card for
   `ln_f52a3df83c8d` ($18,534 → $93,568 in the live report on 2026-10-25; the old "$19k → $98k" was the pre-#207 export). On that card red's per-attack chips use the stored
