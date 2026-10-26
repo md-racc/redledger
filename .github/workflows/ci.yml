@@ -53,6 +53,9 @@ jobs:
         svc: [agentkit, battlefield, red, green, blue]
     if: ${{ always() && needs.changes.result == 'success' }}
     runs-on: ubuntu-latest
+    # Match the documented runtime and service images; runner Python defaults can drift.
+    env:
+      UV_PYTHON: '3.11'
     # DB-tier tests (battlefield) run against this; services skip them when TEST_DATABASE_URL is unset.
     # A service on a matrix job starts for every entry; that's ~10 s, accepted.
     services:
@@ -96,6 +99,9 @@ jobs:
     needs: changes
     if: ${{ always() && needs.changes.result == 'success' && needs.changes.outputs.battlefield == 'true' }}
     runs-on: ubuntu-latest
+    # Match the documented runtime and service images; runner Python defaults can drift.
+    env:
+      UV_PYTHON: '3.11'
     services:
       postgres:
         image: timescale/timescaledb:latest-pg16
@@ -136,28 +142,10 @@ jobs:
       - run: npm test --silent
 
   ownership-guard:
+    # Compatibility check: keep this name while main branch protection requires it.
+    # Team path ownership and mandatory devlog fragments ended after the hackathon.
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - name: a branch prefix may only touch its own directory (plus devlog/ fragments)
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-        run: |
-          BR="$HEAD_REF"
-          PREFIX="${BR%%/*}"
-          case "$PREFIX" in
-            red|green|blue) ALLOWED="^($PREFIX/|battlefield/extensions/${PREFIX}_[^/]*\.py$|contracts/ext/$PREFIX/|DEVLOG.md$|devlog/[^/]+\.md$)";;
-            frontend) ALLOWED="^(frontend/|battlefield/extensions/fe_[^/]*\.py$|contracts/ext/fe/|DEVLOG.md$|devlog/[^/]+\.md$)";;
-            battlefield) ALLOWED="^(battlefield/|agentkit/|deploy/|docker-compose|Makefile|\.env\.example|\.github/|ruff\.toml$|DEVLOG.md$|devlog/[^/]+\.md$)";;
-            contracts) ALLOWED="^(contracts/|agentkit/agentkit/models.py|DEVLOG.md$|devlog/[^/]+\.md$)";;
-            docs|chore|release) exit 0;;
-            *) echo "::error::branch must be prefixed red/ green/ blue/ frontend/ battlefield/ contracts/ docs/ chore/"; exit 1;;
-          esac
-          BAD=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -Ev "$ALLOWED" || true)
-          if [ -n "$BAD" ]; then echo "::error::branch $BR touched files outside its area:"; echo "$BAD"; exit 1; fi
-      - name: one devlog fragment per PR (warning only)
-        run: |
-          N=$(git diff --name-only --diff-filter=A "origin/${{ github.base_ref }}...HEAD" | grep -Ec '^devlog/[0-9][^/]*\.md$' || true)
-          if [ "$N" != "1" ]; then echo "::warning::PR adds $N devlog/*.md fragments; expected exactly 1 (make devlog WHO=... MSG=...; GIT.md §6)"; fi
+      - name: maintenance scope is reviewed in the PR
+        run: echo "Team path restrictions and devlog requirements are retired; see GIT.md."
