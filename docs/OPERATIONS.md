@@ -379,14 +379,15 @@ Exit codes:
 
 It needs blue's live audit (`DRY_RUN_BLUE=false`; a keyless audit never calls CRS) and the CRS
 credentials (`CRS_USERNAME`, `CRS_PASSWORD`) as `production` environment secrets
-(`deploy/ENVIRONMENT.md`). Without them every check comes back unknown and the run FAILs. Blue logs
-in to CRS once per process and never retries (`blue/CRS.md`): if a run FAILs with all-unknown CRS
+(see §2). Without them every check comes back unknown and the run FAILs. Blue logs
+in to CRS once per process and never retries (`blue/audit/crs.py`): if a run FAILs with all-unknown CRS
 result counts after an earlier run worked, suspect the login: a failed or expired token needs a blue restart,
 not a re-run loop. Red's and blue's turns are live, so it costs credits (blue's audit was 3,985 and
 5,318 in ep_9cbc3362d44e).
 
-First pass on prod: ep_9cbc3362d44e, 2026-10-25, `SEED=42 DAYS=2` (`blue/CRS.md`, "Prod live-audit
-acceptance"; recording `docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`). Record a run like any other
+First pass on prod: ep_9cbc3362d44e, 2026-10-25, `SEED=42 DAYS=2` (pinned fictional
+personas and acceptance checks: `blue/tests/crs_episode_acceptance.py`; recording
+`docs/recordings/crs-live-ep_9cbc3362d44e.jsonl`). Record a run like any other
 with `make prod-record EP=… NAME=…`.
 
 ### Credit cap (`MAX_CREDITS_PER_EPISODE`)
@@ -505,7 +506,8 @@ The hackathon deployment used a GitHub `production` environment with Ad as requi
 and `main` as its deployment branch. The repository held only the SSH plumbing secrets
 `VULTR_HOST`, `VULTR_USER` and `VULTR_SSH_KEY`; application secrets were scoped to `production`.
 Images carried no secrets, and `deploy/render-env.sh` rendered the VM environment at runtime.
-See §2 for variable meanings and `deploy/ENVIRONMENT.md` for the original operator checklist.
+See §2 for variable meanings and §9, "Blue's CRS scenario", for the acceptance procedure
+using three pinned fictional personas.
 
 Blue's live SDK guard was lifted in #157. CRS live acceptance subsequently passed in
 `ep_9cbc3362d44e` (#197): three operator-bound fictional personas, a mismatch flagged by the

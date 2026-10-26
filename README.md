@@ -5,7 +5,7 @@ handing that job to AI agents. Red Ledger is the crash test: a live fraud agent 
 control sits in the ledger, not in the agent's prompt.**
 
 Built for Cal Hacks 13.0. **Completed October 2026.** Explore the screenshots and recorded results below,
-or run the interactive arena locally without API keys. The original hosted demo is retired.
+or run the interactive arena locally without API keys. The original hosted demo has been retired.
 
 ![The arena: red's fraudsters, green's clerks and blue's guards around the ledger, captured during the hackathon](docs/img/arena.jpg)
 
@@ -155,10 +155,10 @@ redledger/
 
 | Dev | Area |
 |---|---|
-| **Ad** | Backend and infrastructure: battlefield, agentkit, contracts, deploy, CI |
-| **Al** | Red team: the attacker agent and its scheme catalog |
-| **M** | Green, the AP clerk, and blue, the controller |
-| **R** | Frontend design |
+| **[Ad](https://github.com/md-racc)** | Backend and infrastructure: battlefield, agentkit, contracts, deploy, CI |
+| **[Al](https://github.com/Alex-Epstein)** | Red team: the attacker agent and its scheme catalog |
+| **[M](https://github.com/moterodiaz)** | Green, the AP clerk, and blue, the controller |
+| **[R](https://github.com/RaagaSundar)** | Frontend design |
 
 ## License
 

@@ -141,7 +141,7 @@ requests carry `Authorization: Bearer <own token>`, `X-Agent`, `X-Episode`, `X-D
 A blocked gated call returns `403 {verdict:"block", reason, verdict_id, …}`; an escalation holds the call
 until resolved, then returns 200 or 403.
 
-**Extensions.** Teams grow the sandbox without a contracts PR through two carve-outs (`GIT.md` §2):
+**Extensions.** The hackathon sandbox provides two extension carve-outs:
 routes in `battlefield/extensions/<area>_*.py` (mounted under `/api/x/<area>/…`) and tables in
 `contracts/ext/<area>/*.sql` (tables prefixed `<area>_`, applied at startup after `contracts/schema.sql`
 in filename order).
