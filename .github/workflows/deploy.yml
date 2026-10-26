@@ -1,20 +1,21 @@
-# CD: on merge to main, build images → GHCR, then SSH to the Vultr VM and roll the stack. Owner: Dev Ad.
-# Repo secrets (deploy plumbing only): VULTR_HOST, VULTR_USER (deploy), VULTR_SSH_KEY (private key).
-# App secrets/variables live only in the GitHub `production` environment (required reviewer: Ad);
-# only the `roll` job sees them, and it renders /opt/redledger/.env via deploy/render-env.sh.
-# `build` is environment-free: images carry no secrets and no per-environment values.
-# `roll` runs only when the repo variable DEPLOY_ENABLED is 'true' (set it once the VM exists).
-# GHCR auth uses the built-in GITHUB_TOKEN; make the packages public or give the VM a read:packages PAT.
+# Historical deployment, retained for reference and deliberate restoration only.
+# Hosting is retired. No push or PR event can build, publish images or access infrastructure.
+# Explicit confirmation enables builds; rollout ALSO needs DEPLOY_ENABLED=true and production approval.
 name: deploy
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      confirm_restore_hosting:
+        description: 'Restore retired hosting: build/publish images and permit production rollout'
+        required: true
+        type: boolean
+        default: false
 
 concurrency: { group: deploy, cancel-in-progress: false }
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirm_restore_hosting == true
     runs-on: ubuntu-latest
     permissions: { contents: read, packages: write }
     strategy:
@@ -43,7 +44,7 @@ jobs:
 
   roll:
     needs: build
-    if: vars.DEPLOY_ENABLED == 'true'
+    if: github.event_name == 'workflow_dispatch' && inputs.confirm_restore_hosting == true && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: production
     permissions: { contents: read }

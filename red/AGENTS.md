@@ -1,4 +1,4 @@
-# red/ — working guide for Dev Al and any coding agent in this directory
+# red/ — maintenance guide (original author: Al)
 
 Read the root `README.md`, `docs/ARCHITECTURE.md` and `GIT.md` first. This file is the local rulebook.
 
@@ -6,18 +6,7 @@ Read the root `README.md`, `docs/ARCHITECTURE.md` and `GIT.md` first. This file 
 
 Build the attacker. Red is a Droid session with a small tool surface (`tools.py`) and a catalog
 of fraud schemes (`schemes/`). Red's success condition is money leaving Meridian Components
-without the controller noticing. Red being too weak is the most likely way the whole demo
-fails: if the controller-off baseline doesn't lose real money, nothing else matters.
-
-## Boundaries
-
-- You own everything under `red/`. Nothing else. Branch prefix `red/`.
-- You talk to the world only through `agentkit.LedgerClient` (red routes: create vendor,
-  request vendor change, submit invoice, submit expense, add employee, declare attack). You
-  cannot pay, approve, freeze, or read the audit log. If you think red needs another route,
-  that's a `contracts/` PR to Ad.
-- You never import from `battlefield/`, `green/`, or `blue/`.
-- `origin` is hidden from you by battlefield, and so is every attack id except your own declared ones (and their outcomes until the reveal day). Don't try to infer them.
+without the controller noticing. Preserve the controller-off baseline and scheme bounds.
 
 ## Files
 
@@ -29,19 +18,18 @@ fails: if the controller-off baseline doesn't lose real money, nothing else matt
 | `tools.py` | what the model can call; wrappers over LedgerClient; descriptions matter |
 | `agent.py` | `RedAgent(DroidAgent)`: prompt construction and the DRY_RUN path |
 | `prompts/system.md` | the persona; a string, replaces Droid's default |
-| `server.py` | leave alone; it's the agentkit factory plus `/schemes` |
+| `server.py` | it's the agentkit factory plus `/schemes` |
 | `tests/` | one test per scheme using `respx` against a fake Ledger API |
 
 ## Scheme checklist (docs/ARCHITECTURE.md (Red) has the list)
 
-Each scheme needs: a `story` sentence a non-engineer judge understands, a `params_schema` so the
+Each scheme needs: a `story` sentence a non-engineer understands, a `params_schema` so the
 judge's picker can offer knobs, `viable()` so red doesn't attempt impossible things, `plan()`
 that reads the ledger and resolves amounts/ids, `execute()` that makes ≤4 ledger writes, and a
 test. Make amounts look like real traffic (see what `inspect_books` returns); the realistic
 schemes are the ones that beat the rules.
 
-Priority order: `ghost_vendor` (done, reference), `bank_swap`, `duplicate_invoice`,
-`threshold_split`, then the rest.
+The eight built-in schemes are documented in `docs/ARCHITECTURE.md`; preserve their catalog interfaces.
 
 ## DRY_RUN
 
@@ -50,12 +38,13 @@ it working; backend and frontend run whole episodes on it.
 
 ## Local loop
 
-`AGENT_TOKEN` replaces `INTERNAL_TOKEN` (still accepted as a fallback); use your own `FACTORY_API_KEY` locally. Pass `AGENT_TOKEN=<your .env value>` (compose default `change-me-agent`) where the command below says `INTERNAL_TOKEN=change-me`, or battlefield and your service 401 each other.
+Use the same `AGENT_TOKEN` as your local battlefield (compose default `change-me-agent`).
+Keep local development keyless with `DRY_RUN=true`.
 
 ```
 make mock-agents                       # battlefield + stub green/blue
 cd red && uv sync --extra dev
-AGENT_NAME=red BATTLEFIELD_URL=http://localhost:8000 INTERNAL_TOKEN=change-me DRY_RUN=true \
+AGENT_NAME=red BATTLEFIELD_URL=http://localhost:8000 AGENT_TOKEN=change-me-agent DRY_RUN=true \
   uv run uvicorn server:app --port 8001 --reload
 # in another shell: make episode MODE=shadow ; watch :8000/api/fe/episodes/<EP>/attacks
 ```
@@ -65,18 +54,8 @@ Stop the mock red first (`docker compose stop red`) so battlefield hits yours.
 
 - Autonomy HIGH; permission handler approves everything (default in `DroidAgent`).
 - Tool IDs: `<server>___<tool>`, derived and checked by `agentkit` every session (recorded in `contracts/CHANGELOG.md` Findings).
-- Pin `DROID_MODEL` to a low-multiplier model. Red doesn't need frontier reasoning.
+- Pin `DROID_MODEL_RED` for reproducible live experiments. Red doesn't need frontier reasoning.
 - Log credits per turn (agentkit does). The measured median red turn is ~2,790 credits (#216); if a turn runs well above that, shorten the prompt.
-
-## Extension points (grow without a contracts PR)
-
-See docs/ARCHITECTURE.md (Routes and extensions). For `red/` specifically:
-- Memory across turns: `ctx.ledger().get_state("k")` / `put_state("k", {...})`.
-- Inputs: `req.options["inputs"]` is a list of messages left for you (judge, crowd, other agents). Read it in `build_prompt` / `dry_run_turn` if you want to react.
-- Custom events: `ctx.emitter().custom("name", {...})` emits `x.red.name`; the frontend stores it in `state.custom`.
-- Your own tables: `contracts/ext/red/<nn>_<name>.sql`, tables prefixed `red_`.
-- Your own battlefield routes: `battlefield/extensions/red_<name>.py` with `router = APIRouter()`, mounted at `/api/x/red/...`. Read-only on core tables; writes only to `red_*` tables.
-CI allows exactly those extra paths on a `red/` branch. Nothing else outside `red/`.
 
 ## Evolution / lineages
 
@@ -92,21 +71,14 @@ one exception to "red doesn't see blue's reasons" below; outside the debrief the
 - `battlefield/mock_agents/server.py` (mock red's evasion ladder) is a worked example of using only
   these inputs. Contract: `contracts/agent-service.md` (Lineages); runbook and design: `docs/ARCHITECTURE.md` (Evolution).
 
-## Paste this to your coding agent as its first message
-
-```
-You are working in the Red Ledger repo, directory `red/`, as Dev Al's coding agent.
-Before any edit: read `red/AGENTS.md`, `GIT.md` §7, `README.md`, `docs/ARCHITECTURE.md` and
-`contracts/agent-service.md`, `contracts/events.md`. Confirm `git branch --show-current` starts with `red/`;
-if not, create `red/<topic>` from origin/main. Edit only inside `red/`,
-`battlefield/extensions/red_*.py`, `contracts/ext/red/`, and add one `devlog/` fragment.
-Never force-push, never merge, never touch another directory; if you need a contracts change,
-write the proposed diff into the PR description and stop. Run `make lint test-red` before
-each push. Everything must work with DRY_RUN=true. Goal for this session: implement the next scheme in docs/ARCHITECTURE.md (Red) with a test, land it against `make mock-agents`.
-```
-
 ## Don't
 
 - Don't hardcode entity ids. Read them.
 - Don't add tools that bypass the scheme catalog's bounds (e.g. "submit 50 invoices").
 - Don't make red adaptive by reading blue's reasons from events; red is not supposed to see them. Adaptation comes from what got blocked (invoice status), which you can read.
+
+## Maintenance validation
+
+Follow root `AGENTS.md` and `GIT.md`; historical team prefixes are no longer path restrictions.
+Run root `make lint test-red` for changes here; keep `DRY_RUN=true` keyless.
+Use `agentkit.LedgerClient` for agent ledger access and preserve the root information boundaries.

@@ -1,47 +1,33 @@
-# AGENTS.md — working agreement for humans and coding agents
+# AGENTS.md — maintenance guide
 
-Read `README.md` first, then `GIT.md`. This file tells you how to work in this repo without
-breaking the other three people. It applies equally to a teammate and to Claude Code / Droid /
-Cursor operating on their behalf. Each service directory has its own `AGENTS.md` for the dev who
-owns it; read that one too before editing there.
+Red Ledger is a completed Cal Hacks 13.0 project, preserved with screenshots, recordings and
+local setup. Hosted infrastructure is retired separately from the source; do not assume a live
+service exists or redeploy it as part of routine maintenance.
 
-Devs: **Ad** = backend (battlefield, agentkit, contracts, deploy; repo owner). **Al** = red.
-**M** = green + blue. **R** = frontend + presentation.
+Read `README.md`, then `GIT.md`, `docs/ARCHITECTURE.md`, the service's `AGENTS.md`, and the
+relevant `contracts/` files before editing. Contracts remain authoritative.
 
-## 1. What this project is, in two sentences
+## 1. Project and team
 
-Red Ledger is an adversarial sandbox where a red-team agent commits financial fraud against a
-synthetic company, a finance-ops agent does legitimate work, and a controller agent gates every
-money-moving action and audits the books. Five containers (`battlefield`, `red`, `green`,
-`blue`, `frontend`) plus Postgres; every agent talks only to `battlefield`'s Ledger API.
+Red Ledger is an adversarial financial sandbox: red attempts fraud, green performs legitimate
+AP work, and blue gates money-moving actions and audits the books. Only battlefield accesses
+Postgres; all agents use its Ledger API.
 
-## 2. Ownership and boundaries
+Original contributors: **Ad** — battlefield, agentkit, contracts, deployment and integration;
+**Al** — red; **M** — green and blue; **R** — frontend and presentation. These are author credits
+and useful context, not exclusive maintenance boundaries. The repository maintainer handles
+cross-area maintenance through reviewed PRs.
 
-Ad is the integration authority: Ad controls prod, and Ad's orchestrator merges every PR after CI,
-the PR steward, and (for core areas) an independent verifier pass (`GIT.md` §4). Ownership decides
-who writes an area and who gets notified, not who approves. Owner review is welcome, never blocking.
+## 2. Scope and review
 
-| Directory         | Owner | Others may edit?                                         |
-|-------------------|-------|----------------------------------------------------------|
-| `battlefield/`    | Ad    | PR; verifier required (R may add `/api/fe` reads; M may tune seed/traffic) |
-| `agentkit/`       | Ad    | PR; verifier required                                    |
-| `contracts/`      | Ad    | `contracts/` PR, CHANGELOG entry, tag **all** affected owners; verifier required |
-| `red/`            | Al    | no (integration may, tagging Al)                         |
-| `green/`          | M     | no (integration may, tagging M)                          |
-| `blue/`           | M     | no (integration may, tagging M)                          |
-| `frontend/`       | R     | no (integration may, tagging R)                          |
-| compose, Makefile, `.env.example`, `.github/`, `deploy/` | Ad | PR; verifier required |
-| `devlog/`         | all   | one new fragment per PR, never edit another's (see `GIT.md` §6) |
-| `DEVLOG.md`       | all   | frozen history; nobody appends (see `GIT.md` §6)         |
-
-A coding agent working in one directory must not modify files in another owner's directory. If
-the task genuinely requires it, stop and say so; the human decides. The one exception is
-integration (Ad): it may edit another area when integration needs it, on that area's prefix, with
-the owner tagged; the owner reviews after the fact and follow-ups go through the owner's own PR.
-
-Branching, commits, PRs, and the coding-agent git rules are in `GIT.md`. Short version: branch
-`<area>/<topic>`, stay in your area (CI enforces it), small PRs, never force-push, one
-`devlog/` fragment per PR, never merge your own PR (integration squash-merges).
+- State the files or directories you intend to change before editing. Keep changes focused.
+- Work on a topic branch and preserve other people's uncommitted work. See `GIT.md`.
+- Use PRs with passing checks and independent review for security, contracts, core runtime,
+  deployment and changes spanning services. Merge only when the maintainer authorizes it.
+- Change a contract and its CHANGELOG before dependent implementation; do not invent routes,
+  event types or columns. Record experimentally verified SDK findings in the CHANGELOG.
+- Keep historical `DEVLOG.md`, existing fragments, recordings and evidence intact. New devlog
+  fragments are optional; PR descriptions carry current change and validation notes.
 
 ## 3. Non-negotiable invariants
 
@@ -72,11 +58,11 @@ Branching, commits, PRs, and the coding-agent git rules are in `GIT.md`. Short v
 7. **Idempotency keys are the SDK-reported Droid `tool_use_id`** (`<id>:<n>` for a tool's n-th
    write). Strict agents (`identity="strict"`: green and blue live, D7) refuse unverified, explicit or
    ambiguous ids before anything is sent (#84). A UUID4 is used only under DRY_RUN or by
-   best-effort agents (red, pending Al). Preparations expire after 120 s. Never reuse a key across
+   best-effort agents (red). Preparations expire after 120 s. Never reuse a key across
    different actions: a different binding under the same key is a 409.
 8. **Everything must run under `DRY_RUN=true` with no Factory or LLM keys.** Agents return canned
    turns; blue's gate runs rules only. Frontend must run with `NEXT_PUBLIC_MOCK=true` and no
-   backend. Don't break these paths; they are how four of five people develop.
+   backend. Keep both paths working for local reproduction.
 9. **No secrets in the repo, in images, or in `NEXT_PUBLIC_*`.** Secrets live in your local
    `.env` (gitignored) or in the GitHub `production` environment, which the deploy job renders
    into the VM's `.env` (`docs/OPERATIONS.md` (Environment variables)). Never bake one into an image or a build arg,
@@ -167,7 +153,7 @@ redact=fn)` redacts `agent.tool_call` arguments on every narration path.
   ever stop holding, record that there and rely on ledger-side enforcement alone.
 - Blue audit: `Autonomy.OFF`, strict identity, permission handler always `PROCEED_ONCE` (D11, #90);
   the live-audit guard is lifted (#157), so the audit runs on Droid whenever `DRY_RUN_BLUE=false`.
-  Prod runs it live (`DRY_RUN_BLUE=false`) since 2026-10-25; set it explicitly, because an unset
+  The hackathon deployment ran it live (`DRY_RUN_BLUE=false`); set it explicitly, because an unset
   `DRY_RUN_BLUE` follows the global `DRY_RUN`.
 - Never return `PROCEED_ALWAYS*` / `PROCEED_AUTO_RUN*` from any handler. They disable the gate.
 - Handlers may be async and may do I/O. They must not start a turn on the same session.
@@ -180,163 +166,30 @@ redact=fn)` redacts `agent.tool_call` arguments on every narration path.
 - Catch handler exceptions and fail closed (block) in green; the SDK turns handler exceptions
   into cancels but you want the reason logged.
 
-## 6. How each team develops locally
+## 6. Validation and configuration
 
-```
-make mock-agents        # battlefield + postgres + stub agents; use this if you are red/green/blue
-# then in your own dir:
-uv sync && uv run uvicorn server:app --port 800X --reload
-```
-Tokens: your `.env` sets `AGENT_TOKEN` and `OPERATOR_TOKEN` to two different local strings
-(invariant 12). A service you run on the host needs the same `AGENT_TOKEN` battlefield has
-(compose default `change-me-agent`); `make` targets send `OPERATOR_TOKEN`.
+Use Python 3.11, `uv`, `ruff`, and `pytest` for Python services. Run the affected service's
+`make test-<service>` and lint checks; API or enforcement changes also need a local keyless
+integration smoke. Frontend changes need typecheck, lint, tests and a mock-mode build as appropriate.
+Tests for changed behavior must exercise the actual path; never delete or skip a failing test
+to make a change pass. Report unrelated failures.
 
-Frontend: `cd frontend && NEXT_PUBLIC_MOCK=true npm run dev` until battlefield is stable, then
-set the server-side `BATTLEFIELD_URL` and `OPERATOR_TOKEN` (`frontend/.env.example`) to point
-the `/api/bf/*` proxy at a battlefield, normally your local `make mock-agents`.
+`make mock-agents` starts the local backend with stub agents. `make up-dry` runs the full keyless
+stack. `make local-stack AGENTS=mock` is the process-based alternative. Do not run multiple
+stacks on the same ports. Frontend standalone: `cd frontend && NEXT_PUBLIC_MOCK=true npm run dev`.
+See `docs/OPERATIONS.md` for setup and environment variables. New environment variables need
+entries in `.env.example` and the operations guide.
 
-Backend: `make up-dry` runs the real stack with agents in DRY_RUN.
+## 7. Coding agents and delegation
 
-Before pushing: `make test` in your directory and `make lint`. CI runs both per service.
+Use isolated worktrees for parallel implementers and assign explicit, non-overlapping file
+lists. Give each implementer the relevant contract and local guide. Implementers may commit
+on their own branch; only the coordinating agent handles publication when authorized.
+A fresh reviewer must independently check the final diff and relevant validation results.
+Do not assume every task needs subagents or a standing orchestration loop.
 
-## 7. Definition of done for a PR
-
-- Exactly one `devlog/` fragment added (`make devlog WHO=… MSG="…"`).
-- CI green and the PR left for integration to merge; the author never merges.
-- Runs under `DRY_RUN=true` / `NEXT_PUBLIC_MOCK=true`.
-- Does not change `contracts/` without a CHANGELOG entry and every affected owner tagged.
-- Emits the events the README says it should.
-- Has at least one test touching the new code path (unit for rules/schemes, integration via
-  `httpx` against the FastAPI app for routes).
-- No new environment variable without an entry in `.env.example` and docs/OPERATIONS.md §2.
-
-## 8. For coding agents specifically
-
-- Start by reading `README.md`, `docs/ARCHITECTURE.md`, `GIT.md` §7, the `AGENTS.md` in your directory, and the `contracts/` file relevant to your task.
-- State which directory you are working in before editing. Stay there.
-- Do not invent endpoints, event types, or table columns. If the contract lacks what you need,
-  write the proposed contract change as a diff to `contracts/` and stop for human review.
-- Do not stub out the Ledger API with direct DB access "just to test". Use `make mock-agents`
-  or the fixtures.
-- Do not install new top-level dependencies without noting why in the PR description.
-- Prefer small, verifiable steps: one route, one scheme, one component per PR.
-- When a Droid SDK behavior is uncertain (permission prompting at a given autonomy, tool ID
-  format, whether `comment` on CANCEL reaches the model), write a 10-line script to test it and
-  record the answer in `contracts/CHANGELOG.md` under "Findings". Don't guess.
-- Never commit `.env`, recorded episodes containing real keys in payloads, or Factory session
-  files.
-
-## 9. Glossary
-
-- **Episode** — one simulation run with fixed seed and controller mode.
-- **Day / tick** — one orchestrator iteration: inject → red → green → blue audit → score.
-- **Gate** — blue's synchronous verdict on a green mutation. `allow | block | escalate`.
-- **Shadow mode** — gate evaluated and logged, not enforced.
-- **Scheme** — a red attack template (`red/schemes/`).
-- **Verdict card** — frontend rendering of a `gate.verdict` event: what it saw, why, what it did.
-- **Origin** — hidden provenance column (`sim | red | green | blue`) used for scoring.
-- **Fixture** — a recorded episode (`*.jsonl` of events) used for replay and frontend dev.
-- **Lineage** — a chain of episodes, one per generation, that share versioned agent playbooks.
-- **Generation** — one episode of a lineage (seed `base_seed + g`). The real-time demo is the
-  lineage's next generation, created with `POST /episodes {lineage_id}`.
-- **Playbook** — an agent's versioned, team-defined JSON memory within a lineage (`GET/PUT /playbook`).
-- **Debrief** — `options.debrief` on an agent's next turn: resolved red attacks from the last
-  `reveal_days` completed days, as that agent may see them.
-- **After-action review (AAR)** — the full disclosure sent to `POST /reflect` once a generation
-  ends (incl. legit items); the agent answers with its next playbook.
-- **Reveal window** — `reveal_days` inside an episode, `reveal_generations` across a lineage.
-
-## 10. If you are an orchestrator spawning subagents (read this first)
-
-Every dev here runs Claude Code Max with heavy subagent fan-out. The first agent to read this
-file is probably planning work for others, not writing code. These rules are for you.
-
-**Plan by file ownership, not by feature.** Split the task so that no two subagents ever edit
-the same file. Give each subagent an explicit list of files it may create or modify. Two
-subagents editing `agent.py` concurrently is the single most expensive mistake available.
-
-**One worktree per implementer.** Spawn implementers with `isolation: "worktree"` (or
-`git worktree add ../<area>-<topic> -b <area>/<topic> origin/main`). Each worktree is one
-branch. Never let two subagents share a working tree. Name branches `<area>/<topic>-<n>` if a
-feature needs several implementers; you merge them into `<area>/<topic>` yourself before the PR.
-
-**You own git. Subagents commit on their own branch and stop.** Subagents do not push, do not
-open PRs, do not merge, do not touch `main`, do not rebase anything shared. You review the diff
-of each worktree (`git diff origin/main...`) before pushing a branch. `.claude/settings.json`
-denies the destructive commands repo-wide; do not instruct a subagent to work around a denial.
-
-**Feed context, don't make them hunt.** You read `AGENTS.md`, `GIT.md`, the directory's
-`AGENTS.md`, and the relevant `contracts/` file once. Each subagent prompt then contains: the
-paste-ready block from the directory's `AGENTS.md`, its exact file list, the contract excerpt it
-needs (the route signatures or event payloads, not the whole file), and the DRY_RUN requirement.
-A subagent that spends 40k tokens rediscovering the repo is your planning failure.
-
-**Verification is a separate subagent.** After implementers finish, spawn one reviewer per
-worktree that has not seen the implementation: it runs `make lint test-<area>` (and
-`make mock-agents` + an episode for battlefield-touching work), reads the diff against the
-directory's `AGENTS.md` boundaries and the contract, checks any agent tool list against §3
-invariant 11 (no peeking), and reports pass/fail with specifics.
-Implementers grading their own work is not verification.
-
-**Boundaries propagate.** A subagent you spawn from a `red/` task inherits the `red/`
-boundary: `red/**`, `battlefield/extensions/red_*.py`, `contracts/ext/red/**`, `devlog/*.md`.
-If a subagent reports it needs a change elsewhere, that is a contracts change: collect the
-proposed diff, stop, hand it to the human. Do not spawn a subagent into another team's
-directory "just to fix one thing".
-
-**Fan-out limits.** Up to four implementers in parallel per area is fine for pure code. For
-anything touching `contracts/ext/<area>/*.sql` or `battlefield/extensions/`, one at a time:
-schema files are applied in filename order on startup and two subagents inventing `01_` names
-collide. Do not run more than one `make mock-agents` stack per machine; it binds ports
-5432/8000-8003.
-
-**Shared infrastructure is read-only to subagents.** No subagent deploys, runs `make up` against
-the staging box, rotates a key, or edits `.env`. Local `make mock-agents` and `DRY_RUN=true` are
-the only environments a subagent runs against. The VM is Ad's.
-
-**Reporting.** Subagents return a short summary: files changed, tests run and results, open
-questions, anything that smelled like a contract gap. Not file dumps, not transcripts. You
-add exactly one `devlog/` fragment per PR (`make devlog`), written from those summaries, naming
-the dev you work for (Ad / Al / M / R), not the agent.
-
-**Integration loop (Ad's orchestrator only).** Teammates' orchestrators stop at "PR open, CI
-green"; Ad's runs the merge loop (`GIT.md` §4):
-1. A read-only **PR steward** subagent polls open PRs and assesses each: CI triage, branch-prefix
-   scope, exactly one devlog fragment, secrets scan, §3 invariants (incl. 11, no peeking), merge
-   order / stacking. It reports READY / BLOCKED with the head SHA it assessed. It never writes.
-2. Anything touching `battlefield/`, `agentkit/`, `contracts/`, `deploy/`, compose, or more than
-   one area gets an independent **verifier** (fresh subagent, never the implementer):
-   `make lint test-<area>`, a `make mock-agents` smoke where relevant, diff vs the contract.
-3. The orchestrator merges READY PRs with
-   `gh pr merge <n> --squash --match-head-commit <assessed sha>`; a newer head means reassess.
-   Contracts PRs: FYI in the PR and the team channel at merge.
-4. After a merge, resync stacked or conflicting PRs with a plain merge of `origin/main` into the
-   PR branch (never force-push, never rewrite, conflict resolution only); tell the author to pull.
-5. Devlog fragments are new files, so they never need a resync.
-
-The merge/approve denials in the committed `.claude/settings.json` stay; only Ad's machine
-overrides the merge denial, locally and uncommitted. Teammates' agents never merge or approve.
-
-**Findings.** If any subagent empirically settles one of the open questions in
-`contracts/CHANGELOG.md` (Droid autonomy behavior, tool ID format, CLI install line), record
-the answer there under Findings in the same PR. That is a contracts-adjacent write every area
-is allowed to make: one line, dated, with the command that proved it.
-
-**When to stop and ask the human.** A contracts change is needed; a test you did not write
-fails on `main`; a subagent wants to delete or skip a test; two subagents disagree about an
-interface; anything would touch another team's directory; you are about to spawn a fifth
-parallel implementer; the task would take more than ~2 hours of wall clock. Ask, don't guess.
-
-### Subagent prompt skeleton
-
-```
-Role: implementer for <area>/, branch <area>/<topic>-<n>, worktree <path>.
-Owner dev: <Ad|Al|M|R>. You report to the orchestrator, not to git.
-Files you may create/modify: <explicit list>. Nothing else. If you need another file, stop and say so.
-Contract excerpt you depend on: <paste the exact routes / payloads / schema lines>.
-Requirement: must work under DRY_RUN=true (agents) or NEXT_PUBLIC_MOCK=true (frontend).
-Done means: `make lint test-<area>` passes in your worktree; commit on your branch with message
-`<area>: <imperative summary>`; do NOT push; reply with: files changed, tests run, open questions.
-Never: force-push, reset --hard, delete tests, edit DEVLOG.md or others' devlog/ fragments, edit .env, touch another directory.
-Task: <one concrete deliverable>
-```
+Never force-push, rewrite shared history, destroy uncommitted work, access production, rotate
+credentials or deploy without authorization. Do not read or edit `.env` or commit secrets,
+Factory session files or recordings containing credentials. Existing tool approval denials
+remain in force; do not bypass them. Report a contract gap or external blocker while continuing
+independent authorized work.

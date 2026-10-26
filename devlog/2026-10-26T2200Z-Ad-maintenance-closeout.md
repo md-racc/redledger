@@ -1,0 +1,1 @@
+- 2026-10-26T22:00Z · Ad · chore: retire hackathon ownership and devlog ceremony; preserve safety invariants, local workflows and history; make historical hosting deployment explicitly opt-in
