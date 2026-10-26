@@ -131,10 +131,9 @@ redledger/
 ├── agentkit/     shared Python: LedgerClient, EventEmitter, DroidAgent base, contract models
 ├── frontend/     Next.js: arena, backstage consoles, controls report
 ├── contracts/    schema.sql, ledger-api.yaml, events.md, agent-service.md, CHANGELOG.md
-├── deploy/       Caddyfile and the bootstrap, env-render and prod scripts
-├── docs/         the documents below, plus recordings/ (event streams of real prod runs)
-├── devlog/       historical development notes (DEVLOG.md is the earlier frozen history)
-└── AGENTS.md  GIT.md  Makefile  docker-compose*.yml  .env.example  LICENSE
+├── deploy/       compose/ configuration, Caddyfile and deployment scripts
+├── docs/         guides, CONTRIBUTING.md, recordings/ and history/ development notes
+└── README.md  LICENSE  AGENTS.md  CLAUDE.md  Makefile  ruff.toml
 ```
 
 ## Docs
@@ -149,7 +148,9 @@ redledger/
 - [docs/SUBMISSION.md](docs/SUBMISSION.md): historical Devpost submission text.
 - [docs/recordings/](docs/recordings/): operator event streams of real prod runs, indexed in docs/EVIDENCE.md.
 - [contracts/](contracts/): the machine-readable API, schema and events; contracts win any disagreement with prose.
-- [AGENTS.md](AGENTS.md) and [GIT.md](GIT.md): the working agreement and git protocol, for people and coding agents.
+- [Contributing](docs/CONTRIBUTING.md): maintenance, validation and Git workflow.
+- [Development history](docs/history/): preserved hackathon logs and maintenance notes.
+- [AGENTS.md](AGENTS.md): instructions for coding agents.
 
 ## Team
 

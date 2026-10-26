@@ -4,7 +4,7 @@ Owner: Dev Ad. Local runs and configuration remain useful for this completed hac
 The original hosted demo is retired in favor of screenshots, recordings and local setup; see
 [CLOSEOUT.md](CLOSEOUT.md). Production values and runbooks below describe October 2026 and
 are retained for reference, not instructions to bring the old service back. Design:
-[ARCHITECTURE.md](ARCHITECTURE.md); frontend: [FRONTEND.md](FRONTEND.md); maintenance: [GIT.md](../GIT.md).
+[ARCHITECTURE.md](ARCHITECTURE.md); frontend: [FRONTEND.md](FRONTEND.md); maintenance: [Contributing](CONTRIBUTING.md).
 
 ## 1. Run locally
 
@@ -22,7 +22,7 @@ make score EP=$EP
 |---|---|---|
 | Stub agents (Docker) | `make mock-agents` | battlefield and Postgres, plus stub agents built from the battlefield image. Agent devs run their own service on top (`uv run uvicorn server:app --port 800X --reload`) |
 | No Docker | `make local-stack [AGENTS=mock\|real] [RED=\|GREEN=\|BLUE=mock\|real]` | pgserver Postgres 16 plus battlefield and agents as processes; own tokens in `.local-stack/env`, never reads `.env`; real agents default to `DRY_RUN=true` and take keys only from your shell. `local-stack-status`, `local-stack-stop [RESET=1 CONFIRM=yes]` |
-| Real agents, keyless | `make up-dry` | the real agent containers in DRY_RUN with hot reload (`docker-compose.dev.yml`) |
+| Real agents, keyless | `make up-dry` | the real agent containers in DRY_RUN with hot reload (`deploy/compose/docker-compose.dev.yml`) |
 | Real agents, live | `make up` | spends Factory credits (needs `FACTORY_API_KEY` and `DROID_MODEL_*`) |
 
 Run one stack per machine (they all bind 8000–8003). `make down` stops Docker stacks; `make db-reset` wipes the
@@ -263,7 +263,7 @@ burn with `make prod-credits EP=` after day 1.
   `npm run lint` and the `check_contracts.py` lint that CI runs, so run those by hand for parity.
 - **`.env.example` is incomplete.** It lacks `FP_FLAT_PENALTY`, `HTTP_TIMEOUT_SEC`, `FIXTURES_DIR`, `SCHEMA_PATH` and
   `RED_URL`/`GREEN_URL`/`BLUE_URL`. The defaults in §2 apply.
-- **Stale comments:** `docker-compose.prod.yml` mentions an `api.` host and Cloudflare Pages; `frontend/.env.example`
+- **Stale example:** `frontend/.env.example`
   shows a prod Access team domain (prod's `CF_ACCESS_*` are blank).
 - **A gate block caused by blue being unreachable** (fallback) looks the same in the UI as a control block. Don't
   narrate it as a catch.

@@ -1,6 +1,6 @@
 # frontend/ — maintenance guide (original author: R)
 
-Read the root `README.md` and `GIT.md` first. `docs/FRONTEND.md`
+Read the root `README.md` and `docs/CONTRIBUTING.md` first. `docs/FRONTEND.md`
 documents every endpoint built for you.
 
 ## Your job
@@ -105,6 +105,6 @@ Lineages are chains of episodes in which the agents evolve (docs/ARCHITECTURE.md
 
 ## Maintenance validation
 
-Follow root `AGENTS.md` and `GIT.md`; historical team prefixes are no longer path restrictions.
+Follow root `AGENTS.md` and `docs/CONTRIBUTING.md`; historical team prefixes are no longer path restrictions.
 Preserve browser token isolation and the `NEXT_PUBLIC_MOCK=true` path. Run
 `npm run typecheck && npm run lint && npm test` in `frontend/`; build mock mode for UI changes.

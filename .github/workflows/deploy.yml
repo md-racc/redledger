@@ -108,7 +108,7 @@ jobs:
             git fetch --quiet origin main && git reset --hard origin/main
             sh deploy/render-env.sh .env
             export IMAGE_TAG=${{ github.sha }}
-            DC="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+            DC="docker compose --project-directory . -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml"
             $DC pull --quiet
             $DC up -d --remove-orphans
             # up -d doesn't recreate caddy for a config-only change, and git reset swaps the file under its single-file bind mount; restart so it re-reads it

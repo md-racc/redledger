@@ -10,7 +10,7 @@
 - [ ] Contracts changes include a CHANGELOG entry and affected services were checked (or N/A)
 - [ ] New environment variables are documented in .env.example and docs/OPERATIONS.md (or N/A)
 - [ ] No secrets, .env files, session data or credential-bearing recordings
-- [ ] Final diff reviewed; independent review recorded when required by GIT.md
+- [ ] Final diff reviewed; independent review recorded when required by docs/CONTRIBUTING.md
 
 ## Reviewer notes
 

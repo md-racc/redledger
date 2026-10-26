@@ -1,6 +1,6 @@
 # red/ — maintenance guide (original author: Al)
 
-Read the root `README.md`, `docs/ARCHITECTURE.md` and `GIT.md` first. This file is the local rulebook.
+Read the root `README.md`, `docs/ARCHITECTURE.md` and `docs/CONTRIBUTING.md` first. This file is the local rulebook.
 
 ## Your job
 
@@ -79,6 +79,6 @@ one exception to "red doesn't see blue's reasons" below; outside the debrief the
 
 ## Maintenance validation
 
-Follow root `AGENTS.md` and `GIT.md`; historical team prefixes are no longer path restrictions.
+Follow root `AGENTS.md` and `docs/CONTRIBUTING.md`; historical team prefixes are no longer path restrictions.
 Run root `make lint test-red` for changes here; keep `DRY_RUN=true` keyless.
 Use `agentkit.LedgerClient` for agent ledger access and preserve the root information boundaries.

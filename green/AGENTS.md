@@ -1,6 +1,6 @@
 # green/ — maintenance guide (original author: M)
 
-Read the root `README.md`, `docs/ARCHITECTURE.md` and `GIT.md` first. See `blue/AGENTS.md` for the related controller.
+Read the root `README.md`, `docs/ARCHITECTURE.md` and `docs/CONTRIBUTING.md` first. See `blue/AGENTS.md` for the related controller.
 
 ## Your job
 
@@ -132,6 +132,6 @@ paid/approved/blocked/rejected). Legit items you had blocked arrive only in the 
 
 ## Maintenance validation
 
-Follow root `AGENTS.md` and `GIT.md`; historical team prefixes are no longer path restrictions.
+Follow root `AGENTS.md` and `docs/CONTRIBUTING.md`; historical team prefixes are no longer path restrictions.
 Run root `make lint test-green` for changes here; keep `DRY_RUN=true` keyless.
 Use `agentkit.LedgerClient` for agent ledger access and preserve the root information boundaries.
