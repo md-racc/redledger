@@ -1,0 +1,1 @@
+- 2026-10-26T16:53Z · Ad · chore: explicitly ignore local stack state and exported runs; audited frontend tools, dependencies and evidence, retaining referenced development and replay paths
