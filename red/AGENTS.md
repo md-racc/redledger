@@ -43,12 +43,13 @@ Keep local development keyless with `DRY_RUN=true`.
 
 ```
 make mock-agents                       # battlefield + stub green/blue
+docker compose --project-directory . -f deploy/compose/docker-compose.yml stop red
 cd red && uv sync --extra dev
 AGENT_NAME=red BATTLEFIELD_URL=http://localhost:8000 AGENT_TOKEN=change-me-agent DRY_RUN=true \
   uv run uvicorn server:app --port 8001 --reload
 # in another shell: make episode MODE=shadow ; watch :8000/api/fe/episodes/<EP>/attacks
 ```
-Stop the mock red first (`docker compose stop red`) so battlefield hits yours.
+Run these commands from the repository root; stop the mock red before starting yours.
 
 ## Droid specifics
 

@@ -85,7 +85,7 @@ Keep local development keyless with `DRY_RUN=true`.
 
 ```
 make mock-agents                       # battlefield + stub red/blue
-docker compose stop green
+docker compose --project-directory . -f deploy/compose/docker-compose.yml stop green
 cd green && uv sync --extra dev
 AGENT_NAME=green BATTLEFIELD_URL=http://localhost:8000 AGENT_TOKEN=change-me-agent DRY_RUN=true \
   uv run uvicorn server:app --port 8002 --reload

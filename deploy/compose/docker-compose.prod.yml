@@ -1,5 +1,5 @@
 # Historical production overlay, retained for deliberate self-hosting. Owner: Dev Ad.
-#   docker compose --project-directory . -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml pull && up -d
+#   docker compose --project-directory . -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml pull
 # Images come from GHCR (built by .github/workflows/deploy.yml). Caddy terminates TLS for
 # app.$DOMAIN serves the frontend, with /api/ws proxied to battlefield.
 # red.$DOMAIN and blue.$DOMAIN are admin-only backstage aliases.
