@@ -53,6 +53,9 @@ jobs:
         svc: [agentkit, battlefield, red, green, blue]
     if: ${{ always() && needs.changes.result == 'success' }}
     runs-on: ubuntu-latest
+    # Match the documented runtime and service images; runner Python defaults can drift.
+    env:
+      UV_PYTHON: '3.11'
     # DB-tier tests (battlefield) run against this; services skip them when TEST_DATABASE_URL is unset.
     # A service on a matrix job starts for every entry; that's ~10 s, accepted.
     services:
@@ -96,6 +99,9 @@ jobs:
     needs: changes
     if: ${{ always() && needs.changes.result == 'success' && needs.changes.outputs.battlefield == 'true' }}
     runs-on: ubuntu-latest
+    # Match the documented runtime and service images; runner Python defaults can drift.
+    env:
+      UV_PYTHON: '3.11'
     services:
       postgres:
         image: timescale/timescaledb:latest-pg16
