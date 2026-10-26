@@ -1,8 +1,8 @@
-# Production overlay for the Vultr VM. Owner: Dev Ad.
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && up -d
+# Historical production overlay, retained for deliberate self-hosting. Owner: Dev Ad.
+#   docker compose --project-directory . -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml pull
 # Images come from GHCR (built by .github/workflows/deploy.yml). Caddy terminates TLS for
-# api.$DOMAIN → battlefield. Frontend is on Cloudflare Pages; the frontend service here is a
-# fallback for app.$DOMAIN if Pages isn't ready.
+# app.$DOMAIN serves the frontend, with /api/ws proxied to battlefield.
+# red.$DOMAIN and blue.$DOMAIN are admin-only backstage aliases.
 # No secrets and no build args here. /opt/redledger/.env is rendered by deploy/render-env.sh from
 # the GitHub `production` environment on every deploy; the `:?` entries below make compose refuse
 # to start rather than fall back to the base file's change-me defaults.

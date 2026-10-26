@@ -1,4 +1,4 @@
-# GIT.md — maintenance workflow
+# Contributing — maintenance workflow
 
 Red Ledger is a completed hackathon project maintained by Ad (@md-racc). Preserve the final
 submission and its evidence while keeping local reproduction usable.
@@ -44,8 +44,9 @@ in a separate settings change before the compatibility job is removed.
 
 ## 4. Historical development log
 
-`DEVLOG.md` and existing `devlog/` fragments are hackathon history. Preserve them; do not append
-to `DEVLOG.md` or edit other people's entries. New fragments are optional. `make devlog` and
+The frozen `docs/history/DEVLOG.md` and existing `docs/history/devlog/` fragments are
+development history. Preserve them; do not append to the frozen log or edit other people's
+entries. New fragments are optional. `make devlog` and
 `make devlog-show` remain available for browsing or adding a maintenance note. PR descriptions
 are the record of new maintenance work.
 

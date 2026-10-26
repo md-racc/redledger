@@ -4,7 +4,7 @@ Red Ledger is a completed Cal Hacks 13.0 project, preserved with screenshots, re
 local setup. Hosted infrastructure is retired separately from the source; do not assume a live
 service exists or redeploy it as part of routine maintenance.
 
-Read `README.md`, then `GIT.md`, `docs/ARCHITECTURE.md`, the service's `AGENTS.md`, and the
+Read `README.md`, then `docs/CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, the service's `AGENTS.md`, and the
 relevant `contracts/` files before editing. Contracts remain authoritative.
 
 ## 1. Project and team
@@ -21,12 +21,12 @@ cross-area maintenance through reviewed PRs.
 ## 2. Scope and review
 
 - State the files or directories you intend to change before editing. Keep changes focused.
-- Work on a topic branch and preserve other people's uncommitted work. See `GIT.md`.
+- Work on a topic branch and preserve other people's uncommitted work. See `docs/CONTRIBUTING.md`.
 - Use PRs with passing checks and independent review for security, contracts, core runtime,
   deployment and changes spanning services. Merge only when the maintainer authorizes it.
 - Change a contract and its CHANGELOG before dependent implementation; do not invent routes,
   event types or columns. Record experimentally verified SDK findings in the CHANGELOG.
-- Keep historical `DEVLOG.md`, existing fragments, recordings and evidence intact. New devlog
+- Keep `docs/history/DEVLOG.md`, existing fragments, recordings and evidence intact. New devlog
   fragments are optional; PR descriptions carry current change and validation notes.
 
 ## 3. Non-negotiable invariants

@@ -1,6 +1,6 @@
 # blue/ — maintenance guide (original author: M)
 
-Read the root `README.md`, `docs/ARCHITECTURE.md` and `GIT.md` first. See `green/AGENTS.md` for the related clerk.
+Read the root `README.md`, `docs/ARCHITECTURE.md` and `docs/CONTRIBUTING.md` first. See `green/AGENTS.md` for the related clerk.
 
 ## Your job
 
@@ -78,6 +78,6 @@ empty = you missed it), and battlefield's `/gate` requests carry `playbook_versi
 
 ## Maintenance validation
 
-Follow root `AGENTS.md` and `GIT.md`; historical team prefixes are no longer path restrictions.
+Follow root `AGENTS.md` and `docs/CONTRIBUTING.md`; historical team prefixes are no longer path restrictions.
 Run root `make lint test-blue` for changes here; keep `DRY_RUN=true` keyless.
 Use `agentkit.LedgerClient` for agent ledger access and preserve the root information boundaries.

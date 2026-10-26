@@ -22,7 +22,7 @@ Five containers plus Postgres:
 Only battlefield holds `DATABASE_URL`. Agents reach the books through `agentkit.LedgerClient`
 over HTTP and never call each other; blue `/gate` has exactly one caller in code, battlefield
 (`battlefield/app/gate/gatekeeper.py`). `BLUE_URL` is present in every agent's environment
-(`docker-compose.yml`) but no red or green code uses it, and per-agent tokens stop any agent
+(`deploy/compose/docker-compose.yml`) but no red or green code uses it, and per-agent tokens stop any agent
 other than battlefield's caller from authenticating to `/gate`.
 
 **The day loop** (`battlefield/app/orchestrator/runner.py`, `run_day`): `day.started` (legit

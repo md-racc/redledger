@@ -149,7 +149,7 @@ def test_real_contracts_guard(paths: list[str], expected_code: int) -> None:
 
 
 def test_compose_credentials_are_empty_by_default_and_blue_only() -> None:
-    compose = (ROOT / "docker-compose.yml").read_text()
+    compose = (ROOT / "deploy/compose/docker-compose.yml").read_text()
     blue = _yaml_block(compose, "  blue:")
     environment = _yaml_block(blue, "    environment:")
     example = (ROOT / ".env.example").read_text().splitlines()
@@ -198,7 +198,7 @@ def test_ci_runs_the_guard_and_its_regression_tests() -> None:
         ".github/scripts/check_contracts.py",
         ".github/workflows/ci.yml",
         ".github/workflows/deploy.yml",
-        "docker-compose.yml",
+        "deploy/compose/**",
         "deploy/render-env.sh",
     ]:
         assert f"'{path}'" in filters[1]

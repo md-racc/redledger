@@ -23,7 +23,7 @@ jobs:
         with:
           filters: |
             agentkit: ['agentkit/**']
-            battlefield: ['battlefield/**', 'docs/recordings/**', 'agentkit/**', 'contracts/**', '.env.example', 'docker-compose.yml', 'deploy/render-env.sh', '.github/workflows/deploy.yml', '.github/workflows/ci.yml', '.github/scripts/check_contracts.py']
+            battlefield: ['battlefield/**', 'docs/recordings/**', 'agentkit/**', 'contracts/**', '.env.example', 'deploy/compose/**', 'deploy/render-env.sh', '.github/workflows/deploy.yml', '.github/workflows/ci.yml', '.github/scripts/check_contracts.py']
             # extension files are owned by their prefix but run battlefield tests
             red: ['red/**', 'agentkit/**']
             green: ['green/**', 'agentkit/**']
@@ -148,4 +148,4 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: maintenance scope is reviewed in the PR
-        run: echo "Team path restrictions and devlog requirements are retired; see GIT.md."
+        run: echo "Team path restrictions and devlog requirements are retired; see docs/CONTRIBUTING.md."

@@ -76,7 +76,7 @@ The site was public and read-only; only an admin could act (#152, #159).
 **Engineering hygiene at the October 2026 audit**
 - Branch protection on `main`: 8 required checks, squash-only, no force pushes, admins included. CI's
   ownership guard enforced area boundaries; the contracts guard required a CHANGELOG line.
-  Closeout replaces the sprint ownership process; see [GIT.md](../GIT.md) for maintenance rules.
+  Closeout replaces the sprint ownership process; see [Contributing](CONTRIBUTING.md) for maintenance rules.
 - About 1,570 Python unit tests passing at audit time (agentkit 156, battlefield 269 + 321 DB tests skipped
   without Postgres, red 138, green 522, blue 485); ruff clean in every Python area.
 
@@ -207,7 +207,7 @@ None of these leaks ground truth today.
 1. **Agents can post into another agent's next turn via `POST /inputs`**, labelled with the sender's role, which
    conflicts with "agents never call each other". Mitigated on red's side by #221 (red ignores agent-sourced
    inputs); battlefield still accepts the posts. Decision pending (Ad).
-2. **`BLUE_URL` is in every agent's environment** (`docker-compose.yml`), though only battlefield's code uses
+2. **`BLUE_URL` is in every agent's environment** (`deploy/compose/docker-compose.yml`), though only battlefield's code uses
    it. With per-agent tokens (prod) only battlefield can call `/gate`; under the single-token fallback any agent
    could.
 3. **`GET /reports/{id}` accepts any agent**, so red could read blue's reports; only review prevents it.

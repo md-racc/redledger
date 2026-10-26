@@ -110,6 +110,6 @@ make local-stack-stop            # stop everything; RESET=1 CONFIRM=yes also wip
 
 ## Maintenance validation
 
-Follow root `AGENTS.md` and `GIT.md`; historical team prefixes are no longer path restrictions.
+Follow root `AGENTS.md` and `docs/CONTRIBUTING.md`; historical team prefixes are no longer path restrictions.
 Run root `make lint test-battlefield` for changes here; keep `DRY_RUN=true` keyless.
 Use `agentkit.LedgerClient` for agent ledger access and preserve the root information boundaries.
