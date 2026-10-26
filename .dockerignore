@@ -1,0 +1,23 @@
+# Shared Python-service build context: never send local credentials or runtime state.
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/.factory
+**/.aws
+.local-stack
+runs
+
+# Installed dependencies and generated caches are rebuilt inside the images.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+**/node_modules
+**/.next
+**/*.tsbuildinfo
+**/coverage
+**/*.log
+.DS_Store
