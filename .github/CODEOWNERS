@@ -1,21 +1,2 @@
-# Routing/notification only: GitHub auto-requests the owner of any path a PR touches. Owner: Dev Ad.
-# Not a merge gate: `main` requires 0 approvals and code-owner review is off; integration (Ad)
-# merges (GIT.md §4). Owner review is welcome and fast-tracked, never blocking.
-*                       @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
-/contracts/             @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
-/agentkit/              @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
-/battlefield/           @md-racc @Alex-Epstein @moterodiaz @RaagaSundar
-/red/                   @Alex-Epstein @md-racc
-/green/                 @moterodiaz @md-racc
-/blue/                  @moterodiaz @md-racc
-/frontend/              @RaagaSundar @md-racc
-# team paths and extension carve-outs: routed to the prefix owner; Ad also notified
-/battlefield/extensions/red_*    @Alex-Epstein @md-racc
-/battlefield/extensions/green_*  @moterodiaz @md-racc
-/battlefield/extensions/blue_*   @moterodiaz @md-racc
-/battlefield/extensions/fe_*     @RaagaSundar @md-racc
-/contracts/ext/red/     @Alex-Epstein @md-racc
-/contracts/ext/green/   @moterodiaz @md-racc
-/contracts/ext/blue/    @moterodiaz @md-racc
-/contracts/ext/fe/      @RaagaSundar @md-racc
-/DEVLOG.md
+# Maintenance review routing. Original contributor credits are in README.md.
+* @md-racc

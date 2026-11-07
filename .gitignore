@@ -25,3 +25,6 @@ coverage/
 */uv.lock
 frontend/next-env.d.ts
 *.tsbuildinfo
+# local process state/tokens and lineage exports (also self-ignore when generated)
+/.local-stack/
+/runs/

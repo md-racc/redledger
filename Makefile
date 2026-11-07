@@ -11,9 +11,10 @@ MODE ?= shadow
 DAYS ?= 10
 SEED ?= 42
 unexport EP MODE SEED DAYS PLAN SCHEME PARAMS SVC ESC DECISION NAME WHO MSG SLUG LN GENS REVEAL_DAYS REVEAL_GENERATIONS MAX_CREDITS GEN AGENTS RED GREEN BLUE RESET CONFIRM
-COMPOSE := docker compose
-DEV := -f docker-compose.yml -f docker-compose.dev.yml
-MOCK := -f docker-compose.yml -f docker-compose.mock.yml
+# Keep build contexts, bind mounts, .env lookup and the project name rooted here.
+COMPOSE := docker compose --project-directory . -f deploy/compose/docker-compose.yml
+DEV := -f deploy/compose/docker-compose.dev.yml
+MOCK := -f deploy/compose/docker-compose.mock.yml
 API ?= http://localhost:8000
 # Operator-scope token for the curl targets. Reads OPERATOR_TOKEN from .env, else the compose
 # default `change-me`. No INTERNAL_TOKEN fallback: compose's battlefield doesn't read it, so a
@@ -227,14 +228,14 @@ test-frontend:
 	cd frontend && npm test --silent
 schema-dump: ## copy canonical schema into battlefield/db (for local non-docker runs)
 	cp contracts/schema.sql battlefield/db/schema.sql && rm -rf battlefield/db/ext && cp -r contracts/ext battlefield/db/ext
-# devlog: one fragment file per PR, so PRs never conflict on DEVLOG.md (GIT.md §6).
+# Optional maintenance notes live alongside the preserved history; see docs/CONTRIBUTING.md.
 # WHO/MSG/SLUG reach the shell via the environment as raw text ($(value ...); the variables
 # themselves are unexported above), so a MSG like '$11,004 "quoted"' is written verbatim: make
 # never expands `$1`, the shell never re-parses it.
 devlog: export DEVLOG_WHO := $(value WHO)
 devlog: export DEVLOG_MSG := $(value MSG)
 devlog: export DEVLOG_SLUG := $(value SLUG)
-devlog: ## write devlog/<ts>-<who>-<slug>.md: make devlog WHO=Ad MSG="..." [SLUG=topic, default: branch topic]
+devlog: ## write docs/history/devlog/<ts>-<who>-<slug>.md: make devlog WHO=Ad MSG="..." [SLUG=topic, default: branch topic]
 	@set -euo pipefail; \
 	 [ -n "$$DEVLOG_WHO" ] || { echo "devlog: WHO is required (Ad|Al|M|R)" >&2; exit 1; }; \
 	 [ -n "$$DEVLOG_MSG" ] || { echo "devlog: MSG is required" >&2; exit 1; }; \
@@ -244,13 +245,13 @@ devlog: ## write devlog/<ts>-<who>-<slug>.md: make devlog WHO=Ad MSG="..." [SLUG
 	 slug="$$(printf '%s' "$$slug" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9-' '-' | sed -e 's/^-*//' -e 's/-*$$//')"; \
 	 [ -n "$$slug" ] || { echo "devlog: could not derive SLUG; pass SLUG=topic" >&2; exit 1; }; \
 	 now="$$(date -u +%Y-%m-%dT%H%M)"; \
-	 f="devlog/$${now}Z-$${DEVLOG_WHO}-$${slug}.md"; \
+	 f="docs/history/devlog/$${now}Z-$${DEVLOG_WHO}-$${slug}.md"; \
 	 [ ! -e "$$f" ] || { echo "devlog: $$f already exists" >&2; exit 1; }; \
-	 mkdir -p devlog; \
+	 mkdir -p docs/history/devlog; \
 	 msg="$$(printf '%s' "$$DEVLOG_MSG" | tr '\n' ' ')"; \
 	 printf -- '- %s · %s · %s\n' "$${now:0:13}:$${now:13:2}Z" "$$DEVLOG_WHO" "$$msg" > "$$f"; \
 	 echo "$$f"; cat "$$f"
-devlog-show: ## print the combined log (DEVLOG.md history + devlog/ fragments), oldest first
+devlog-show: ## print the combined log (docs/history/DEVLOG.md history + docs/history/devlog/ fragments), oldest first
 	@shopt -s nullglob; \
-	 { grep -h '^- [0-9]' DEVLOG.md || true; for f in devlog/[0-9]*.md; do grep -h '^- [0-9]' "$$f" || true; done; } \
+	 { grep -h '^- [0-9]' docs/history/DEVLOG.md || true; for f in docs/history/devlog/[0-9]*.md; do grep -h '^- [0-9]' "$$f" || true; done; } \
 	 | LC_ALL=C sort -s -k2,2

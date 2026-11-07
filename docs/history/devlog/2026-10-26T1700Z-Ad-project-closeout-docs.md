@@ -1,0 +1,1 @@
+- 2026-10-26T17:00Z · Ad · docs: preserve the submission and evidence, lead with screenshots and keyless local setup, label historical demo material, reconcile blue/CRS readiness and contracts precedence; original VM destruction confirmed by owner, remaining DNS/credential cleanup tracked separately; checks: 460 frontend tests and local Markdown link paths pass

@@ -1,0 +1,1 @@
+- 2026-10-26T16:53Z · Ad · chore: exclude local stack state and exported runs from git, add shared Docker context exclusions for credentials and generated caches; audited frontend tools, dependencies and evidence, retaining referenced development and replay paths

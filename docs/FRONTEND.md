@@ -1,5 +1,9 @@
 # Frontend
 
+The completed hackathon frontend is preserved for local use. Hosted domains and production settings
+below describe the October 2026 deployment; [CLOSEOUT.md](CLOSEOUT.md) explains retirement.
+For a backend-free demo, run `npm ci` then `NEXT_PUBLIC_MOCK=true npm run dev` in `frontend/`.
+
 `frontend/` is a Next.js 15 app (app router, TypeScript strict, Tailwind, React Three Fiber, no shadcn/ui). It renders from the
 battlefield event stream and the `/api/fe` read API, never touches a database, and the browser never holds a token. Events are
 defined in `contracts/events.md`; the code wins over this file.

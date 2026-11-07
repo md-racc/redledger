@@ -13,6 +13,7 @@ import { MODEL_URLS } from "@/lib/arena/config";
 import { COLUMNS, LAGOON, WATER_Y } from "@/lib/arena/siteData";
 import { useArena } from "@/lib/arena/store";
 import { cutaway, HIDE_IN_ARENA } from "./cutaway";
+import { closeColumnGaps } from "./palaceGaps";
 import { GroundSampler } from "./ground";
 
 let ktx2: KTX2Loader | null = null;
@@ -54,6 +55,7 @@ function RealPalace({ onReady }: { onReady: (roots: THREE.Object3D[]) => void })
   const arch = useModel(MODEL_URLS.arch);
   const ground = useModel(MODEL_URLS.ground);
   useEffect(() => {
+    closeColumnGaps(arch.scene);
     prep(arch.scene, true, true);
     prep(ground.scene, false);
     onReady([ground.scene, arch.scene]);

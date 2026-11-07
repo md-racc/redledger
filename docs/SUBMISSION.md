@@ -1,5 +1,9 @@
 # Devpost submission: paste-ready (Cal Hacks 13.0)
 
+> Historical Cal Hacks 13.0 submission text, preserved from October 2026. Hosted links, stage directions and
+> prize-selection instructions below describe the hackathon. For the completed project and local demo,
+> see [CLOSEOUT.md](CLOSEOUT.md) and [README.md](../README.md).
+
 The Devpost "About the project" text, cut from [STORY.md](STORY.md); every number is backed in [EVIDENCE.md](EVIDENCE.md). Section headings match Devpost's fields. Paste everything between the `--- PASTE ---` markers. If a line here disagrees with STORY.md, STORY.md wins.
 
 Prize checkboxes to tick on Devpost: Hyphenate (Autonomous Systems for Finance), Factory (Best Use of the Droid SDK), Cal Hacks Most

@@ -1,5 +1,5 @@
 # Mock agents: stub red/green/blue served from the battlefield image. Owner: Dev Ad.
-# docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build postgres battlefield red green blue
+# docker compose --project-directory . -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.mock.yml up --build postgres battlefield red green blue
 # Lets backend + frontend run full episodes with zero LLM calls, and lets an agent dev run their
 # own service locally against real battlefield + two stubs.
 # `environment` here merges key-by-key with the base file, so each stub still gets the base

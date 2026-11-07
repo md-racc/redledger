@@ -1,7 +1,7 @@
 // Pitch mode: the main screen runs a LIVE episode instead of the 90-second show. Owner: Dev Ad (crunch).
 //
 //   P, ?pitch=1, or the title's "Live pitch" button (admins)
-//   → the intro flight, the tour fast-forwarded, the arena
+//   → the intro flight, the paced tour (PITCH_TOUR: dwells on the guards and the fraudsters, passes the clients), the arena
 //   → join the run that is going, or (admin) start one: enforce, seed 42 (?seed=), 4 days, no attack plan (red picks its schemes)
 //   → captions from the real events (narration.ts), an escalation a presenter answers within 40 s (else it is blocked)
 //   → at episode.ended a closing card with the final score and the controls report
@@ -14,13 +14,60 @@ import type { RLEvent } from "../types";
 import type { CurrentRun } from "./activeRun";
 import { schedule, type ScriptCtx, type ScriptItem } from "./script";
 import { decisionEvent } from "./showScripts";
+import { CHAPTERS } from "./timeline";
 
 export const PITCH_SEED = 42;
 export const PITCH_DAYS = 4;
 /** an escalation nobody answers in pitch mode is blocked after this long (battlefield itself waits 90 s) */
 export const PITCH_AUTOBLOCK_MS = 40_000;
-/** the scroll tour, fast-forwarded */
-export const PITCH_TOUR_MS = 3_400;
+/**
+ * The scroll tour in pitch mode, as an itinerary: where the camera stops, how long it takes to get there, how long it stays. The
+ * presenter speaks over the stops (the hook over the Palace, the problem over the guards, the solution over the fraudsters), so those
+ * dwell; the clients, which carry no line, are passed through. 38.5 s from the end of the flight to the arena, which is what the first
+ * three lines of the 90-second live script take to say.
+ */
+export interface TourStop {
+  /** where the camera stands, in rail units (a CHAPTERS[i].at) */
+  at: number;
+  /** ms to travel here from the previous stop (0 for the first) */
+  travelMs: number;
+  /** ms to stay once here */
+  holdMs: number;
+}
+export const PITCH_TOUR: readonly TourStop[] = [
+  { at: CHAPTERS[0].at, travelMs: 0, holdMs: 8_000 }, // the Palace: the hook
+  { at: CHAPTERS[1].at, travelMs: 3_000, holdMs: 9_000 }, // the guards: the problem
+  { at: CHAPTERS[2].at, travelMs: 2_500, holdMs: 500 }, // the clients: passed through
+  { at: CHAPTERS[3].at, travelMs: 2_500, holdMs: 9_000 }, // the fraudsters: the solution
+  { at: CHAPTERS[4].at, travelMs: 4_000, holdMs: 0 }, // the arena
+];
+export const PITCH_TOUR_MS = PITCH_TOUR.reduce((t, s) => t + s.travelMs + s.holdMs, 0);
+
+const smooth = (k: number) => k * k * (3 - 2 * k);
+
+/** Where on the rail (0..1) the camera is `ms` into the tour: eased between stops, still at them. */
+export function tourPosition(ms: number, stops: readonly TourStop[] = PITCH_TOUR): number {
+  let t = Math.max(0, ms);
+  let at = stops[0]!.at;
+  for (let i = 0; i < stops.length; i++) {
+    const s = stops[i]!;
+    if (i > 0) {
+      if (t < s.travelMs) return at + (s.at - at) * smooth(t / s.travelMs);
+      t -= s.travelMs;
+      at = s.at;
+    }
+    if (t < s.holdMs) return at;
+    t -= s.holdMs;
+  }
+  return stops[stops.length - 1]!.at;
+}
+
+/** How far into the tour the camera already is when it stands at rail position `u` (a visitor who started pitch mode half way down). */
+export function tourTimeAt(u: number, stops: readonly TourStop[] = PITCH_TOUR): number {
+  const total = stops.reduce((t, s) => t + s.travelMs + s.holdMs, 0);
+  for (let ms = 0; ms < total; ms += 50) if (tourPosition(ms, stops) >= u - 1e-6) return ms;
+  return total;
+}
 /** the recorded fallback, its six days spread over this long (holds for a human come on top) */
 export const PITCH_FALLBACK_WINDOW_MS = 96_000;
 /** the other screens on stage */

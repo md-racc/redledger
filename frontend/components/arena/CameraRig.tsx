@@ -28,10 +28,15 @@ const INTRO: Key[] = [
   [30, 58, -142, 0, 10, 0],
 ];
 
-/** The rail: establishing → south (guards) → behind the rotunda (clients) → north (fraudsters) → arena. */
+/**
+ * The rail: establishing → south (guards) → behind the rotunda (clients) → north (fraudsters) → arena. Nine poses on a spline, so pose k
+ * is at rail position k / 8; the chapters stand on poses 0, 2, 4, 6 and 8 (lib/arena/timeline.ts), which is where the camera is meant to
+ * dwell. Pose 1 and 3, 5, 7 are the legs between.
+ */
 const RAIL: Key[] = [
   [30, 58, -142, 0, 10, 0], // establishing
-  [112, 26, -80, 78, 3, -30], // guards on the south shore
+  [34, 40, -108, 46, 6, -22], // easing down toward the lagoon
+  [38, 24, -72, 88, 3, -40], // guards on the south shore, seen from over the lagoon (from behind the colonnade the roof blocks hid them)
   [120, 44, 30, 40, 4, 38],
   [22, 28, 86, -20, 3, 42], // clients behind the rotunda
   [-70, 46, 88, -50, 3, 30],

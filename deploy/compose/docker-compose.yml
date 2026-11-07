@@ -7,10 +7,11 @@
 #   agents — red/green/blue ↔ battlefield (green no longer calls blue: D1 / #80). Needs internet egress
 #            for Factory/LLM APIs, so not internal.
 #   data   — postgres ↔ battlefield only. Internal: no egress, no other service can reach the DB.
+# Relative paths are rooted at the repository by --project-directory . (run from repo root).
 # Usage:
 #   make up          -> this file (agents live, need FACTORY_API_KEY)
-#   make up-dry      -> + docker-compose.dev.yml (agents DRY_RUN, hot reload)
-#   make mock-agents -> + docker-compose.mock.yml (stub agents from battlefield image)
+#   make up-dry      -> + deploy/compose/docker-compose.dev.yml (agents DRY_RUN, hot reload)
+#   make mock-agents -> + deploy/compose/docker-compose.mock.yml (stub agents from battlefield image)
 
 x-agent-env: &agent-env
   BATTLEFIELD_URL: http://battlefield:8000

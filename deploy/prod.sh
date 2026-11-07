@@ -28,7 +28,7 @@
 # Environment (all optional):
 #   PROD_HOST (required for ssh; else first line of $PROD_HOST_FILE, default ~/.config/redledger/prod_host —
 #     kept out of this public repo)  PROD_USER (deploy)  PROD_KEY (~/.ssh/redledger_deploy)
-#   PROD_DIR (/opt/redledger)  PROD_COMPOSE ("docker compose -f docker-compose.yml -f docker-compose.prod.yml")
+#   PROD_DIR (/opt/redledger)  PROD_COMPOSE ("docker compose --project-directory . -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml")
 #   PROD_BF_EXEC ("$PROD_COMPOSE exec -T battlefield") — prefix that runs argv inside battlefield
 #   PROD_SSH  — transport override: a command that takes ONE argument, the shell command to run
 #               on the VM. Default is ssh to $PROD_USER@$PROD_HOST. Local test: PROD_SSH="bash -c".
@@ -46,7 +46,7 @@ PROD_HOST="${PROD_HOST:-}"
 PROD_USER="${PROD_USER:-deploy}"
 PROD_KEY="${PROD_KEY:-$HOME/.ssh/redledger_deploy}"
 PROD_DIR="${PROD_DIR:-/opt/redledger}"
-PROD_COMPOSE="${PROD_COMPOSE:-docker compose -f docker-compose.yml -f docker-compose.prod.yml}"
+PROD_COMPOSE="${PROD_COMPOSE:-docker compose --project-directory . -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.prod.yml}"
 PROD_BF_EXEC="${PROD_BF_EXEC:-$PROD_COMPOSE exec -T battlefield}"
 HTTP_TIMEOUT="${PROD_HTTP_TIMEOUT:-30}"
 STEP_TIMEOUT="${PROD_STEP_TIMEOUT:-900}"

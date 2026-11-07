@@ -1,0 +1,1 @@
+- 2026-10-26T17:14Z · Ad · chore: retire hackathon ownership and devlog ceremony; preserve safety invariants, local workflows and history; make historical deployment explicitly opt-in; pin CI to documented Python 3.11 after runner interpreter drift

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { RLEvent } from "../types";
-import { CaptionQueue, captionFor, cleanSummary, humanReason, statusFor, type Caption } from "./narration";
+import { CAPTION_TIMING, CaptionQueue, captionFor, cleanSummary, holdFor, humanReason, statusFor, type Caption } from "./narration";
 
 const ev = (type: string, payload: Record<string, unknown>, over: Partial<RLEvent> = {}): RLEvent => ({ id: 1, ts: "", episode_id: "ep_1", day: 1, type, agent: "battlefield", payload, ...over });
 const recording = readFileSync(join(__dirname, "../../public/mocks/pitch-fallback.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as RLEvent);
@@ -105,6 +105,30 @@ describe("CaptionQueue", () => {
     expect(q.waiting).toBe(4);
     q.advance(200);
     expect(q.current?.key).toBe("d"); // b and c were dropped
+  });
+
+  it("holds a caption with more to read longer than a short one, up to a ceiling", () => {
+    const short: Caption = { key: "d", tone: "ink", tag: "Business day", text: "Day 2 of 4" };
+    const quote: Caption = { key: "r", tone: "red", tag: "Red, in its own words", quote: true, text: "I split $13,800.00 across 3 invoices to Acme Office Supply LLC, each just under the approval limit, to see which one gets paid without a second look.", sub: "Red's own summary of its turn." };
+    const huge: Caption = { key: "h", tone: "ink", tag: "T", text: "word ".repeat(200) };
+    expect(holdFor(short)).toBe(CAPTION_TIMING.minMs);
+    expect(holdFor(quote)).toBeGreaterThan(CAPTION_TIMING.minMs + 2000);
+    expect(holdFor(huge)).toBe(CAPTION_TIMING.maxReadMs);
+    // without the reading fields every caption holds for the minimum, as before
+    expect(holdFor(quote, { minMs: 1000, maxMs: 3000, fastMs: 200, maxWaiting: 4 })).toBe(1000);
+  });
+
+  it("keeps a long caption up for its reading time before the next one comes", () => {
+    const q = new CaptionQueue();
+    const quote: Caption = { key: "r", tone: "red", tag: "T", text: "word ".repeat(20) };
+    q.push(quote);
+    q.push({ key: "next", tone: "ink", tag: "T", text: "Day 3 of 4" });
+    const need = holdFor(quote);
+    expect(need).toBeGreaterThan(CAPTION_TIMING.minMs);
+    expect(q.advance(need - 100)).toBe(false);
+    expect(q.current?.key).toBe("r");
+    expect(q.advance(200)).toBe(true);
+    expect(q.current?.key).toBe("next");
   });
 
   it("clears the screen when nothing follows", () => {
